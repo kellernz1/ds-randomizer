@@ -1,4 +1,6 @@
 $ErrorActionPreference = "Stop"
+$env:DOTNET_CLI_UI_LANGUAGE = "en-US"
+$env:VSLANG = "1033"
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $temporaryDirectory = Join-Path $projectRoot ".tmp"

@@ -65,7 +65,7 @@ function randomizeExtractedEnemies(config, catalog) {
     archetypesByModel.get(archetype.modelName).push(archetype);
   }
 
-  return slots.map((slot) => {
+  return slots.map((slot, index) => {
     const differentModelCandidates = pool.filter(
       (candidate) => candidate.modelName !== slot.modelName,
     );
@@ -84,6 +84,7 @@ function randomizeExtractedEnemies(config, catalog) {
     return {
       slot: slot.id,
       map: slot.mapId,
+      entityId: slot.entityId,
       from: `${slot.modelName} [NPC ${slot.npcParamId} / AI ${slot.thinkParamId}]`,
       to: replacement
         ? `${replacement.modelName} [NPC ${replacement.npcParamId} / AI ${replacement.thinkParamId}]`
@@ -94,6 +95,8 @@ function randomizeExtractedEnemies(config, catalog) {
       sourceThinkParamId: slot.thinkParamId,
       targetNpcParamId: replacement?.npcParamId ?? slot.npcParamId,
       targetThinkParamId: replacement?.thinkParamId ?? slot.thinkParamId,
+      scaledNpcParamId:
+        config.enemyScaling === "vanilla" ? null : 9_100_000 + index,
       changed: Boolean(replacement),
       compatibility:
         replacement?.modelName !== slot.modelName
@@ -131,7 +134,7 @@ function randomizeExtractedBosses(config, catalog) {
       ]),
     ).values(),
   ];
-  return sources.map((slot) => {
+  return sources.map((slot, index) => {
     const size = bossSize.get(slot.modelName);
     let candidates = archetypes.filter(
       (candidate) =>
@@ -148,6 +151,7 @@ function randomizeExtractedBosses(config, catalog) {
     return {
       slot: slot.id,
       map: slot.mapId,
+      entityId: slot.entityId,
       from: `${slot.modelName} [NPC ${slot.npcParamId} / AI ${slot.thinkParamId}]`,
       to: `${replacement.modelName} [NPC ${replacement.npcParamId} / AI ${replacement.thinkParamId}]`,
       modelName: slot.modelName,
@@ -156,6 +160,8 @@ function randomizeExtractedBosses(config, catalog) {
       sourceThinkParamId: slot.thinkParamId,
       targetNpcParamId: replacement.npcParamId,
       targetThinkParamId: replacement.thinkParamId,
+      scaledNpcParamId:
+        config.enemyScaling === "vanilla" ? null : 9_200_000 + index,
       changed: replacement.modelName !== slot.modelName,
       compatibility: "same-size-boss",
       scaling: config.enemyScaling,

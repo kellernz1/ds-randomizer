@@ -15,12 +15,14 @@ The scanner never invents missing IDs and the generator never writes directly to
 the source installation. A catalog is a local snapshot of the selected game
 files; source hashes prevent applying it to a different installation state.
 
-## Implemented in 0.5.0
+## Implemented in 0.5.1
 
 - Real catalog schema 4 with 18 maps and 2,192 enemy parts
-- 668 conservative regular-enemy slots
+- 1,734 conservative regular-enemy slots, including event-linked visible enemies
 - Cross-map enemy model declarations and validated MSB round trips
 - Explicit primary-boss catalog with size-compatible replacement pools
+- Boss health-bar name patching in EMEVD while preserving encounter entity IDs
+- Per-slot scaled `NpcParam` clones for area and progressive scaling modes
 - 527 world item lots, including 25 recognized progression lots
 - Independent world-item, enemy, boss, class, gift, drop, and shop streams
 - Progression-lot and acquisition-flag preservation
@@ -35,8 +37,9 @@ files; source hashes prevent applying it to a different installation state.
 
 ## Conservative rules
 
-Regular enemies are selected only from parts without talk IDs, character-init
-bindings, move points, or other known high-risk metadata. Bosses use only their
+Regular enemies may keep event entity IDs, but parts with talk IDs,
+character-init bindings, move points, or other known high-risk metadata remain
+excluded. Bosses use only their
 primary NPC/AI rows; roaming variants, clones, flying variants, and auxiliary
 fight parts are excluded from the source pool.
 
@@ -53,8 +56,8 @@ item ID is redistributed within its item type.
   size-compatible character.
 - Full key-item graph randomization is not enabled in protected real-data mode;
   recognized progression lots remain vanilla to prevent softlocks.
-- Area/progressive scaling metadata is recorded but does not yet synthesize
-  custom NPC parameter rows.
+- Area and progressive modes currently use the same slot-relative combat-stat
+  inheritance; a distinct progressive curve is planned.
 - The project currently activates through direct, hash-guarded file replacement;
   mod-loader packaging is not implemented.
 

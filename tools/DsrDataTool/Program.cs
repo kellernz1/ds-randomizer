@@ -5,7 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using SoulsFormats;
 
-const int SchemaVersion = 4;
+const int SchemaVersion = 5;
 Console.OutputEncoding = new UTF8Encoding(false);
 Console.InputEncoding = new UTF8Encoding(false);
 
@@ -76,6 +76,10 @@ try
         Console.WriteLine($"Restored files: {report.Files.Count}");
         Console.WriteLine("State: INACTIVE");
     }
+    else if (command == "inspect-boss-bars")
+    {
+        InspectBossBars(RequireDirectory(options, "game"));
+    }
     else
     {
         throw new ArgumentException($"Unknown command: {command}");
@@ -98,6 +102,27 @@ static void PrintUsage()
         "--placements <randomizer.json> --output <directory>");
     Console.WriteLine("  install --game <DSR directory> --package <seed directory>");
     Console.WriteLine("  restore --game <DSR directory> --package <seed directory>");
+    Console.WriteLine("  inspect-boss-bars --game <DSR directory>");
+}
+
+static void InspectBossBars(string gameDirectory)
+{
+    var eventDirectory = Path.Combine(gameDirectory, "event");
+    foreach (var eventPath in Directory.EnumerateFiles(eventDirectory, "*.emevd.dcx")
+                 .OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+    {
+        var emevd = EMEVD.Read(eventPath);
+        foreach (var entry in emevd.Events)
+        {
+            foreach (var instruction in entry.Instructions.Where(value =>
+                         value.Bank == 2003 && value.ID == 11))
+            {
+                Console.WriteLine(
+                    $"{Path.GetFileName(eventPath)} event={entry.ID} " +
+                    $"bytes={instruction.ArgData.Length} hex={Convert.ToHexString(instruction.ArgData)}");
+            }
+        }
+    }
 }
 
 static Dictionary<string, string> ParseOptions(string[] values)
@@ -168,6 +193,10 @@ static GameCatalog ScanGame(string gameDirectory)
             continue;
         }
         sourceFiles.Add(DescribeSource(mapPath, gameDirectory));
+        var eventPath = Path.Combine(
+            gameDirectory, "event", $"{mapId}.emevd.dcx");
+        if (File.Exists(eventPath))
+            sourceFiles.Add(DescribeSource(eventPath, gameDirectory));
         try
         {
             var map = MSB1.Read(mapPath);
@@ -632,13 +661,25 @@ static PatchReport PatchEnemies(
                         ?? throw new InvalidDataException("Placement has no target model.")
                     : "",
                 element.GetProperty("targetNpcParamId").GetInt32(),
-                element.GetProperty("targetThinkParamId").GetInt32()))
+                element.GetProperty("targetThinkParamId").GetInt32(),
+                element.GetProperty("sourceNpcParamId").GetInt32(),
+                element.TryGetProperty("scaledNpcParamId", out var scaledNpc) &&
+                    scaledNpc.ValueKind == JsonValueKind.Number
+                        ? scaledNpc.GetInt32()
+                        : null,
+                element.TryGetProperty("entityId", out var entityId)
+                    ? entityId.GetInt32()
+                    : -1))
             .Where(placement =>
                 placement.TargetNpcParamId >= 0 && placement.TargetThinkParamId >= 0);
     }
-    var enemyPlacements = ReadEnemyPlacements("enemies")
-        .Concat(ReadEnemyPlacements("bosses"))
+    var regularEnemyPlacements = ReadEnemyPlacements("enemies").ToList();
+    var bossPlacements = ReadEnemyPlacements("bosses").ToList();
+    var allEnemyPlacements = regularEnemyPlacements
+        .Concat(bossPlacements)
         .DistinctBy(placement => placement.SlotId)
+        .ToList();
+    var enemyPlacements = allEnemyPlacements
         .GroupBy(placement => placement.MapId)
         .ToList();
     var startingPlacements = new List<StartingPlacement>();
@@ -736,7 +777,7 @@ static PatchReport PatchEnemies(
                 ? enemy.ModelName
                 : placement.TargetModelName;
             if (enemy.ModelName == targetModelName &&
-                enemy.NPCParamID == placement.TargetNpcParamId &&
+                enemy.NPCParamID == placement.EffectiveNpcParamId &&
                 enemy.ThinkParamID == placement.TargetThinkParamId)
                 continue;
             if (!msb.Models.Enemies.Any(model => model.Name == targetModelName))
@@ -748,7 +789,7 @@ static PatchReport PatchEnemies(
                 });
             }
             enemy.ModelName = targetModelName;
-            enemy.NPCParamID = placement.TargetNpcParamId;
+            enemy.NPCParamID = placement.EffectiveNpcParamId;
             enemy.ThinkParamID = placement.TargetThinkParamId;
             mapChanges++;
         }
@@ -779,7 +820,7 @@ static PatchReport PatchEnemies(
                 throw new InvalidDataException(
                     $"Enemy model declaration did not persist: {expectedModel} in {mapGroup.Key}.");
             if (verifiedEnemy.ModelName != expectedModel ||
-                verifiedEnemy.NPCParamID != placement.TargetNpcParamId ||
+                verifiedEnemy.NPCParamID != placement.EffectiveNpcParamId ||
                 verifiedEnemy.ThinkParamID != placement.TargetThinkParamId)
                 throw new InvalidDataException(
                     $"Enemy placement did not persist: {placement.SlotId}.");
@@ -797,7 +838,11 @@ static PatchReport PatchEnemies(
             HashFile(outputPath)));
     }
 
+    var patchedEvents = PatchBossNames(
+        gameDirectory, outputDirectory, catalog, bossPlacements);
+
     var patchedGameParam =
+        allEnemyPlacements.Any(placement => placement.ScaledNpcParamId.HasValue) ||
         startingPlacements.Count > 0 ||
         giftPlacements.Count > 0 ||
         enemyDropPlacements.Count > 0 ||
@@ -807,6 +852,7 @@ static PatchReport PatchEnemies(
             gameDirectory,
             outputDirectory,
             catalog,
+            allEnemyPlacements,
             startingPlacements,
             giftPlacements,
             enemyDropPlacements,
@@ -820,6 +866,7 @@ static PatchReport PatchEnemies(
         outputDirectory,
         changedSlots,
         patchedMaps,
+        patchedEvents,
         patchedGameParam);
     File.WriteAllText(
         Path.Combine(outputDirectory, "patch-manifest.json"),
@@ -827,17 +874,98 @@ static PatchReport PatchEnemies(
     return report;
 }
 
+static List<PatchedFile> PatchBossNames(
+    string gameDirectory,
+    string outputDirectory,
+    GameCatalog catalog,
+    List<PatchPlacement> placements)
+{
+    var results = new List<PatchedFile>();
+    foreach (var mapGroup in placements
+                 .Where(placement =>
+                     placement.EntityId >= 0 &&
+                     placement.TargetModelName.Length == 5 &&
+                     int.TryParse(placement.TargetModelName[1..], out _))
+                 .GroupBy(placement => placement.MapId))
+    {
+        var namesByEntity = mapGroup
+            .GroupBy(placement => placement.EntityId)
+            .ToDictionary(
+                group => group.Key,
+                group => short.Parse(group.First().TargetModelName[1..]));
+        var relativeSource = $"event/{mapGroup.Key}.emevd.dcx";
+        var sourceRecord = catalog.SourceFiles.SingleOrDefault(source =>
+            source.Path.Equals(relativeSource, StringComparison.OrdinalIgnoreCase));
+        if (sourceRecord == null)
+            continue;
+        var sourcePath = Path.Combine(
+            gameDirectory, relativeSource.Replace('/', Path.DirectorySeparatorChar));
+        AssertHash(sourcePath, sourceRecord.Sha256, $"Event {mapGroup.Key} changed after extraction");
+
+        var emevd = EMEVD.Read(sourcePath);
+        var changed = 0;
+        foreach (var instruction in emevd.Events
+                     .SelectMany(entry => entry.Instructions)
+                     .Where(value =>
+                         value.Bank == 2003 &&
+                         value.ID == 11 &&
+                         value.ArgData.Length == 12))
+        {
+            var entityId = BitConverter.ToInt32(instruction.ArgData, 4);
+            if (!namesByEntity.TryGetValue(entityId, out var nameId))
+                continue;
+            var nameBytes = BitConverter.GetBytes(nameId);
+            if (instruction.ArgData[10] == nameBytes[0] &&
+                instruction.ArgData[11] == nameBytes[1])
+                continue;
+            instruction.ArgData[10] = nameBytes[0];
+            instruction.ArgData[11] = nameBytes[1];
+            changed++;
+        }
+        if (changed == 0)
+            continue;
+
+        var outputRelative = $"mod/{relativeSource}";
+        var outputPath = Path.Combine(
+            outputDirectory, outputRelative.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+        emevd.Write(outputPath);
+        var verification = EMEVD.Read(outputPath);
+        foreach (var instruction in verification.Events
+                     .SelectMany(entry => entry.Instructions)
+                     .Where(value =>
+                         value.Bank == 2003 &&
+                         value.ID == 11 &&
+                         value.ArgData.Length == 12))
+        {
+            var entityId = BitConverter.ToInt32(instruction.ArgData, 4);
+            if (namesByEntity.TryGetValue(entityId, out var expectedNameId) &&
+                BitConverter.ToInt16(instruction.ArgData, 10) != expectedNameId)
+                throw new InvalidDataException(
+                    $"Boss name did not persist for entity {entityId} in {mapGroup.Key}.");
+        }
+        results.Add(new PatchedFile(
+            relativeSource,
+            outputRelative,
+            sourceRecord.Sha256,
+            HashFile(outputPath)));
+    }
+    return results;
+}
+
 static PatchedFile? PatchGameParam(
     string gameDirectory,
     string outputDirectory,
     GameCatalog catalog,
+    List<PatchPlacement> enemyPlacements,
     List<StartingPlacement> placements,
     List<RowPlacement> giftPlacements,
     List<RowPlacement> enemyDropPlacements,
     List<RowPlacement> worldItemPlacements,
     List<RowPlacement> shopPlacements)
 {
-    if (!placements.Any(placement =>
+    if (!enemyPlacements.Any(placement => placement.ScaledNpcParamId.HasValue) &&
+        !placements.Any(placement =>
             placement.RandomizeStats || placement.RandomizeEquipment) &&
         giftPlacements.Count == 0 &&
         enemyDropPlacements.Count == 0 &&
@@ -864,12 +992,20 @@ static PatchedFile? PatchGameParam(
         file.Name.EndsWith("ItemLotParam.param", StringComparison.OrdinalIgnoreCase));
     var shopFile = binder.Files.Single(file =>
         file.Name.EndsWith("ShopLineupParam.param", StringComparison.OrdinalIgnoreCase));
+    var npcFile = binder.Files.Single(file =>
+        file.Name.EndsWith("NpcParam.param", StringComparison.OrdinalIgnoreCase));
     var charaParam = PARAM.Read(charaFile.Bytes);
     var itemLotParam = PARAM.Read(itemLotFile.Bytes);
     var shopParam = PARAM.Read(shopFile.Bytes);
+    var npcParam = PARAM.Read(npcFile.Bytes);
     ApplyCompatibleParamdef(charaParam, paramdefs);
     ApplyCompatibleParamdef(itemLotParam, paramdefs);
     ApplyCompatibleParamdef(shopParam, paramdefs);
+    ApplyCompatibleParamdef(npcParam, paramdefs);
+
+    AddScaledNpcRows(
+        npcParam,
+        enemyPlacements.Where(placement => placement.ScaledNpcParamId.HasValue).ToList());
 
     var classes = catalog.StartingClasses.ToDictionary(entry => entry.Id);
     var classRows = classes.ToDictionary(
@@ -1110,6 +1246,7 @@ static PatchedFile? PatchGameParam(
     charaFile.Bytes = charaParam.Write();
     itemLotFile.Bytes = itemLotParam.Write();
     shopFile.Bytes = shopParam.Write();
+    npcFile.Bytes = npcParam.Write();
     var outputRelative = "mod/param/GameParam/GameParam.parambnd.dcx";
     var outputPath = Path.Combine(
         outputDirectory, outputRelative.Replace('/', Path.DirectorySeparatorChar));
@@ -1124,16 +1261,31 @@ static PatchedFile? PatchGameParam(
         file.Name.EndsWith("ItemLotParam.param", StringComparison.OrdinalIgnoreCase));
     var verifiedShopFile = verification.Files.Single(file =>
         file.Name.EndsWith("ShopLineupParam.param", StringComparison.OrdinalIgnoreCase));
+    var verifiedNpcFile = verification.Files.Single(file =>
+        file.Name.EndsWith("NpcParam.param", StringComparison.OrdinalIgnoreCase));
     var verifiedChara = PARAM.Read(verifiedCharaFile.Bytes);
     var verifiedLots = PARAM.Read(verifiedLotFile.Bytes);
     var verifiedShops = PARAM.Read(verifiedShopFile.Bytes);
+    var verifiedNpcs = PARAM.Read(verifiedNpcFile.Bytes);
+    ApplyCompatibleParamdef(verifiedNpcs, paramdefs);
     if (verifiedChara.Rows.Count != charaParam.Rows.Count ||
         verifiedLots.Rows.Count != itemLotParam.Rows.Count ||
         verifiedShops.Rows.Count != shopParam.Rows.Count ||
+        verifiedNpcs.Rows.Count != npcParam.Rows.Count ||
         !verifiedCharaFile.Bytes.SequenceEqual(charaFile.Bytes) ||
         !verifiedLotFile.Bytes.SequenceEqual(itemLotFile.Bytes) ||
-        !verifiedShopFile.Bytes.SequenceEqual(shopFile.Bytes))
+        !verifiedShopFile.Bytes.SequenceEqual(shopFile.Bytes) ||
+        !verifiedNpcFile.Bytes.SequenceEqual(npcFile.Bytes))
         throw new InvalidDataException("Invalid GameParam round-trip.");
+    foreach (var placement in enemyPlacements.Where(value => value.ScaledNpcParamId.HasValue))
+    {
+        var scaled = verifiedNpcs.Rows.Single(row => row.ID == placement.ScaledNpcParamId);
+        var source = verifiedNpcs.Rows.Single(row => row.ID == placement.SourceNpcParamId);
+        var target = verifiedNpcs.Rows.Single(row => row.ID == placement.TargetNpcParamId);
+        AssertCell(scaled, "hp", GetCellInt(source, "hp"));
+        AssertCell(scaled, "spEffectID0", GetCellInt(source, "spEffectID0"));
+        AssertCell(scaled, "nameId", GetCellInt(target, "nameId"));
+    }
     AssertHash(sourcePath, sourceRecord.Sha256, "Source GameParam changed");
 
     return new PatchedFile(
@@ -1141,6 +1293,50 @@ static PatchedFile? PatchGameParam(
         outputRelative,
         sourceRecord.Sha256,
         HashFile(outputPath));
+}
+
+static void AddScaledNpcRows(PARAM npcParam, List<PatchPlacement> placements)
+{
+    if (placements.Count == 0)
+        return;
+    var existingIds = npcParam.Rows.Select(row => row.ID).ToHashSet();
+    var originalRows = npcParam.Rows.ToDictionary(row => row.ID);
+    var combatFields = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "hp", "mp", "getSoul", "stamina", "staminaRecoverBaseVel",
+        "def_phys", "def_slash", "def_blow", "def_thrust",
+        "def_mag", "def_fire", "def_thunder", "defFlickPower",
+        "resist_poison", "resist_desease", "resist_blood", "resist_curse",
+        "physGuardCutRate", "magGuardCutRate", "fireGuardCutRate",
+        "thunGuardCutRate", "slashGuardCutRate", "blowGuardCutRate",
+        "thrustGuardCutRate",
+        "spEffectID0", "spEffectID1", "spEffectID2", "spEffectID3",
+        "spEffectID4", "spEffectID5", "spEffectID6", "spEffectID7",
+    };
+
+    foreach (var placement in placements)
+    {
+        var newId = placement.ScaledNpcParamId!.Value;
+        if (!existingIds.Add(newId))
+            throw new InvalidDataException($"Duplicate scaled NpcParam ID: {newId}.");
+        if (!originalRows.TryGetValue(placement.TargetNpcParamId, out var target))
+            throw new InvalidDataException(
+                $"Target NpcParam row not found: {placement.TargetNpcParamId}.");
+        if (!originalRows.TryGetValue(placement.SourceNpcParamId, out var source))
+            throw new InvalidDataException(
+                $"Source NpcParam row not found: {placement.SourceNpcParamId}.");
+
+        var scaled = new PARAM.Row(
+            newId,
+            $"DSR Randomizer {placement.MapId} {placement.SlotId}",
+            npcParam.AppliedParamdef);
+        CopyCells(RowCells(target), scaled, _ => true);
+        CopyCells(RowCells(source), scaled, name => combatFields.Contains(name));
+        AssertCells(RowCells(target), scaled, name => !combatFields.Contains(name));
+        AssertCells(RowCells(source), scaled, name => combatFields.Contains(name));
+        npcParam.Rows.Add(scaled);
+    }
+    npcParam.Rows.Sort((left, right) => left.ID.CompareTo(right.ID));
 }
 
 static void SetCell(PARAM.Row row, string name, int value)
@@ -1320,7 +1516,7 @@ static ActivationReport InstallPackage(
     var backupRoot = Path.Combine(packageDirectory, "backup");
     Directory.CreateDirectory(backupRoot);
 
-    // Valida tudo antes da primeira escrita.
+    // Validate everything before the first write.
     foreach (var file in patchFiles)
     {
         var sourcePath = ResolveGamePath(gameDirectory, file.Source);
@@ -1433,6 +1629,7 @@ static List<PatchedFile> GetPatchFiles(PatchReport report)
 {
     var files = report.PatchedMaps.Select(map => new PatchedFile(
         map.Source, map.Output, map.SourceSha256, map.OutputSha256)).ToList();
+    files.AddRange(report.Events ?? new List<PatchedFile>());
     if (report.GameParam != null)
         files.Add(report.GameParam);
     return files;
@@ -1486,7 +1683,6 @@ static EnemySlotRecord ToSlot(string mapId, MSB1.Part.EnemyBase enemy, bool dumm
     if (movePoints.Length > 0) riskFlags.Add("patrol");
     var safeCandidate =
         !dummy &&
-        enemy.EntityID < 0 &&
         enemy.TalkID <= 0 &&
         enemy.CharaInitID < 0 &&
         movePoints.Length == 0 &&
@@ -1663,7 +1859,13 @@ record PatchPlacement(
     string MapId,
     string TargetModelName,
     int TargetNpcParamId,
-    int TargetThinkParamId);
+    int TargetThinkParamId,
+    int SourceNpcParamId,
+    int? ScaledNpcParamId,
+    int EntityId)
+{
+    public int EffectiveNpcParamId => ScaledNpcParamId ?? TargetNpcParamId;
+}
 record StartingPlacement(
     string Slot,
     string StatsFrom,
@@ -1698,6 +1900,7 @@ record PatchReport(
     string OutputDirectory,
     int ChangedSlots,
     List<PatchedMap> PatchedMaps,
+    List<PatchedFile> Events,
     PatchedFile? GameParam);
 record ActivationFile(
     string RelativePath,

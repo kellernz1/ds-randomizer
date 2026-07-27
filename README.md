@@ -9,8 +9,9 @@ package before touching the game.
 
 ## Features
 
-- Regular enemies across all 18 gameplay maps
+- 1,700+ regular-enemy slots across all 18 gameplay maps
 - Primary boss encounters, shuffled through size-compatible pools
+- Boss health bars updated to the randomized boss name
 - 500+ world pickup and chest item lots
 - Starting-class stats and equipment
 - Unique, stat-compatible starting weapons collected in the Undead Asylum
@@ -91,6 +92,9 @@ activation.
 Progression protection keeps recognized keys, embers, progression rings, and
 event-bound shop goods in their original locations. Boss replacement preserves
 the original map entity IDs so map events continue to target the encounter.
+Area scaling creates a dedicated NPC parameter row for every replacement and
+inherits HP, stamina, defenses, resistances, souls, and combat scaling effects
+from the original enemy in that slot.
 Boss mode remains experimental because some encounters contain bespoke
 animations and arena scripting.
 

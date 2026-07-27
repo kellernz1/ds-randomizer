@@ -94,6 +94,8 @@ export async function runDataTool(argumentsList) {
         DOTNET_CLI_HOME: path.join(root, ".tools", "cli-home"),
         NUGET_PACKAGES: path.join(root, ".tools", "nuget"),
         DOTNET_CLI_TELEMETRY_OPTOUT: "1",
+        DOTNET_CLI_UI_LANGUAGE: "en-US",
+        VSLANG: "1033",
       },
       windowsHide: true,
     });

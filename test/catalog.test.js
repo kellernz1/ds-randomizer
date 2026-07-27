@@ -48,10 +48,21 @@ test("real catalog produces deterministic enemies with visibly different models"
   assert.equal(first.dataStatus, "extracted");
   assert.equal(first.placementHash, second.placementHash);
   assert.ok(first.placements.enemies.some((placement) => placement.changed));
+  assert.ok(first.placements.enemies.length > 1_500);
+  assert.ok(
+    first.placements.enemies.filter((placement) => placement.entityId >= 0).length >
+      1_000,
+  );
   assert.ok(
     first.placements.enemies.some(
       (placement) => placement.targetModelName !== placement.modelName,
     ),
+  );
+  assert.equal(
+    new Set(
+      first.placements.enemies.map((placement) => placement.scaledNpcParamId),
+    ).size,
+    first.placements.enemies.length,
   );
   assert.ok(
     first.placements.enemies.every((placement) =>
