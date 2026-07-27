@@ -17,7 +17,7 @@ files; source hashes prevent applying it to a different installation state.
 
 ## Implemented in 0.5.1
 
-- Real catalog schema 4 with 18 maps and 2,192 enemy parts
+- Real catalog schema 5 with 18 maps, event sources, and 2,192 enemy parts
 - 1,734 conservative regular-enemy slots, including event-linked visible enemies
 - Cross-map enemy model declarations and validated MSB round trips
 - Explicit primary-boss catalog with size-compatible replacement pools
