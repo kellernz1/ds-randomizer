@@ -15,7 +15,7 @@ The scanner never invents missing IDs and the generator never writes directly to
 the source installation. A catalog is a local snapshot of the selected game
 files; source hashes prevent applying it to a different installation state.
 
-## Implemented in 0.5.5
+## Implemented in 0.5.6
 
 - Real catalog schema 7 with 18 maps, event sources, and 2,192 enemy parts
 - 1,600+ hostile regular-enemy slots, including event-linked visible enemies
@@ -29,6 +29,7 @@ files; source hashes prevent applying it to a different installation state.
 - Auxiliary/unnamed boss variants are excluded from the replacement pool
 - First Asylum boss rooftop animation is replaced by a safe floor spawn
 - Portable seed files contain deterministic options, version, catalog fingerprint, and verified placement hash
+- English-only launcher status, dependency, and failure messages
 - Cross-map enemy model declarations and validated MSB round trips
 - Explicit primary-boss catalog with size-compatible replacement pools
 - Boss health-bar name patching in EMEVD while preserving encounter entity IDs

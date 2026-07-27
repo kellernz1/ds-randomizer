@@ -22,7 +22,7 @@ export class DeterministicRng {
 
   int(maxExclusive) {
     if (!Number.isInteger(maxExclusive) || maxExclusive <= 0) {
-      throw new RangeError("maxExclusive deve ser um inteiro positivo.");
+      throw new RangeError("maxExclusive must be a positive integer.");
     }
     return Math.floor(this.next() * maxExclusive);
   }
