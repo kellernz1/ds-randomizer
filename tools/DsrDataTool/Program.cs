@@ -1094,6 +1094,15 @@ static List<PatchedFile> PatchBossNames(
                 BitConverter.ToInt32(instruction.ArgData, 8) == 1812305);
             BitConverter.GetBytes(1812300).CopyTo(highWarp.ArgData, 8);
             changed++;
+
+            // The vanilla drop sequence disables AI before playing model-specific
+            // animations. Re-enable it explicitly after the adapted floor-spawn
+            // event reaches its end, rather than relying on the original flag chain.
+            intro.Instructions.Add(new EMEVD.Instruction(
+                2004,
+                1,
+                new object[] { 1810800, 1 }));
+            changed++;
         }
         foreach (var instruction in emevd.Events
                      .SelectMany(entry => entry.Instructions)
@@ -1136,7 +1145,13 @@ static List<PatchedFile> PatchBossNames(
                     instruction.ID == 41 &&
                     instruction.ArgData.Length >= 12 &&
                     BitConverter.ToInt32(instruction.ArgData, 0) == 1810800 &&
-                    BitConverter.ToInt32(instruction.ArgData, 8) == 1812300))
+                    BitConverter.ToInt32(instruction.ArgData, 8) == 1812300) ||
+                !intro.Instructions.Any(instruction =>
+                    instruction.Bank == 2004 &&
+                    instruction.ID == 1 &&
+                    instruction.ArgData.Length == 8 &&
+                    BitConverter.ToInt32(instruction.ArgData, 0) == 1810800 &&
+                    BitConverter.ToInt32(instruction.ArgData, 4) == 1))
             {
                 throw new InvalidDataException(
                     "Randomized Asylum boss intro did not persist safely.");

@@ -111,7 +111,8 @@ in that slot. It also inherits the destination area's native level multiplier,
 which scales attack power and stamina. Model-specific effects and animations
 remain attached to the replacement so it can animate, navigate, and enter
 combat normally. The first Asylum boss bypasses the original model-only rooftop
-drop animation and is placed at the arena floor before normal AI activation.
+drop animation, is placed at the arena floor, and has its AI explicitly enabled
+after the player enters the arena.
 Boss mode remains experimental because some encounters contain bespoke
 animations and arena scripting.
 
