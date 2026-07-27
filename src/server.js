@@ -4,9 +4,15 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { defaultConfig, generateSeed, normalizeConfig, presets, validateConfig } from "./core/config.js";
+import {
+  defaultConfig,
+  generateSeed,
+  normalizeConfig,
+  validateConfig,
+} from "./core/config.js";
 import { generate } from "./core/generator.js";
 import { writeOutput } from "./core/output.js";
+import { createSharedSeed, readSharedSeed } from "./core/share.js";
 import { detectGame, verifyCatalogSources } from "./game/detection.js";
 import { loadGameCatalog } from "./data/catalog.js";
 
@@ -115,7 +121,6 @@ async function api(request, response, pathname) {
     const config = await loadConfig();
     return json(response, 200, {
       config,
-      presets,
       generatedSeed: generateSeed(),
       catalog: catalog
         ? {
@@ -128,6 +133,30 @@ async function api(request, response, pathname) {
         : { available: false },
       package: await packageState(config.lastPackageDirectory),
     });
+  }
+  if (request.method === "POST" && pathname === "/api/share/export") {
+    try {
+      const catalog = await loadGameCatalog(catalogPath);
+      const previousConfig = await loadConfig();
+      const config = normalizeConfig({
+        ...previousConfig,
+        ...(await readJson(request)),
+      });
+      return json(response, 200, createSharedSeed(config, catalog));
+    } catch (error) {
+      return json(response, 400, { error: error.message });
+    }
+  }
+  if (request.method === "POST" && pathname === "/api/share/import") {
+    try {
+      const catalog = await loadGameCatalog(catalogPath);
+      const payload = await readJson(request);
+      return json(response, 200, {
+        config: readSharedSeed(payload, catalog),
+      });
+    } catch (error) {
+      return json(response, 400, { error: error.message });
+    }
   }
   if (request.method === "POST" && pathname === "/api/detect") {
     const body = await readJson(request);

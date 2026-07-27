@@ -1,7 +1,5 @@
 const form = document.querySelector("#config-form");
 const message = document.querySelector("#message");
-const presetSelect = form.elements.preset;
-let presets = {};
 let latestGeneratedSeed = "";
 let latestPackageDirectory = "";
 
@@ -48,7 +46,6 @@ async function request(url, options) {
 }
 
 const state = await request("/api/state");
-presets = state.presets;
 latestGeneratedSeed = state.generatedSeed;
 setForm(state.config);
 if (state.package) {
@@ -69,18 +66,62 @@ document.querySelector("#new-seed").addEventListener("click", async () => {
   form.elements.seed.value = latestGeneratedSeed;
 });
 
-presetSelect.addEventListener("change", () => {
-  const preset = presets[presetSelect.value];
-  if (preset) setForm({ ...preset, preset: presetSelect.value });
+document.querySelector("#export-seed").addEventListener("click", async () => {
+  message.textContent = "Preparing shared seed file...";
+  try {
+    const sharedSeed = await request("/api/share/export", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(readForm()),
+    });
+    const blob = new Blob(
+      [`${JSON.stringify(sharedSeed, null, 2)}\n`],
+      { type: "application/json" },
+    );
+    const url = URL.createObjectURL(blob);
+    const download = document.createElement("a");
+    const safeSeed = sharedSeed.seed.replace(/[^\w.-]/gu, "_");
+    download.href = url;
+    download.download = `dsr-seed_${safeSeed}.json`;
+    download.click();
+    URL.revokeObjectURL(url);
+    message.textContent =
+      `Exported seed ${sharedSeed.seed} with hash ` +
+      `${sharedSeed.placementHash.slice(0, 12)}…. Share the downloaded JSON file.`;
+  } catch (error) {
+    message.textContent = error.message;
+  }
 });
 
-for (const field of form.querySelectorAll("input, select")) {
-  if (field.name !== "preset") {
-    field.addEventListener("change", () => {
-      presetSelect.value = "custom";
-    });
+const seedFile = document.querySelector("#seed-file");
+document.querySelector("#import-seed").addEventListener("click", () => {
+  seedFile.click();
+});
+seedFile.addEventListener("change", async () => {
+  const [file] = seedFile.files;
+  seedFile.value = "";
+  if (!file) return;
+  if (file.size > 64 * 1024) {
+    message.textContent = "The shared seed file is too large.";
+    return;
   }
-}
+  message.textContent = "Importing shared seed...";
+  try {
+    const payload = JSON.parse(await file.text());
+    const result = await request("/api/share/import", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    setForm(result.config);
+    latestGeneratedSeed = result.config.seed;
+    message.textContent =
+      `Verified and imported seed ${result.config.seed} and all randomized options.`;
+  } catch (error) {
+    message.textContent =
+      error instanceof SyntaxError ? "Invalid shared seed JSON file." : error.message;
+  }
+});
 
 document.querySelector("#detect").addEventListener("click", async () => {
   const detection = document.querySelector("#detection");

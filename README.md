@@ -24,6 +24,7 @@ package before touching the game.
 - NPC gifts, renewable enemy drops, and shops
 - Independent deterministic RNG streams for every category
 - Progression-item protection, spoiler logs, and reproducible placement hashes
+- Portable seed files with version and clean-catalog compatibility checks
 - Hash-checked activation, per-seed backups, atomic replacement, and safe restore
 
 The ten vanilla classes never receive weapons, shields, tools, or armor already
@@ -55,11 +56,18 @@ npm run build:data-tool
 In the configurator:
 
 1. Select the `DARK SOULS REMASTERED` directory.
-2. Click **Verify**, then **Import**.
-3. Choose a preset or enable individual categories.
+2. Click **Verify**, then **Import game data**.
+3. Enable the categories you want to randomize.
 4. Enter a seed, disable **Safe simulation**, and confirm offline play.
 5. Click **Generate Randomizer**.
 6. Click **Activate in Game**, then launch the game normally.
+
+Use **Export** beside the seed to create a small JSON file containing the seed
+and every option that affects placements. Another player can use **Import seed**
+to load it. Local paths, backups, extracted game data, and credentials are never
+included. Both players must use the same randomizer version and matching clean
+game data. Import recalculates and verifies the expected placement hash before
+accepting the file.
 
 Create a new character when testing randomized starting classes or equipment.
 Use **Restore Vanilla** before importing again, changing seeds, verifying game

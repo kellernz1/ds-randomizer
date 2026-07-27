@@ -48,7 +48,7 @@ h1 { margin: 5px 0; font: 500 clamp(32px, 5vw, 56px) Georgia, serif; letter-spac
   background: var(--panel);
   box-shadow: 0 14px 34px rgba(0,0,0,.25);
 }
-.setup { display: grid; grid-template-columns: 2fr 0.7fr 1fr; gap: 16px; align-items: end; }
+.setup { display: grid; grid-template-columns: minmax(420px, 2fr) minmax(210px, 1fr) auto; gap: 16px; align-items: end; }
 h2 { margin: 0 0 20px; font: 400 23px Georgia, serif; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
 .field { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
 .setup .field { margin: 0; }
@@ -64,6 +64,7 @@ input, select, button {
 input:focus, select:focus { outline: 1px solid var(--fire); border-color: var(--fire); }
 .inline { display: flex; gap: 8px; }
 .inline input { min-width: 0; flex: 1; }
+.seed-sharing button { white-space: nowrap; }
 button { cursor: pointer; }
 .secondary:hover { border-color: var(--fire); }
 .toggle { display: grid; grid-template-columns: 38px 1fr; gap: 10px; align-items: center; margin: 13px 0; cursor: pointer; }
