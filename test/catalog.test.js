@@ -66,6 +66,7 @@ test("real catalog produces deterministic enemies with visibly different models"
     first.placements.enemies.every((placement) =>
       [
         "movement-size-and-ai-compatible",
+        "event-safe-same-model-and-source-ai",
         "same-model-compatible-fallback",
         "vanilla-preserved-no-compatible-replacement",
       ].includes(placement.compatibility),
@@ -83,9 +84,15 @@ test("real catalog produces deterministic enemies with visibly different models"
     (entry) => entry.changed,
   )) {
     const slot = slots.get(placement.slot);
-    const target = archetypes.get(
-      `${placement.targetModelName}:${placement.targetNpcParamId}:${placement.targetThinkParamId}`,
-    );
+    const target =
+      archetypes.get(
+        `${placement.targetModelName}:${placement.targetNpcParamId}:${placement.targetThinkParamId}`,
+      ) ||
+      gameCatalog.enemyArchetypes.find(
+        (entry) =>
+          entry.modelName === placement.targetModelName &&
+          entry.npcParamId === placement.targetNpcParamId,
+      );
     assert.equal(slot.teamType, 0);
     assert.notEqual(slot.modelName, "c0000");
     assert.equal(target.teamType, 0);
@@ -98,8 +105,15 @@ test("real catalog produces deterministic enemies with visibly different models"
     assert.ok(
       target.hitHeight <= Math.max(slot.hitHeight * 1.75, slot.hitHeight + 0.75),
     );
-    assert.ok(target.battleStartDistance > 0);
-    assert.ok(target.eyeDistance > 0 || target.earDistance > 0);
+    if (placement.entityId >= 0) {
+      assert.equal(placement.targetModelName, placement.modelName);
+      assert.equal(placement.targetThinkParamId, placement.sourceThinkParamId);
+      assert.ok(slot.battleStartDistance > 0);
+      assert.ok(slot.eyeDistance > 0 || slot.earDistance > 0);
+    } else {
+      assert.ok(target.battleStartDistance > 0);
+      assert.ok(target.eyeDistance > 0 || target.earDistance > 0);
+    }
   }
 });
 
@@ -139,12 +153,25 @@ test("real catalog produces real boss and world-item placements", async () => {
     { ...presets.standard, seed: "real-no-prototype" },
     { gameCatalog },
   );
-  assert.equal(result.placements.bosses.length, gameCatalog.bossSlots.length);
+  assert.ok(result.placements.bosses.length > 20);
   assert.equal(
     result.placements.items.length,
     gameCatalog.worldItemLots.filter((lot) => !lot.protectedProgression).length,
   );
-  assert.ok(result.placements.bosses.every((entry) => entry.changed));
+  assert.ok(result.placements.bosses.filter((entry) => entry.changed).length > 20);
+  assert.ok(
+    result.placements.bosses.filter((entry) => entry.changed).every(
+      (entry) => !["c5200", "c5271", "c5290", "c5351", "c5390"].includes(
+        entry.targetModelName,
+      ) && !["c3471", "c4510"].includes(entry.targetModelName),
+    ),
+  );
+  const asylum = result.placements.bosses.find(
+    (entry) => entry.slot === "m18_01_00_00:c2232_0000",
+  );
+  assert.ok(asylum);
+  assert.ok(["c2230", "c2231"].includes(asylum.targetModelName));
+  assert.equal(asylum.compatibility, "asylum-demon-family");
   assert.ok(result.placements.items.every((entry) => !entry.preserved));
   assert.ok(
     result.placements.items.every(

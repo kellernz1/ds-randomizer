@@ -682,6 +682,30 @@ static bool IsBossModel(string modelName) => modelName is
     "c5271" or "c5280" or "c5290" or "c5350" or "c5351" or "c5370" or
     "c5390";
 
+static short? GetBossNameId(string modelName) => modelName switch
+{
+    "c2230" => 2230,
+    "c2231" => 2231,
+    "c2232" => 2232,
+    "c2240" => 2240,
+    "c2250" => 2250,
+    "c2320" => 2320,
+    "c2360" => 2360,
+    "c2730" => 2730,
+    "c3471" => 3471,
+    "c4100" => 4100,
+    "c4500" => 4500,
+    "c4510" => 4510,
+    "c5210" => 5210,
+    "c5220" => 5220,
+    "c5260" => 5260,
+    "c5270" => 5270,
+    "c5280" => 5280,
+    "c5350" => 5350,
+    "c5370" => 5370,
+    _ => null,
+};
+
 static bool IsPrimaryBossSlot(EnemySlotRecord slot)
 {
     if (slot.ModelName.Length != 5 ||
@@ -1017,15 +1041,14 @@ static List<PatchedFile> PatchBossNames(
     foreach (var mapGroup in placements
                  .Where(placement =>
                      placement.EntityId >= 0 &&
-                     placement.TargetModelName.Length == 5 &&
-                     int.TryParse(placement.TargetModelName[1..], out _))
+                     GetBossNameId(placement.TargetModelName).HasValue)
                  .GroupBy(placement => placement.MapId))
     {
         var namesByEntity = mapGroup
             .GroupBy(placement => placement.EntityId)
             .ToDictionary(
                 group => group.Key,
-                group => short.Parse(group.First().TargetModelName[1..]));
+                group => GetBossNameId(group.First().TargetModelName)!.Value);
         var relativeSource = $"event/{mapGroup.Key}.emevd.dcx";
         var sourceRecord = catalog.SourceFiles.SingleOrDefault(source =>
             source.Path.Equals(relativeSource, StringComparison.OrdinalIgnoreCase));
@@ -1417,6 +1440,7 @@ static PatchedFile? PatchGameParam(
         var target = verifiedNpcs.Rows.Single(row => row.ID == placement.TargetNpcParamId);
         AssertCell(scaled, "hp", GetCellInt(source, "hp"));
         AssertCell(scaled, "spEffectID0", GetCellInt(target, "spEffectID0"));
+        AssertCell(scaled, "spEffectID4", GetCellInt(source, "spEffectID4"));
         AssertCell(scaled, "nameId", GetCellInt(target, "nameId"));
     }
     AssertHash(sourcePath, sourceRecord.Sha256, "Source GameParam changed");
@@ -1443,6 +1467,10 @@ static void AddScaledNpcRows(PARAM npcParam, List<PatchPlacement> placements)
         "physGuardCutRate", "magGuardCutRate", "fireGuardCutRate",
         "thunGuardCutRate", "slashGuardCutRate", "blowGuardCutRate",
         "thrustGuardCutRate",
+        // Slot 4 is the game's own area-level multiplier (7001, 7002, ...).
+        // Copy only this effect so attack, stamina, HP, and defense scaling match
+        // the destination while model-specific effects remain on the replacement.
+        "spEffectID4",
     };
 
     foreach (var placement in placements)

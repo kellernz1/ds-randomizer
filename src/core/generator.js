@@ -78,15 +78,20 @@ function randomizeExtractedEnemies(config, catalog) {
       candidate.hitHeight > 0 &&
       candidate.hitRadius <= Math.max(slot.hitRadius * 1.75, slot.hitRadius + 0.25) &&
       candidate.hitHeight <= Math.max(slot.hitHeight * 1.75, slot.hitHeight + 0.75);
+    const eventControlled = slot.entityId >= 0;
     const differentModelCandidates = pool.filter(
       (candidate) =>
-        candidate.modelName !== slot.modelName && fitsSpawn(candidate),
+        !eventControlled &&
+        candidate.modelName !== slot.modelName &&
+        fitsSpawn(candidate),
     );
     const sameModelCandidates = (archetypesByModel.get(slot.modelName) || []).filter(
       (candidate) =>
         candidate.charaInitId < 0 &&
         fitsSpawn(candidate) &&
-        (candidate.npcParamId !== slot.npcParamId ||
+        (eventControlled
+          ? candidate.npcParamId !== slot.npcParamId
+          : candidate.npcParamId !== slot.npcParamId ||
           candidate.thinkParamId !== slot.thinkParamId),
     );
     const candidates =
@@ -108,7 +113,10 @@ function randomizeExtractedEnemies(config, catalog) {
       sourceNpcParamId: slot.npcParamId,
       sourceThinkParamId: slot.thinkParamId,
       targetNpcParamId: replacement?.npcParamId ?? slot.npcParamId,
-      targetThinkParamId: replacement?.thinkParamId ?? slot.thinkParamId,
+      targetThinkParamId:
+        eventControlled
+          ? slot.thinkParamId
+          : replacement?.thinkParamId ?? slot.thinkParamId,
       scaledNpcParamId:
         config.enemyScaling === "vanilla" || !replacement
           ? null
@@ -118,7 +126,9 @@ function randomizeExtractedEnemies(config, catalog) {
         replacement?.modelName !== slot.modelName
           ? "movement-size-and-ai-compatible"
           : replacement
-            ? "same-model-compatible-fallback"
+            ? eventControlled
+              ? "event-safe-same-model-and-source-ai"
+              : "same-model-compatible-fallback"
             : "vanilla-preserved-no-compatible-replacement",
       scaling: config.enemyScaling,
     };
@@ -130,10 +140,16 @@ const bossSize = new Map(
     c2230: 3, c2231: 3, c2232: 3, c2240: 3, c2250: 3, c2320: 4,
     c2360: 3, c2730: 3, c3320: 1, c3471: 3, c4100: 3,
     c4500: 3, c4510: 4, c5200: 4, c5210: 4, c5220: 3,
-    c5260: 5, c5270: 2, c5271: 3, c5280: 3, c5290: 4,
-    c5350: 2, c5351: 2, c5370: 1, c5390: 2,
+    c5260: 5, c5270: 2, c5280: 3, c5290: 4,
+    c5350: 2, c5370: 1, c5390: 2,
   }),
 );
+
+const portableBossModels = new Set([
+  "c2230", "c2231", "c2232", "c2240", "c2250", "c2320", "c2360",
+  "c2730", "c4100", "c4500", "c5210", "c5220",
+  "c5260", "c5270", "c5280", "c5350", "c5370",
+]);
 
 function randomizeExtractedBosses(config, catalog) {
   if (!config.randomizeBosses || !catalog?.bossSlots?.length) return [];
@@ -146,7 +162,7 @@ function randomizeExtractedBosses(config, catalog) {
   );
   const archetypes = [
     ...new Map(
-      sources.filter((slot) => slot.modelName !== "c2232").map((slot) => [
+      sources.filter((slot) => portableBossModels.has(slot.modelName)).map((slot) => [
         `${slot.modelName}:${slot.npcParamId}:${slot.thinkParamId}`,
         slot,
       ]),
@@ -154,18 +170,19 @@ function randomizeExtractedBosses(config, catalog) {
   ];
   return sources.map((slot, index) => {
     const size = bossSize.get(slot.modelName);
-    let candidates = archetypes.filter(
-      (candidate) =>
-        candidate.modelName !== slot.modelName &&
-        bossSize.get(candidate.modelName) === size,
+    const isAsylumDemon =
+      slot.mapId === "m18_01_00_00" &&
+      ["c2230", "c2232"].includes(slot.modelName);
+    const candidates = archetypes.filter((candidate) =>
+      isAsylumDemon
+        ? candidate.modelName !== slot.modelName &&
+          ["c2230", "c2231", "c2232"].includes(candidate.modelName)
+        : candidate.modelName !== slot.modelName &&
+          bossSize.get(candidate.modelName) === size,
     );
-    if (candidates.length === 0) {
-      candidates = archetypes.filter(
-        (candidate) => candidate.modelName !== slot.modelName,
-      );
-    }
     const replacement =
       candidates.length > 0 ? candidates[rng.int(candidates.length)] : slot;
+    const changed = replacement.modelName !== slot.modelName;
     return {
       slot: slot.id,
       map: slot.mapId,
@@ -179,9 +196,15 @@ function randomizeExtractedBosses(config, catalog) {
       targetNpcParamId: replacement.npcParamId,
       targetThinkParamId: replacement.thinkParamId,
       scaledNpcParamId:
-        config.enemyScaling === "vanilla" ? null : 9_200_000 + index,
-      changed: replacement.modelName !== slot.modelName,
-      compatibility: "same-size-boss",
+        config.enemyScaling === "vanilla" || !changed
+          ? null
+          : 9_200_000 + index,
+      changed,
+      compatibility: !changed
+        ? "vanilla-preserved-no-compatible-boss"
+        : isAsylumDemon
+        ? "asylum-demon-family"
+        : "portable-same-size-boss",
       scaling: config.enemyScaling,
     };
   });
@@ -640,8 +663,9 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
       finalBossReachable: config.randomizeKeyItems ? config.progressionLogic : true,
       notes: extractedData
         ? [
-            "Regular enemies use conservative slots; required models are declared in each target map.",
-            "Primary boss slots are randomized within size-compatible pools.",
+            "Event-controlled enemies preserve their source model and AI; independent slots use compatible cross-model replacements.",
+            "Area scaling preserves the destination slot's native level multiplier.",
+            "Bosses use portable size-compatible pools; Undead Asylum encounters stay within the demon family.",
             config.progressionLogic
               ? "World items are randomized while progression lots remain in their original locations."
               : "World items and progression lots are randomized independently.",

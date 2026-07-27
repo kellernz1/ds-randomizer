@@ -15,7 +15,7 @@ The scanner never invents missing IDs and the generator never writes directly to
 the source installation. A catalog is a local snapshot of the selected game
 files; source hashes prevent applying it to a different installation state.
 
-## Implemented in 0.5.2
+## Implemented in 0.5.3
 
 - Real catalog schema 6 with 18 maps, event sources, and 2,192 enemy parts
 - 1,600+ hostile regular-enemy slots, including event-linked visible enemies
@@ -23,6 +23,10 @@ files; source hashes prevent applying it to a different installation state.
 - Movement type, dimensions, pathing, and detection-aware replacement pools
 - Cross-model animation reset that prevents frozen bind poses and inactive AI
 - Round-trip assertions that preserve every spawn transform and all unselected NPCs
+- Event-controlled enemies preserve their source model and `ThinkParam`
+- Area scaling copies the game's native level `SpEffect` from the destination
+- Auxiliary/unnamed boss variants are excluded from the replacement pool
+- Undead Asylum encounters use only the compatible demon model family
 - Cross-map enemy model declarations and validated MSB round trips
 - Explicit primary-boss catalog with size-compatible replacement pools
 - Boss health-bar name patching in EMEVD while preserving encounter entity IDs
@@ -44,8 +48,10 @@ files; source hashes prevent applying it to a different installation state.
 Regular enemies may keep event entity IDs, but parts with friendly/neutral team
 types, human-NPC models, talk IDs, character-init bindings, move points, or
 other known high-risk metadata remain excluded. Replacement pools require
-compatible movement, size, pathing, and combat-detection metadata. Bosses use only their
-primary NPC/AI rows; roaming variants, clones, flying variants, and auxiliary
+compatible movement, size, pathing, and combat-detection metadata. Slots with
+event entity IDs retain their original model and AI because map scripts may
+reference model-specific animations or AI commands. Bosses use only portable
+primary NPC/AI rows; roaming variants, clones, unnamed variants, and auxiliary
 fight parts are excluded from the source pool.
 
 World-item payload fields are copied while each destination keeps its
@@ -56,9 +62,9 @@ item ID is redistributed within its item type.
 
 ## Known limitations
 
-- Boss replacement is experimental. Some encounters have bespoke cutscenes,
-  arena geometry, or event scripts that may not support every otherwise
-  size-compatible character.
+- Boss replacement remains experimental. Portable bosses are matched by size,
+  and the Undead Asylum is restricted further, but some later arenas still
+  contain bespoke cutscenes or geometry.
 - Full key-item graph randomization is not enabled in protected real-data mode;
   recognized progression lots remain vanilla to prevent softlocks.
 - Area and progressive modes currently use the same slot-relative combat-stat
