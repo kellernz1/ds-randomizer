@@ -54,7 +54,10 @@ function randomizeExtractedEnemies(config, catalog) {
   const pool = catalog.enemyArchetypes.filter(
     (archetype) =>
       archetype.charaInitId < 0 &&
+      archetype.teamType === 0 &&
       archetype.safeSlotCount > 0 &&
+      archetype.battleStartDistance > 0 &&
+      (archetype.eyeDistance > 0 || archetype.earDistance > 0) &&
       !bossModels.has(archetype.modelName),
   );
   const archetypesByModel = new Map();
@@ -66,12 +69,23 @@ function randomizeExtractedEnemies(config, catalog) {
   }
 
   return slots.map((slot, index) => {
+    const fitsSpawn = (candidate) =>
+      candidate.teamType === 0 &&
+      candidate.npcType === slot.npcType &&
+      candidate.moveType === slot.moveType &&
+      candidate.disablePathMove === slot.disablePathMove &&
+      candidate.hitRadius > 0 &&
+      candidate.hitHeight > 0 &&
+      candidate.hitRadius <= Math.max(slot.hitRadius * 1.75, slot.hitRadius + 0.25) &&
+      candidate.hitHeight <= Math.max(slot.hitHeight * 1.75, slot.hitHeight + 0.75);
     const differentModelCandidates = pool.filter(
-      (candidate) => candidate.modelName !== slot.modelName,
+      (candidate) =>
+        candidate.modelName !== slot.modelName && fitsSpawn(candidate),
     );
     const sameModelCandidates = (archetypesByModel.get(slot.modelName) || []).filter(
       (candidate) =>
         candidate.charaInitId < 0 &&
+        fitsSpawn(candidate) &&
         (candidate.npcParamId !== slot.npcParamId ||
           candidate.thinkParamId !== slot.thinkParamId),
     );
@@ -96,12 +110,16 @@ function randomizeExtractedEnemies(config, catalog) {
       targetNpcParamId: replacement?.npcParamId ?? slot.npcParamId,
       targetThinkParamId: replacement?.thinkParamId ?? slot.thinkParamId,
       scaledNpcParamId:
-        config.enemyScaling === "vanilla" ? null : 9_100_000 + index,
+        config.enemyScaling === "vanilla" || !replacement
+          ? null
+          : 9_100_000 + index,
       changed: Boolean(replacement),
       compatibility:
         replacement?.modelName !== slot.modelName
-          ? "cross-map-loaded-model"
-          : "same-model-fallback",
+          ? "movement-size-and-ai-compatible"
+          : replacement
+            ? "same-model-compatible-fallback"
+            : "vanilla-preserved-no-compatible-replacement",
       scaling: config.enemyScaling,
     };
   });
@@ -578,6 +596,12 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
   const errors = validateConfig(config);
   if (errors.length > 0) {
     throw new Error(errors.join("\n"));
+  }
+  if (gameCatalog && gameCatalog.schemaVersion !== 6) {
+    throw new Error(
+      `Catalog schema ${gameCatalog.schemaVersion} is obsolete. ` +
+        "Verify the clean game and import its data again.",
+    );
   }
 
   const extractedData = Boolean(

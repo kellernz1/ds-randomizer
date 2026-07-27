@@ -15,10 +15,14 @@ The scanner never invents missing IDs and the generator never writes directly to
 the source installation. A catalog is a local snapshot of the selected game
 files; source hashes prevent applying it to a different installation state.
 
-## Implemented in 0.5.1
+## Implemented in 0.5.2
 
-- Real catalog schema 5 with 18 maps, event sources, and 2,192 enemy parts
-- 1,734 conservative regular-enemy slots, including event-linked visible enemies
+- Real catalog schema 6 with 18 maps, event sources, and 2,192 enemy parts
+- 1,600+ hostile regular-enemy slots, including event-linked visible enemies
+- `NpcParam` team classification that excludes friendly and neutral characters
+- Movement type, dimensions, pathing, and detection-aware replacement pools
+- Cross-model animation reset that prevents frozen bind poses and inactive AI
+- Round-trip assertions that preserve every spawn transform and all unselected NPCs
 - Cross-map enemy model declarations and validated MSB round trips
 - Explicit primary-boss catalog with size-compatible replacement pools
 - Boss health-bar name patching in EMEVD while preserving encounter entity IDs
@@ -37,9 +41,10 @@ files; source hashes prevent applying it to a different installation state.
 
 ## Conservative rules
 
-Regular enemies may keep event entity IDs, but parts with talk IDs,
-character-init bindings, move points, or other known high-risk metadata remain
-excluded. Bosses use only their
+Regular enemies may keep event entity IDs, but parts with friendly/neutral team
+types, human-NPC models, talk IDs, character-init bindings, move points, or
+other known high-risk metadata remain excluded. Replacement pools require
+compatible movement, size, pathing, and combat-detection metadata. Bosses use only their
 primary NPC/AI rows; roaming variants, clones, flying variants, and auxiliary
 fight parts are excluded from the source pool.
 

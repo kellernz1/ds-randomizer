@@ -9,7 +9,9 @@ package before touching the game.
 
 ## Features
 
-- 1,700+ regular-enemy slots across all 18 gameplay maps
+- 1,600+ hostile regular-enemy slots across all 18 gameplay maps
+- Movement-, size-, and AI-compatible enemy replacements
+- Friendly NPCs, merchants, quest characters, and their spawns are protected
 - Primary boss encounters, shuffled through size-compatible pools
 - Boss health bars updated to the randomized boss name
 - 500+ world pickup and chest item lots
@@ -93,8 +95,9 @@ Progression protection keeps recognized keys, embers, progression rings, and
 event-bound shop goods in their original locations. Boss replacement preserves
 the original map entity IDs so map events continue to target the encounter.
 Area scaling creates a dedicated NPC parameter row for every replacement and
-inherits HP, stamina, defenses, resistances, souls, and combat scaling effects
-from the original enemy in that slot.
+inherits HP, stamina, defenses, resistances, and souls from the original enemy
+in that slot. Model-specific effects and animations remain attached to the
+replacement so it can animate, navigate, and enter combat normally.
 Boss mode remains experimental because some encounters contain bespoke
 animations and arena scripting.
 

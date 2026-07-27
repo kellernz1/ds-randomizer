@@ -51,25 +51,85 @@ test("real catalog produces deterministic enemies with visibly different models"
   assert.ok(first.placements.enemies.length > 1_500);
   assert.ok(
     first.placements.enemies.filter((placement) => placement.entityId >= 0).length >
-      1_000,
+      950,
   );
   assert.ok(
     first.placements.enemies.some(
       (placement) => placement.targetModelName !== placement.modelName,
     ),
   );
-  assert.equal(
-    new Set(
-      first.placements.enemies.map((placement) => placement.scaledNpcParamId),
-    ).size,
-    first.placements.enemies.length,
-  );
+  const scaled = first.placements.enemies
+    .map((placement) => placement.scaledNpcParamId)
+    .filter((id) => id !== null);
+  assert.equal(new Set(scaled).size, scaled.length);
   assert.ok(
     first.placements.enemies.every((placement) =>
-      ["cross-map-loaded-model", "same-model-fallback"].includes(
-        placement.compatibility,
-      ),
+      [
+        "movement-size-and-ai-compatible",
+        "same-model-compatible-fallback",
+        "vanilla-preserved-no-compatible-replacement",
+      ].includes(placement.compatibility),
     ),
+  );
+
+  const slots = new Map(gameCatalog.enemySlots.map((slot) => [slot.id, slot]));
+  const archetypes = new Map(
+    gameCatalog.enemyArchetypes.map((entry) => [
+      `${entry.modelName}:${entry.npcParamId}:${entry.thinkParamId}`,
+      entry,
+    ]),
+  );
+  for (const placement of first.placements.enemies.filter(
+    (entry) => entry.changed,
+  )) {
+    const slot = slots.get(placement.slot);
+    const target = archetypes.get(
+      `${placement.targetModelName}:${placement.targetNpcParamId}:${placement.targetThinkParamId}`,
+    );
+    assert.equal(slot.teamType, 0);
+    assert.notEqual(slot.modelName, "c0000");
+    assert.equal(target.teamType, 0);
+    assert.equal(target.npcType, slot.npcType);
+    assert.equal(target.moveType, slot.moveType);
+    assert.equal(target.disablePathMove, slot.disablePathMove);
+    assert.ok(
+      target.hitRadius <= Math.max(slot.hitRadius * 1.75, slot.hitRadius + 0.25),
+    );
+    assert.ok(
+      target.hitHeight <= Math.max(slot.hitHeight * 1.75, slot.hitHeight + 0.75),
+    );
+    assert.ok(target.battleStartDistance > 0);
+    assert.ok(target.eyeDistance > 0 || target.earDistance > 0);
+  }
+});
+
+test("friendly NPC and human-character slots are never randomized", async () => {
+  const gameCatalog = await catalog();
+  assert.equal(gameCatalog.schemaVersion, 6);
+  const protectedSlots = gameCatalog.enemySlots.filter(
+    (slot) => slot.teamType >= 2 || slot.modelName === "c0000",
+  );
+  assert.ok(protectedSlots.length > 150);
+  assert.ok(protectedSlots.every((slot) => slot.safeCandidate === false));
+  const result = generate(
+    { ...presets.standard, seed: "npc-protection-01" },
+    { gameCatalog },
+  );
+  const randomizedIds = new Set(
+    result.placements.enemies.map((placement) => placement.slot),
+  );
+  assert.ok(protectedSlots.every((slot) => !randomizedIds.has(slot.id)));
+});
+
+test("obsolete catalogs require a fresh import", async () => {
+  const gameCatalog = await catalog();
+  assert.throws(
+    () =>
+      generate(
+        { ...presets.standard, seed: "obsolete-catalog" },
+        { gameCatalog: { ...gameCatalog, schemaVersion: 5 } },
+      ),
+    /import its data again/u,
   );
 });
 

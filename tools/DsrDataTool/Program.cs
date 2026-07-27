@@ -5,7 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using SoulsFormats;
 
-const int SchemaVersion = 5;
+const int SchemaVersion = 6;
 Console.OutputEncoding = new UTF8Encoding(false);
 Console.InputEncoding = new UTF8Encoding(false);
 
@@ -168,6 +168,23 @@ static GameCatalog ScanGame(string gameDirectory)
     if (!Directory.Exists(mapDirectory))
         throw new DirectoryNotFoundException($"MapStudio not found: {mapDirectory}");
 
+    var errors = new List<ScanError>();
+    var enemyMetadata = new EnemyMetadataLookup(new(), new());
+    if (File.Exists(gameParamPath) && File.Exists(paramdefPath))
+    {
+        try
+        {
+            enemyMetadata = ReadEnemyMetadata(gameParamPath, paramdefPath);
+        }
+        catch (Exception error)
+        {
+            errors.Add(new ScanError(
+                "param/GameParam/GameParam.parambnd.dcx",
+                "enemy-metadata-read",
+                error.Message));
+        }
+    }
+
     var sourceFiles = new List<SourceFile>
     {
         DescribeSource(executablePath, gameDirectory),
@@ -179,7 +196,6 @@ static GameCatalog ScanGame(string gameDirectory)
 
     var maps = new List<MapRecord>();
     var slots = new List<EnemySlotRecord>();
-    var errors = new List<ScanError>();
     var ignoredFiles = new List<string>();
     var mapNames = CreateMapNames();
     foreach (var mapPath in Directory.EnumerateFiles(mapDirectory, "*.msb")
@@ -206,8 +222,10 @@ static GameCatalog ScanGame(string gameDirectory)
                 map.Parts.Enemies.Count,
                 map.Parts.DummyEnemies.Count));
 
-            slots.AddRange(map.Parts.Enemies.Select(enemy => ToSlot(mapId, enemy, false)));
-            slots.AddRange(map.Parts.DummyEnemies.Select(enemy => ToSlot(mapId, enemy, true)));
+            slots.AddRange(map.Parts.Enemies.Select(
+                enemy => ToSlot(mapId, enemy, false, enemyMetadata)));
+            slots.AddRange(map.Parts.DummyEnemies.Select(
+                enemy => ToSlot(mapId, enemy, true, enemyMetadata)));
         }
         catch (Exception error)
         {
@@ -226,6 +244,15 @@ static GameCatalog ScanGame(string gameDirectory)
             slot.NpcParamId,
             slot.ThinkParamId,
             slot.CharaInitId,
+            slot.TeamType,
+            slot.NpcType,
+            slot.MoveType,
+            slot.HitHeight,
+            slot.HitRadius,
+            slot.BattleStartDistance,
+            slot.EyeDistance,
+            slot.EarDistance,
+            slot.DisablePathMove,
         })
         .Select(group => new EnemyArchetypeRecord(
             $"{group.Key.ModelName}:{group.Key.NpcParamId}:{group.Key.ThinkParamId}:{group.Key.CharaInitId}",
@@ -233,6 +260,15 @@ static GameCatalog ScanGame(string gameDirectory)
             group.Key.NpcParamId,
             group.Key.ThinkParamId,
             group.Key.CharaInitId,
+            group.Key.TeamType,
+            group.Key.NpcType,
+            group.Key.MoveType,
+            group.Key.HitHeight,
+            group.Key.HitRadius,
+            group.Key.BattleStartDistance,
+            group.Key.EyeDistance,
+            group.Key.EarDistance,
+            group.Key.DisablePathMove,
             group.Count(),
             group.Select(slot => slot.MapId).Distinct().Order().ToArray(),
             group.Count(slot => slot.SafeCandidate)))
@@ -503,6 +539,42 @@ static RandomizerParamData ReadRandomizerParamData(
         startingEquipmentPools);
 }
 
+static EnemyMetadataLookup ReadEnemyMetadata(
+    string gameParamPath,
+    string paramdefPath)
+{
+    var binder = BND3.Read(gameParamPath);
+    var paramdefs = BND3.Read(paramdefPath).Files
+        .Select(file => PARAMDEF.Read(file.Bytes))
+        .ToList();
+    PARAM ReadParam(string suffix)
+    {
+        var file = binder.Files.Single(entry =>
+            entry.Name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
+        var param = PARAM.Read(file.Bytes);
+        ApplyCompatibleParamdef(param, paramdefs);
+        return param;
+    }
+
+    var npcRows = ReadParam("NpcParam.param").Rows.ToDictionary(
+        row => row.ID,
+        row => new NpcMetadata(
+            GetCellInt(row, "teamType"),
+            GetCellInt(row, "npcType"),
+            GetCellInt(row, "moveType"),
+            GetCellFloat(row, "hitHeight"),
+            GetCellFloat(row, "hitRadius"),
+            GetCellFloat(row, "hitYOffset")));
+    var thinkRows = ReadParam("NpcThinkParam.param").Rows.ToDictionary(
+        row => row.ID,
+        row => new ThinkMetadata(
+            GetCellFloat(row, "BattleStartDist"),
+            GetCellFloat(row, "eye_dist"),
+            GetCellFloat(row, "ear_dist"),
+            GetCellInt(row, "disablePathMove") != 0));
+    return new EnemyMetadataLookup(npcRows, thinkRows);
+}
+
 static StartingData ReadStartingData(
     BND3 gameParam,
     string paramdefPath)
@@ -641,6 +713,10 @@ static PatchReport PatchEnemies(
     var catalog = JsonSerializer.Deserialize<GameCatalog>(
         File.ReadAllText(catalogPath), jsonOptions)
         ?? throw new InvalidDataException("Invalid catalog.");
+    if (catalog.SchemaVersion != SchemaVersion)
+        throw new InvalidDataException(
+            $"Catalog schema {catalog.SchemaVersion} is obsolete. " +
+            "Import the clean game data again.");
     using var placementDocument = JsonDocument.Parse(File.ReadAllText(placementsPath));
     var placementsRoot = placementDocument.RootElement.GetProperty("placements");
     IEnumerable<PatchPlacement> ReadEnemyPlacements(string propertyName)
@@ -675,6 +751,23 @@ static PatchReport PatchEnemies(
     }
     var regularEnemyPlacements = ReadEnemyPlacements("enemies").ToList();
     var bossPlacements = ReadEnemyPlacements("bosses").ToList();
+    var slotsById = catalog.EnemySlots.ToDictionary(slot => slot.Id);
+    foreach (var placement in regularEnemyPlacements)
+    {
+        if (!slotsById.TryGetValue(placement.SlotId, out var slot) ||
+            !slot.SafeCandidate ||
+            slot.TeamType != 0 ||
+            slot.ModelName == "c0000" ||
+            slot.NpcParamId != placement.SourceNpcParamId)
+        {
+            throw new InvalidDataException(
+                $"Protected or obsolete regular-enemy placement: {placement.SlotId}. " +
+                "Generate a new package from a fresh catalog.");
+        }
+    }
+    var bossSlotIds = catalog.BossSlots.Select(slot => slot.Id).ToHashSet();
+    if (bossPlacements.Any(placement => !bossSlotIds.Contains(placement.SlotId)))
+        throw new InvalidDataException("A boss placement targets a protected slot.");
     var allEnemyPlacements = regularEnemyPlacements
         .Concat(bossPlacements)
         .DistinctBy(placement => placement.SlotId)
@@ -763,6 +856,10 @@ static PatchReport PatchEnemies(
         var msb = MSB1.Read(sourcePath);
         var enemiesByName = msb.Parts.Enemies.ToDictionary(
             enemy => enemy.Name, StringComparer.Ordinal);
+        var originalEnemies = msb.Parts.Enemies.ToDictionary(
+            enemy => enemy.Name,
+            SnapshotEnemy,
+            StringComparer.Ordinal);
         var mapChanges = 0;
         foreach (var placement in mapGroup)
         {
@@ -788,9 +885,18 @@ static PatchReport PatchEnemies(
                     SibPath = $@"N:\FRPG\data\Model\chr\{targetModelName}.sib",
                 });
             }
+            var modelChanged = enemy.ModelName != targetModelName;
             enemy.ModelName = targetModelName;
             enemy.NPCParamID = placement.EffectiveNpcParamId;
             enemy.ThinkParamID = placement.TargetThinkParamId;
+            if (modelChanged)
+            {
+                // Initial/damage animation IDs belong to the original character
+                // model. Retaining them can leave a replacement in a frozen bind
+                // pose and prevent its AI from entering combat.
+                enemy.InitAnimID = -1;
+                enemy.DamageAnimID = -1;
+            }
             mapChanges++;
         }
 
@@ -806,6 +912,26 @@ static PatchReport PatchEnemies(
             throw new InvalidDataException($"Invalid round-trip for map {mapGroup.Key}.");
         var verifiedEnemies = verification.Parts.Enemies.ToDictionary(
             enemy => enemy.Name, StringComparer.Ordinal);
+        var placedNames = mapGroup
+            .Select(placement =>
+            {
+                var separator = placement.SlotId.IndexOf(':');
+                return separator >= 0
+                    ? placement.SlotId[(separator + 1)..]
+                    : placement.SlotId;
+            })
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var (name, original) in originalEnemies)
+        {
+            var verified = verifiedEnemies[name];
+            AssertSpawnUnchanged(original, verified, mapGroup.Key);
+            if (!placedNames.Contains(name) &&
+                SnapshotEnemy(verified) != original)
+            {
+                throw new InvalidDataException(
+                    $"Unselected enemy or NPC changed in {mapGroup.Key}: {name}.");
+            }
+        }
         foreach (var placement in mapGroup)
         {
             var separator = placement.SlotId.IndexOf(':');
@@ -824,6 +950,13 @@ static PatchReport PatchEnemies(
                 verifiedEnemy.ThinkParamID != placement.TargetThinkParamId)
                 throw new InvalidDataException(
                     $"Enemy placement did not persist: {placement.SlotId}.");
+            var original = originalEnemies[enemyName];
+            if (expectedModel != original.ModelName &&
+                (verifiedEnemy.InitAnimID != -1 || verifiedEnemy.DamageAnimID != -1))
+            {
+                throw new InvalidDataException(
+                    $"Model-specific animations were not cleared: {placement.SlotId}.");
+            }
         }
         if (!HashFile(sourcePath).Equals(sourceHashBefore, StringComparison.OrdinalIgnoreCase))
             throw new IOException($"Source file changed during patching: {mapGroup.Key}");
@@ -1283,7 +1416,7 @@ static PatchedFile? PatchGameParam(
         var source = verifiedNpcs.Rows.Single(row => row.ID == placement.SourceNpcParamId);
         var target = verifiedNpcs.Rows.Single(row => row.ID == placement.TargetNpcParamId);
         AssertCell(scaled, "hp", GetCellInt(source, "hp"));
-        AssertCell(scaled, "spEffectID0", GetCellInt(source, "spEffectID0"));
+        AssertCell(scaled, "spEffectID0", GetCellInt(target, "spEffectID0"));
         AssertCell(scaled, "nameId", GetCellInt(target, "nameId"));
     }
     AssertHash(sourcePath, sourceRecord.Sha256, "Source GameParam changed");
@@ -1310,8 +1443,6 @@ static void AddScaledNpcRows(PARAM npcParam, List<PatchPlacement> placements)
         "physGuardCutRate", "magGuardCutRate", "fireGuardCutRate",
         "thunGuardCutRate", "slashGuardCutRate", "blowGuardCutRate",
         "thrustGuardCutRate",
-        "spEffectID0", "spEffectID1", "spEffectID2", "spEffectID3",
-        "spEffectID4", "spEffectID5", "spEffectID6", "spEffectID7",
     };
 
     foreach (var placement in placements)
@@ -1361,10 +1492,10 @@ static void ValidateStartingEquipmentPools(
             throw new InvalidDataException(
                 $"Item {id} is not in the valid {slot} pool.");
     }
-    Require(pools.Helms, equipment.Helm, "capacetes");
-    Require(pools.Armors, equipment.Armor, "torsos");
-    Require(pools.Gauntlets, equipment.Gauntlets, "luvas");
-    Require(pools.Legs, equipment.Legs, "pernas");
+    Require(pools.Helms, equipment.Helm, "helmet");
+    Require(pools.Armors, equipment.Armor, "chest armor");
+    Require(pools.Gauntlets, equipment.Gauntlets, "gauntlets");
+    Require(pools.Legs, equipment.Legs, "leg armor");
     foreach (var id in new[]
              {
                  equipment.PickupWeapon,
@@ -1374,7 +1505,7 @@ static void ValidateStartingEquipmentPools(
     {
         if (vanillaWeaponIds.Contains(id))
             throw new InvalidDataException(
-                $"Arma inicial vanilla {id} apareceu no pool randomizado.");
+                $"Vanilla starting weapon {id} appeared in the randomized pool.");
     }
     foreach (var id in new[]
              {
@@ -1386,7 +1517,7 @@ static void ValidateStartingEquipmentPools(
     {
         if (vanillaArmorIds.Contains(id))
             throw new InvalidDataException(
-                $"Armadura inicial vanilla {id} apareceu no pool randomizado.");
+                $"Vanilla starting armor {id} appeared in the randomized pool.");
     }
 }
 
@@ -1434,6 +1565,13 @@ static int GetCellInt(PARAM.Row row, string name, int fallback = -1)
     var cell = row.Cells.SingleOrDefault(entry =>
         entry.Def.InternalName.Equals(name, StringComparison.OrdinalIgnoreCase));
     return cell == null ? fallback : Convert.ToInt32(cell.Value);
+}
+
+static float GetCellFloat(PARAM.Row row, string name, float fallback = -1)
+{
+    var cell = row.Cells.SingleOrDefault(entry =>
+        entry.Def.InternalName.Equals(name, StringComparison.OrdinalIgnoreCase));
+    return cell == null ? fallback : Convert.ToSingle(cell.Value);
 }
 
 static void ApplyRowMappings(
@@ -1670,8 +1808,64 @@ static void AtomicCopy(string sourcePath, string destinationPath)
     File.Move(temporaryPath, destinationPath, true);
 }
 
-static EnemySlotRecord ToSlot(string mapId, MSB1.Part.EnemyBase enemy, bool dummy)
+static EnemyPartSnapshot SnapshotEnemy(MSB1.Part.EnemyBase enemy) => new(
+    enemy.ModelName,
+    enemy.NPCParamID,
+    enemy.ThinkParamID,
+    enemy.TalkID,
+    enemy.CharaInitID,
+    enemy.CollisionName,
+    enemy.Position.X,
+    enemy.Position.Y,
+    enemy.Position.Z,
+    enemy.Rotation.X,
+    enemy.Rotation.Y,
+    enemy.Rotation.Z,
+    enemy.Scale.X,
+    enemy.Scale.Y,
+    enemy.Scale.Z,
+    enemy.EntityID,
+    string.Join("\u001f", enemy.MovePointNames),
+    enemy.InitAnimID,
+    enemy.DamageAnimID,
+    enemy.PointMoveType,
+    enemy.PlatoonID);
+
+static void AssertSpawnUnchanged(
+    EnemyPartSnapshot original,
+    MSB1.Part.EnemyBase verified,
+    string mapId)
 {
+    if (verified.Position.X != original.PositionX ||
+        verified.Position.Y != original.PositionY ||
+        verified.Position.Z != original.PositionZ ||
+        verified.Rotation.X != original.RotationX ||
+        verified.Rotation.Y != original.RotationY ||
+        verified.Rotation.Z != original.RotationZ ||
+        verified.Scale.X != original.ScaleX ||
+        verified.Scale.Y != original.ScaleY ||
+        verified.Scale.Z != original.ScaleZ ||
+        verified.EntityID != original.EntityId ||
+        verified.TalkID != original.TalkId ||
+        verified.CharaInitID != original.CharaInitId ||
+        verified.CollisionName != original.CollisionName ||
+        string.Join("\u001f", verified.MovePointNames) != original.MovePoints ||
+        verified.PointMoveType != original.PointMoveType ||
+        verified.PlatoonID != original.PlatoonId)
+    {
+        throw new InvalidDataException(
+            $"Spawn metadata changed unexpectedly in {mapId}: {verified.Name}.");
+    }
+}
+
+static EnemySlotRecord ToSlot(
+    string mapId,
+    MSB1.Part.EnemyBase enemy,
+    bool dummy,
+    EnemyMetadataLookup metadata)
+{
+    metadata.Npcs.TryGetValue(enemy.NPCParamID, out var npc);
+    metadata.Thinks.TryGetValue(enemy.ThinkParamID, out var think);
     var movePoints = enemy.MovePointNames
         .Where(name => !string.IsNullOrWhiteSpace(name))
         .ToArray();
@@ -1681,13 +1875,20 @@ static EnemySlotRecord ToSlot(string mapId, MSB1.Part.EnemyBase enemy, bool dumm
     if (enemy.TalkID > 0) riskFlags.Add("talk");
     if (enemy.CharaInitID >= 0) riskFlags.Add("character-init");
     if (movePoints.Length > 0) riskFlags.Add("patrol");
+    if (npc == null) riskFlags.Add("missing-npc-param");
+    if (think == null) riskFlags.Add("missing-think-param");
+    if (npc?.TeamType >= 2) riskFlags.Add("friendly-or-neutral");
+    if (enemy.ModelName == "c0000") riskFlags.Add("human-npc");
     var safeCandidate =
         !dummy &&
         enemy.TalkID <= 0 &&
         enemy.CharaInitID < 0 &&
         movePoints.Length == 0 &&
+        enemy.ModelName != "c0000" &&
         enemy.NPCParamID >= 0 &&
         enemy.ThinkParamID >= 0 &&
+        npc?.TeamType == 0 &&
+        think != null &&
         enemy.ModelName.StartsWith('c');
 
     return new EnemySlotRecord(
@@ -1707,7 +1908,17 @@ static EnemySlotRecord ToSlot(string mapId, MSB1.Part.EnemyBase enemy, bool dumm
         dummy,
         enemy.EntityID >= 0,
         riskFlags.ToArray(),
-        safeCandidate);
+        safeCandidate,
+        npc?.TeamType ?? -1,
+        npc?.NpcType ?? -1,
+        npc?.MoveType ?? -1,
+        npc?.HitHeight ?? -1,
+        npc?.HitRadius ?? -1,
+        npc?.HitYOffset ?? 0,
+        think?.BattleStartDistance ?? -1,
+        think?.EyeDistance ?? -1,
+        think?.EarDistance ?? -1,
+        think?.DisablePathMove ?? false);
 }
 
 static SourceFile DescribeSource(string filePath, string root)
@@ -1791,7 +2002,17 @@ record EnemySlotRecord(
     bool Dummy,
     bool HasEntityId,
     string[] RiskFlags,
-    bool SafeCandidate);
+    bool SafeCandidate,
+    int TeamType,
+    int NpcType,
+    int MoveType,
+    float HitHeight,
+    float HitRadius,
+    float HitYOffset,
+    float BattleStartDistance,
+    float EyeDistance,
+    float EarDistance,
+    bool DisablePathMove);
 
 record EnemyArchetypeRecord(
     string Id,
@@ -1799,9 +2020,55 @@ record EnemyArchetypeRecord(
     int NpcParamId,
     int ThinkParamId,
     int CharaInitId,
+    int TeamType,
+    int NpcType,
+    int MoveType,
+    float HitHeight,
+    float HitRadius,
+    float BattleStartDistance,
+    float EyeDistance,
+    float EarDistance,
+    bool DisablePathMove,
     int SlotCount,
     string[] Maps,
     int SafeSlotCount);
+record NpcMetadata(
+    int TeamType,
+    int NpcType,
+    int MoveType,
+    float HitHeight,
+    float HitRadius,
+    float HitYOffset);
+record ThinkMetadata(
+    float BattleStartDistance,
+    float EyeDistance,
+    float EarDistance,
+    bool DisablePathMove);
+record EnemyMetadataLookup(
+    Dictionary<int, NpcMetadata> Npcs,
+    Dictionary<int, ThinkMetadata> Thinks);
+record EnemyPartSnapshot(
+    string ModelName,
+    int NpcParamId,
+    int ThinkParamId,
+    int TalkId,
+    int CharaInitId,
+    string? CollisionName,
+    float PositionX,
+    float PositionY,
+    float PositionZ,
+    float RotationX,
+    float RotationY,
+    float RotationZ,
+    float ScaleX,
+    float ScaleY,
+    float ScaleZ,
+    int EntityId,
+    string MovePoints,
+    int InitAnimId,
+    int DamageAnimId,
+    byte PointMoveType,
+    ushort PlatoonId);
 
 record BinderEntryRecord(int Id, string Name, int Size, string Sha256);
 record StartingClassRecord(
