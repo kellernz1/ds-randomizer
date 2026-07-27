@@ -1,0 +1,62 @@
+# Implementation status
+
+## Architecture
+
+The project separates three responsibilities:
+
+1. The pure generator accepts a catalog and configuration and produces
+   deterministic placements.
+2. Validation checks configuration, catalog compatibility, hashes, round trips,
+   equipment requirements, uniqueness, and progression protection.
+3. `DsrDataTool` reads and writes MSB/PARAM formats and performs guarded package
+   activation and restore operations.
+
+The scanner never invents missing IDs and the generator never writes directly to
+the source installation. A catalog is a local snapshot of the selected game
+files; source hashes prevent applying it to a different installation state.
+
+## Implemented in 0.5.0
+
+- Real catalog schema 4 with 18 maps and 2,192 enemy parts
+- 668 conservative regular-enemy slots
+- Cross-map enemy model declarations and validated MSB round trips
+- Explicit primary-boss catalog with size-compatible replacement pools
+- 527 world item lots, including 25 recognized progression lots
+- Independent world-item, enemy, boss, class, gift, drop, and shop streams
+- Progression-lot and acquisition-flag preservation
+- Ten real starting classes from `CharaInitParam`
+- Unique, requirement-compatible weapon matching without replacement
+- Per-slot armor randomization and vanilla starting-item exclusion
+- Asylum floor pickups preserved separately from spawn equipment
+- 20 NPC gift lots, 64 renewable enemy-drop lots, and 392 shop rows
+- Isolated packages containing changed MSBs and/or `GameParam.parambnd.dcx`
+- Source and output hashes, round-trip validation, atomic install, backup,
+  rollback, and guarded restore
+
+## Conservative rules
+
+Regular enemies are selected only from parts without talk IDs, character-init
+bindings, move points, or other known high-risk metadata. Bosses use only their
+primary NPC/AI rows; roaming variants, clones, flying variants, and auxiliary
+fight parts are excluded from the source pool.
+
+World-item payload fields are copied while each destination keeps its
+acquisition flag. Progression protection recognizes key goods, embers, the
+Peculiar Doll, and progression rings. Those lots remain vanilla in protected
+mode. Shop rows preserve price, stock, flags, and conditions while only the
+item ID is redistributed within its item type.
+
+## Known limitations
+
+- Boss replacement is experimental. Some encounters have bespoke cutscenes,
+  arena geometry, or event scripts that may not support every otherwise
+  size-compatible character.
+- Full key-item graph randomization is not enabled in protected real-data mode;
+  recognized progression lots remain vanilla to prevent softlocks.
+- Area/progressive scaling metadata is recorded but does not yet synthesize
+  custom NPC parameter rows.
+- The project currently activates through direct, hash-guarded file replacement;
+  mod-loader packaging is not implemented.
+
+Prototype data remains available for tests that run without the game. The real
+catalog is always generated locally and is intentionally ignored by Git.

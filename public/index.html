@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DSR Randomizer</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <p class="eyebrow">PREPARE TO RANDOMIZE</p>
+        <h1>Dark Souls Remastered</h1>
+        <p class="subtitle">Choose what changes before launching the game.</p>
+      </header>
+
+      <div class="warning">
+        <strong>Play in offline mode.</strong>
+        Modified game data must never be used in multiplayer.
+      </div>
+
+      <form id="config-form">
+        <section class="panel setup">
+          <div class="field grow">
+            <label for="gameDirectory">Game directory</label>
+            <div class="inline">
+              <input id="gameDirectory" name="gameDirectory" placeholder="C:\Program Files (x86)\Steam\steamapps\common\DARK SOULS REMASTERED" />
+              <button type="button" class="secondary" id="detect">Verify</button>
+              <button type="button" class="secondary" id="scan">Import</button>
+            </div>
+            <small id="detection">No directory verified.</small>
+          </div>
+          <div class="field">
+            <label for="preset">Preset</label>
+            <select id="preset" name="preset">
+              <option value="beginner">Beginner</option>
+              <option value="standard">Standard</option>
+              <option value="chaos">Chaos</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+          <div class="field seed">
+            <label for="seed">Seed</label>
+            <div class="inline">
+              <input id="seed" name="seed" maxlength="64" />
+              <button type="button" class="secondary" id="new-seed">New</button>
+            </div>
+          </div>
+        </section>
+
+        <div class="grid">
+          <section class="panel">
+            <h2>Enemies</h2>
+            <label class="toggle"><input type="checkbox" name="randomizeEnemies" /><span></span><b>Regular enemies</b></label>
+            <label class="toggle"><input type="checkbox" name="randomizeBosses" /><span></span><b>Bosses</b></label>
+            <div class="field">
+              <label for="enemyScaling">Scaling</label>
+              <select id="enemyScaling" name="enemyScaling">
+                <option value="vanilla">Original stats</option>
+                <option value="area">By area</option>
+                <option value="progressive">Progressive</option>
+              </select>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Items</h2>
+            <label class="toggle"><input type="checkbox" name="randomizeItems" /><span></span><b>World items</b></label>
+            <label class="toggle"><input type="checkbox" name="randomizeKeyItems" /><span></span><b>Key items</b></label>
+            <label class="toggle"><input type="checkbox" name="randomizeGifts" /><span></span><b>NPC gifts</b></label>
+            <label class="toggle"><input type="checkbox" name="randomizeEnemyDrops" /><span></span><b>Enemy drops</b></label>
+            <label class="toggle"><input type="checkbox" name="randomizeShops" /><span></span><b>Shops</b></label>
+            <label class="toggle"><input type="checkbox" name="progressionLogic" /><span></span><b>Protect progression</b></label>
+            <label class="toggle"><input type="checkbox" name="guaranteeEarlyWeapon" /><span></span><b>Guarantee an early weapon</b></label>
+            <label class="toggle"><input type="checkbox" name="balancedEarlyLoot" /><span></span><b>Balanced early loot</b></label>
+          </section>
+
+          <section class="panel">
+            <h2>Starting character</h2>
+            <label class="toggle"><input type="checkbox" name="randomizeStartingClass" /><span></span><b>Randomize classes</b></label>
+            <label class="toggle"><input type="checkbox" name="randomizeStartingEquipment" /><span></span><b>Randomize class equipment</b></label>
+            <p class="panel-note">Unique weapons remain Asylum pickups; randomized armor starts equipped.</p>
+          </section>
+
+          <section class="panel">
+            <h2>Package</h2>
+            <label class="toggle"><input type="checkbox" name="includeDlc" /><span></span><b>Include DLC</b></label>
+            <label class="toggle"><input type="checkbox" name="generateSpoilerLog" /><span></span><b>Generate spoiler log</b></label>
+            <label class="toggle"><input type="checkbox" name="useExtractedData" /><span></span><b>Use extracted game data</b></label>
+            <label class="toggle"><input type="checkbox" name="dryRun" /><span></span><b>Safe simulation</b></label>
+            <label class="toggle"><input type="checkbox" name="offlineAcknowledged" /><span></span><b>I will play offline</b></label>
+            <div class="field">
+              <label for="outputDirectory">Output directory</label>
+              <input id="outputDirectory" name="outputDirectory" value="output" />
+            </div>
+          </section>
+        </div>
+
+        <div id="message" role="status"></div>
+        <button class="primary" type="submit">GENERATE RANDOMIZER</button>
+        <div class="actions">
+          <button class="secondary" id="install-package" type="button" disabled>ACTIVATE IN GAME</button>
+          <button class="secondary" id="restore-package" type="button" disabled>RESTORE VANILLA</button>
+        </div>
+        <p class="prototype">Current build: real world items, regular enemies, bosses, starting classes, NPC gifts, drops, and shops.</p>
+      </form>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
