@@ -5,7 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using SoulsFormats;
 
-const int SchemaVersion = 6;
+const int SchemaVersion = 7;
 Console.OutputEncoding = new UTF8Encoding(false);
 Console.InputEncoding = new UTF8Encoding(false);
 
@@ -216,6 +216,9 @@ static GameCatalog ScanGame(string gameDirectory)
         try
         {
             var map = MSB1.Read(mapPath);
+            var eventModelLockedEntities = File.Exists(eventPath)
+                ? ReadEventModelLockedEntities(eventPath)
+                : new HashSet<int>();
             maps.Add(new MapRecord(
                 mapId,
                 mapNames.GetValueOrDefault(mapId, mapId),
@@ -223,9 +226,13 @@ static GameCatalog ScanGame(string gameDirectory)
                 map.Parts.DummyEnemies.Count));
 
             slots.AddRange(map.Parts.Enemies.Select(
-                enemy => ToSlot(mapId, enemy, false, enemyMetadata)));
+                enemy => ToSlot(
+                    mapId, enemy, false, enemyMetadata,
+                    eventModelLockedEntities)));
             slots.AddRange(map.Parts.DummyEnemies.Select(
-                enemy => ToSlot(mapId, enemy, true, enemyMetadata)));
+                enemy => ToSlot(
+                    mapId, enemy, true, enemyMetadata,
+                    eventModelLockedEntities)));
         }
         catch (Exception error)
         {
@@ -782,7 +789,10 @@ static PatchReport PatchEnemies(
             !slot.SafeCandidate ||
             slot.TeamType != 0 ||
             slot.ModelName == "c0000" ||
-            slot.NpcParamId != placement.SourceNpcParamId)
+            slot.NpcParamId != placement.SourceNpcParamId ||
+            (slot.EventModelLocked &&
+             (slot.ModelName != placement.TargetModelName ||
+              slot.ThinkParamId != placement.TargetThinkParamId)))
         {
             throw new InvalidDataException(
                 $"Protected or obsolete regular-enemy placement: {placement.SlotId}. " +
@@ -1060,6 +1070,31 @@ static List<PatchedFile> PatchBossNames(
 
         var emevd = EMEVD.Read(sourcePath);
         var changed = 0;
+        var patchAsylumIntro =
+            mapGroup.Key == "m18_01_00_00" &&
+            mapGroup.Any(placement =>
+                placement.SlotId.EndsWith(":c2232_0000", StringComparison.Ordinal) &&
+                placement.TargetModelName != "c2232");
+        if (patchAsylumIntro)
+        {
+            var intro = emevd.Events.Single(entry => entry.ID == 11810310);
+            var removed = intro.Instructions.RemoveAll(instruction =>
+                instruction.ArgData.Length >= 4 &&
+                BitConverter.ToInt32(instruction.ArgData, 0) == 1810800 &&
+                ((instruction.Bank == 2004 &&
+                  instruction.ID is 8 or 9 or 21) ||
+                 (instruction.Bank == 2003 && instruction.ID == 18)));
+            changed += removed;
+
+            var highWarp = intro.Instructions.Single(instruction =>
+                instruction.Bank == 2004 &&
+                instruction.ID == 41 &&
+                instruction.ArgData.Length >= 12 &&
+                BitConverter.ToInt32(instruction.ArgData, 0) == 1810800 &&
+                BitConverter.ToInt32(instruction.ArgData, 8) == 1812305);
+            BitConverter.GetBytes(1812300).CopyTo(highWarp.ArgData, 8);
+            changed++;
+        }
         foreach (var instruction in emevd.Events
                      .SelectMany(entry => entry.Instructions)
                      .Where(value =>
@@ -1087,6 +1122,26 @@ static List<PatchedFile> PatchBossNames(
         Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
         emevd.Write(outputPath);
         var verification = EMEVD.Read(outputPath);
+        if (patchAsylumIntro)
+        {
+            var intro = verification.Events.Single(entry => entry.ID == 11810310);
+            if (intro.Instructions.Any(instruction =>
+                    instruction.ArgData.Length >= 4 &&
+                    BitConverter.ToInt32(instruction.ArgData, 0) == 1810800 &&
+                    ((instruction.Bank == 2004 &&
+                      instruction.ID is 8 or 9 or 21) ||
+                     (instruction.Bank == 2003 && instruction.ID == 18))) ||
+                !intro.Instructions.Any(instruction =>
+                    instruction.Bank == 2004 &&
+                    instruction.ID == 41 &&
+                    instruction.ArgData.Length >= 12 &&
+                    BitConverter.ToInt32(instruction.ArgData, 0) == 1810800 &&
+                    BitConverter.ToInt32(instruction.ArgData, 8) == 1812300))
+            {
+                throw new InvalidDataException(
+                    "Randomized Asylum boss intro did not persist safely.");
+            }
+        }
         foreach (var instruction in verification.Events
                      .SelectMany(entry => entry.Instructions)
                      .Where(value =>
@@ -1886,11 +1941,30 @@ static void AssertSpawnUnchanged(
     }
 }
 
+static HashSet<int> ReadEventModelLockedEntities(string eventPath)
+{
+    var result = new HashSet<int>();
+    var emevd = EMEVD.Read(eventPath);
+    foreach (var instruction in emevd.Events.SelectMany(entry => entry.Instructions))
+    {
+        var modelSpecific =
+            (instruction.Bank == 2003 && instruction.ID == 18) ||
+            (instruction.Bank == 2004 && instruction.ID is 9 or 17 or 41);
+        if (!modelSpecific || instruction.ArgData.Length < 4)
+            continue;
+        var entityId = BitConverter.ToInt32(instruction.ArgData, 0);
+        if (entityId >= 0)
+            result.Add(entityId);
+    }
+    return result;
+}
+
 static EnemySlotRecord ToSlot(
     string mapId,
     MSB1.Part.EnemyBase enemy,
     bool dummy,
-    EnemyMetadataLookup metadata)
+    EnemyMetadataLookup metadata,
+    HashSet<int> eventModelLockedEntities)
 {
     metadata.Npcs.TryGetValue(enemy.NPCParamID, out var npc);
     metadata.Thinks.TryGetValue(enemy.ThinkParamID, out var think);
@@ -1900,6 +1974,8 @@ static EnemySlotRecord ToSlot(
     var riskFlags = new List<string>();
     if (dummy) riskFlags.Add("dummy");
     if (enemy.EntityID >= 0) riskFlags.Add("entity-id");
+    var eventModelLocked = eventModelLockedEntities.Contains(enemy.EntityID);
+    if (eventModelLocked) riskFlags.Add("model-specific-event");
     if (enemy.TalkID > 0) riskFlags.Add("talk");
     if (enemy.CharaInitID >= 0) riskFlags.Add("character-init");
     if (movePoints.Length > 0) riskFlags.Add("patrol");
@@ -1935,6 +2011,7 @@ static EnemySlotRecord ToSlot(
         movePoints,
         dummy,
         enemy.EntityID >= 0,
+        eventModelLocked,
         riskFlags.ToArray(),
         safeCandidate,
         npc?.TeamType ?? -1,
@@ -2029,6 +2106,7 @@ record EnemySlotRecord(
     string[] MovePoints,
     bool Dummy,
     bool HasEntityId,
+    bool EventModelLocked,
     string[] RiskFlags,
     bool SafeCandidate,
     int TeamType,

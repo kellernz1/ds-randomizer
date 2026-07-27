@@ -11,11 +11,11 @@ package before touching the game.
 
 - 1,600+ hostile regular-enemy slots across all 18 gameplay maps
 - Movement-, size-, and AI-compatible enemy replacements
-- Event-controlled enemies retain their original model and AI while safe
-  same-model variants may still be redistributed
+- Regular enemies with ordinary enable/disable event references remain eligible
+  for compatible cross-model replacements
 - Friendly NPCs, merchants, quest characters, and their spawns are protected
 - Primary boss encounters shuffled through portable, size-compatible pools
-- Undead Asylum bosses restricted to the compatible demon family
+- The first Undead Asylum boss uses a safe floor-spawn event path when replaced
 - Boss health bars updated to the randomized boss name
 - 500+ world pickup and chest item lots
 - Starting-class stats and equipment
@@ -102,7 +102,8 @@ inherits HP, stamina, defenses, resistances, and souls from the original enemy
 in that slot. It also inherits the destination area's native level multiplier,
 which scales attack power and stamina. Model-specific effects and animations
 remain attached to the replacement so it can animate, navigate, and enter
-combat normally.
+combat normally. The first Asylum boss bypasses the original model-only rooftop
+drop animation and is placed at the arena floor before normal AI activation.
 Boss mode remains experimental because some encounters contain bespoke
 animations and arena scripting.
 

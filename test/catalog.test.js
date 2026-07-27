@@ -58,6 +58,13 @@ test("real catalog produces deterministic enemies with visibly different models"
       (placement) => placement.targetModelName !== placement.modelName,
     ),
   );
+  assert.ok(
+    first.placements.enemies.filter(
+      (placement) =>
+        placement.map === "m18_01_00_00" &&
+        placement.targetModelName !== placement.modelName,
+    ).length > 15,
+  );
   const scaled = first.placements.enemies
     .map((placement) => placement.scaledNpcParamId)
     .filter((id) => id !== null);
@@ -66,7 +73,7 @@ test("real catalog produces deterministic enemies with visibly different models"
     first.placements.enemies.every((placement) =>
       [
         "movement-size-and-ai-compatible",
-        "event-safe-same-model-and-source-ai",
+        "event-model-locked-source-ai",
         "same-model-compatible-fallback",
         "vanilla-preserved-no-compatible-replacement",
       ].includes(placement.compatibility),
@@ -78,6 +85,12 @@ test("real catalog produces deterministic enemies with visibly different models"
     gameCatalog.enemyArchetypes.map((entry) => [
       `${entry.modelName}:${entry.npcParamId}:${entry.thinkParamId}`,
       entry,
+    ]),
+  );
+  const hitYOffsetByArchetype = new Map(
+    gameCatalog.enemySlots.map((slot) => [
+      `${slot.modelName}:${slot.npcParamId}:${slot.thinkParamId}`,
+      slot.hitYOffset,
     ]),
   );
   for (const placement of first.placements.enemies.filter(
@@ -100,26 +113,30 @@ test("real catalog produces deterministic enemies with visibly different models"
     assert.equal(target.moveType, slot.moveType);
     assert.equal(target.disablePathMove, slot.disablePathMove);
     assert.ok(
-      target.hitRadius <= Math.max(slot.hitRadius * 1.75, slot.hitRadius + 0.25),
+      target.hitRadius <= Math.max(slot.hitRadius * 1.35, slot.hitRadius + 0.15),
     );
     assert.ok(
-      target.hitHeight <= Math.max(slot.hitHeight * 1.75, slot.hitHeight + 0.75),
+      target.hitHeight <= Math.max(slot.hitHeight * 1.35, slot.hitHeight + 0.4),
     );
-    if (placement.entityId >= 0) {
+    assert.ok(
+      Math.abs(
+        hitYOffsetByArchetype.get(
+          `${target.modelName}:${target.npcParamId}:${target.thinkParamId}`,
+        ) - slot.hitYOffset,
+      ) <= Math.max(0.35, slot.hitHeight * 0.35),
+    );
+    assert.ok(target.battleStartDistance > 0);
+    assert.ok(target.eyeDistance > 0 || target.earDistance > 0);
+    if (slot.eventModelLocked) {
       assert.equal(placement.targetModelName, placement.modelName);
       assert.equal(placement.targetThinkParamId, placement.sourceThinkParamId);
-      assert.ok(slot.battleStartDistance > 0);
-      assert.ok(slot.eyeDistance > 0 || slot.earDistance > 0);
-    } else {
-      assert.ok(target.battleStartDistance > 0);
-      assert.ok(target.eyeDistance > 0 || target.earDistance > 0);
     }
   }
 });
 
 test("friendly NPC and human-character slots are never randomized", async () => {
   const gameCatalog = await catalog();
-  assert.equal(gameCatalog.schemaVersion, 6);
+  assert.equal(gameCatalog.schemaVersion, 7);
   const protectedSlots = gameCatalog.enemySlots.filter(
     (slot) => slot.teamType >= 2 || slot.modelName === "c0000",
   );
@@ -170,8 +187,14 @@ test("real catalog produces real boss and world-item placements", async () => {
     (entry) => entry.slot === "m18_01_00_00:c2232_0000",
   );
   assert.ok(asylum);
-  assert.ok(["c2230", "c2231"].includes(asylum.targetModelName));
-  assert.equal(asylum.compatibility, "asylum-demon-family");
+  assert.notEqual(asylum.targetModelName, "c2232");
+  assert.equal(asylum.compatibility, "asylum-floor-spawn");
+  const stray = result.placements.bosses.find(
+    (entry) => entry.slot === "m18_01_00_00:c2230_0000",
+  );
+  assert.ok(stray);
+  assert.equal(stray.targetModelName, "c2230");
+  assert.equal(stray.changed, false);
   assert.ok(result.placements.items.every((entry) => !entry.preserved));
   assert.ok(
     result.placements.items.every(

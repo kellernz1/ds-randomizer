@@ -61,6 +61,12 @@ function randomizeExtractedEnemies(config, catalog) {
       !bossModels.has(archetype.modelName),
   );
   const archetypesByModel = new Map();
+  const hitYOffsetByArchetype = new Map(
+    catalog.enemySlots.map((slot) => [
+      `${slot.modelName}:${slot.npcParamId}:${slot.thinkParamId}`,
+      slot.hitYOffset ?? 0,
+    ]),
+  );
   for (const archetype of pool) {
     if (!archetypesByModel.has(archetype.modelName)) {
       archetypesByModel.set(archetype.modelName, []);
@@ -76,9 +82,14 @@ function randomizeExtractedEnemies(config, catalog) {
       candidate.disablePathMove === slot.disablePathMove &&
       candidate.hitRadius > 0 &&
       candidate.hitHeight > 0 &&
-      candidate.hitRadius <= Math.max(slot.hitRadius * 1.75, slot.hitRadius + 0.25) &&
-      candidate.hitHeight <= Math.max(slot.hitHeight * 1.75, slot.hitHeight + 0.75);
-    const eventControlled = slot.entityId >= 0;
+      candidate.hitRadius <= Math.max(slot.hitRadius * 1.35, slot.hitRadius + 0.15) &&
+      candidate.hitHeight <= Math.max(slot.hitHeight * 1.35, slot.hitHeight + 0.4) &&
+      Math.abs(
+        (hitYOffsetByArchetype.get(
+          `${candidate.modelName}:${candidate.npcParamId}:${candidate.thinkParamId}`,
+        ) ?? 0) - (slot.hitYOffset ?? 0),
+      ) <= Math.max(0.35, slot.hitHeight * 0.35);
+    const eventControlled = slot.eventModelLocked === true;
     const differentModelCandidates = pool.filter(
       (candidate) =>
         !eventControlled &&
@@ -92,7 +103,7 @@ function randomizeExtractedEnemies(config, catalog) {
         (eventControlled
           ? candidate.npcParamId !== slot.npcParamId
           : candidate.npcParamId !== slot.npcParamId ||
-          candidate.thinkParamId !== slot.thinkParamId),
+            candidate.thinkParamId !== slot.thinkParamId),
     );
     const candidates =
       differentModelCandidates.length > 0
@@ -127,7 +138,7 @@ function randomizeExtractedEnemies(config, catalog) {
           ? "movement-size-and-ai-compatible"
           : replacement
             ? eventControlled
-              ? "event-safe-same-model-and-source-ai"
+              ? "event-model-locked-source-ai"
               : "same-model-compatible-fallback"
             : "vanilla-preserved-no-compatible-replacement",
       scaling: config.enemyScaling,
@@ -170,13 +181,13 @@ function randomizeExtractedBosses(config, catalog) {
   ];
   return sources.map((slot, index) => {
     const size = bossSize.get(slot.modelName);
-    const isAsylumDemon =
-      slot.mapId === "m18_01_00_00" &&
-      ["c2230", "c2232"].includes(slot.modelName);
+    const isFirstAsylumBoss =
+      slot.mapId === "m18_01_00_00" && slot.modelName === "c2232";
+    const isStrayDemon =
+      slot.mapId === "m18_01_00_00" && slot.modelName === "c2230";
     const candidates = archetypes.filter((candidate) =>
-      isAsylumDemon
-        ? candidate.modelName !== slot.modelName &&
-          ["c2230", "c2231", "c2232"].includes(candidate.modelName)
+      isStrayDemon
+        ? false
         : candidate.modelName !== slot.modelName &&
           bossSize.get(candidate.modelName) === size,
     );
@@ -202,8 +213,8 @@ function randomizeExtractedBosses(config, catalog) {
       changed,
       compatibility: !changed
         ? "vanilla-preserved-no-compatible-boss"
-        : isAsylumDemon
-        ? "asylum-demon-family"
+        : isFirstAsylumBoss
+        ? "asylum-floor-spawn"
         : "portable-same-size-boss",
       scaling: config.enemyScaling,
     };
@@ -620,7 +631,7 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
   if (errors.length > 0) {
     throw new Error(errors.join("\n"));
   }
-  if (gameCatalog && gameCatalog.schemaVersion !== 6) {
+  if (gameCatalog && gameCatalog.schemaVersion !== 7) {
     throw new Error(
       `Catalog schema ${gameCatalog.schemaVersion} is obsolete. ` +
         "Verify the clean game and import its data again.",
@@ -663,9 +674,9 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
       finalBossReachable: config.randomizeKeyItems ? config.progressionLogic : true,
       notes: extractedData
         ? [
-            "Event-controlled enemies preserve their source model and AI; independent slots use compatible cross-model replacements.",
+            "Ordinary event-linked enemies use tighter compatible cross-model replacements; model-specific boss events receive dedicated handling.",
             "Area scaling preserves the destination slot's native level multiplier.",
-            "Bosses use portable size-compatible pools; Undead Asylum encounters stay within the demon family.",
+            "Bosses use portable size-compatible pools; the first Undead Asylum boss uses a safe floor-spawn event path.",
             config.progressionLogic
               ? "World items are randomized while progression lots remain in their original locations."
               : "World items and progression lots are randomized independently.",
