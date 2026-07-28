@@ -12,6 +12,7 @@ package before touching the game.
 - 1,600+ hostile regular-enemy slots across all 18 gameplay maps
 - Movement-, size-, and AI-compatible enemy replacements
 - Autonomous regular-enemy target archetypes that do not depend on spawn events
+- Cross-map Lua battle scripts merged into each destination map
 - Regular enemies with ordinary enable/disable event references remain eligible
   for compatible cross-model replacements
 - Friendly NPCs, merchants, quest characters, and their spawns are protected
@@ -19,6 +20,7 @@ package before touching the game.
 - The first Undead Asylum boss uses a safe floor-spawn event path when replaced
 - Boss health bars updated to the randomized boss name
 - Randomized boss AI explicitly activated when the encounter health bar appears
+- Known event-bound and non-portable enemy AI excluded from replacement pools
 - 500+ world pickup and chest item lots
 - Starting-class stats and equipment
 - Unique, stat-compatible starting weapons collected in the Undead Asylum

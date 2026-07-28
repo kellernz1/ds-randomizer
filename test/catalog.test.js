@@ -143,6 +143,7 @@ test("real catalog produces deterministic enemies with visibly different models"
     );
     assert.ok(target.battleStartDistance > 0);
     assert.ok(target.eyeDistance > 0 || target.earDistance > 0);
+    assert.ok(gameCatalog.aiGoalIds.includes(target.battleGoalId));
     if (slot.eventModelLocked) {
       assert.equal(placement.targetModelName, placement.modelName);
       assert.equal(placement.targetThinkParamId, placement.sourceThinkParamId);
@@ -163,7 +164,7 @@ test("real catalog produces deterministic enemies with visibly different models"
 
 test("friendly NPC and human-character slots are never randomized", async () => {
   const gameCatalog = await catalog();
-  assert.equal(gameCatalog.schemaVersion, 9);
+  assert.equal(gameCatalog.schemaVersion, 10);
   const protectedSlots = gameCatalog.enemySlots.filter(
     (slot) => slot.teamType >= 2 || slot.modelName === "c0000",
   );
@@ -205,7 +206,7 @@ test("real catalog produces real boss and world-item placements", async () => {
   assert.ok(result.placements.bosses.filter((entry) => entry.changed).length > 20);
   assert.ok(
     result.placements.bosses.filter((entry) => entry.changed).every(
-      (entry) => !["c5200", "c5271", "c5290", "c5351", "c5390"].includes(
+      (entry) => !["c2232", "c5200", "c5271", "c5290", "c5351", "c5390"].includes(
         entry.targetModelName,
       ) && !["c3471", "c4510"].includes(entry.targetModelName),
     ),

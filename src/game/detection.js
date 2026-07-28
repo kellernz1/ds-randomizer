@@ -94,11 +94,9 @@ export async function detectGame(gameDirectory) {
 }
 
 export async function verifyCatalogSources(gameDirectory, catalog) {
-  const mapSources = (catalog?.sourceFiles || []).filter((source) =>
-    source.path.startsWith("map/MapStudio/"),
-  );
+  const requiredSources = catalog?.sourceFiles || [];
   const mismatches = [];
-  for (const source of mapSources) {
+  for (const source of requiredSources) {
     const filePath = path.join(
       gameDirectory,
       ...source.path.split("/"),
@@ -109,7 +107,7 @@ export async function verifyCatalogSources(gameDirectory, catalog) {
   }
   return {
     matches: mismatches.length === 0,
-    checked: mapSources.length,
+    checked: requiredSources.length,
     mismatches,
   };
 }

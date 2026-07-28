@@ -45,6 +45,29 @@ function randomizeExtractedEnemies(config, catalog) {
   const bossModels = new Set(
     (catalog.bossSlots || []).map((slot) => slot.modelName),
   );
+  const aiGoalIds = new Set(catalog.aiGoalIds || []);
+  const unsupportedReplacementModels = new Set([
+    "c2232", // AI activation is tied to the vanilla Asylum encounter.
+    "c2300", // Titanite Demon AI does not activate reliably cross-map.
+    "c2670", // Ghost can become invisible outside its native setup.
+    "c2680", // Lightning Ghost AI does not activate reliably.
+    "c2780", // Mimic activation is event-script controlled.
+    "c2940", // Skeleton Baby frequently fails to render.
+    "c3230", // Moonlight Butterfly requires bespoke flight/arena logic.
+    "c3300", // Crystal Lizard is passive and not a combat replacement.
+    "c3330", // Pisaca AI activation is event controlled.
+    "c3390", // Rockworm navigation is tied to its burrow.
+    "c3420", // Undead Dragon AI activation is event controlled.
+    "c3421", // Bounding Demon has arena-specific navigation.
+    "c3430", // Hellkite Drake is bridge-script controlled.
+    "c3480", // Chaos Bug behavior is not portable.
+    "c3490", // Good Vagrant is non-hostile.
+    "c3530", // Hydra requires bespoke arena positioning.
+    "c5201", "c5202", // Centipede limbs require their parent model.
+    "c5240", // Wall Hugger requires native geometry.
+    "c5250", // Ceaseless Discharge requires bespoke arena logic.
+    "c5320", // Gwyndolin AI activation is encounter controlled.
+  ]);
   const portableArchetypes = new Set(
     catalog.enemySlots
       .filter(
@@ -71,9 +94,11 @@ function randomizeExtractedEnemies(config, catalog) {
       archetype.safeSlotCount > 0 &&
       archetype.battleStartDistance > 0 &&
       (archetype.eyeDistance > 0 || archetype.earDistance > 0) &&
+      aiGoalIds.has(archetype.battleGoalId) &&
       portableArchetypes.has(
         `${archetype.modelName}:${archetype.npcParamId}:${archetype.thinkParamId}`,
       ) &&
+      !unsupportedReplacementModels.has(archetype.modelName) &&
       !bossModels.has(archetype.modelName),
   );
   const archetypesByModel = new Map();
@@ -144,6 +169,10 @@ function randomizeExtractedEnemies(config, catalog) {
         eventControlled
           ? slot.thinkParamId
           : replacement?.thinkParamId ?? slot.thinkParamId,
+      targetBattleGoalId:
+        eventControlled
+          ? slot.battleGoalId
+          : replacement?.battleGoalId ?? slot.battleGoalId,
       scaledNpcParamId:
         config.enemyScaling === "vanilla" || !replacement
           ? null
@@ -173,7 +202,7 @@ const bossSize = new Map(
 );
 
 const portableBossModels = new Set([
-  "c2230", "c2231", "c2232", "c2240", "c2250", "c2320", "c2360",
+  "c2230", "c2231", "c2240", "c2250", "c2320", "c2360",
   "c2730", "c4100", "c4500", "c5210", "c5220",
   "c5260", "c5270", "c5280", "c5350", "c5370",
 ]);
@@ -181,6 +210,7 @@ const portableBossModels = new Set([
 function randomizeExtractedBosses(config, catalog) {
   if (!config.randomizeBosses || !catalog?.bossSlots?.length) return [];
   const rng = createStream(config.seed, "bosses", config.version);
+  const aiGoalIds = new Set(catalog.aiGoalIds || []);
   const areaNames = new Map(
     (catalog.maps || []).map((map) => [map.id, map.name]),
   );
@@ -193,7 +223,11 @@ function randomizeExtractedBosses(config, catalog) {
   );
   const archetypes = [
     ...new Map(
-      sources.filter((slot) => portableBossModels.has(slot.modelName)).map((slot) => [
+      sources.filter(
+        (slot) =>
+          portableBossModels.has(slot.modelName) &&
+          aiGoalIds.has(slot.battleGoalId),
+      ).map((slot) => [
         `${slot.modelName}:${slot.npcParamId}:${slot.thinkParamId}`,
         slot,
       ]),
@@ -238,6 +272,7 @@ function randomizeExtractedBosses(config, catalog) {
       sourceThinkParamId: slot.thinkParamId,
       targetNpcParamId: replacement.npcParamId,
       targetThinkParamId: replacement.thinkParamId,
+      targetBattleGoalId: replacement.battleGoalId,
       scaledNpcParamId:
         config.enemyScaling === "vanilla" || !changed
           ? null
@@ -674,7 +709,7 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
   if (errors.length > 0) {
     throw new Error(errors.join("\n"));
   }
-  if (gameCatalog && gameCatalog.schemaVersion !== 9) {
+  if (gameCatalog && gameCatalog.schemaVersion !== 10) {
     throw new Error(
       `Catalog schema ${gameCatalog.schemaVersion} is obsolete. ` +
         "Verify the clean game and import its data again.",

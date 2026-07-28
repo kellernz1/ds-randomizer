@@ -5,7 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using SoulsFormats;
 
-const int SchemaVersion = 9;
+const int SchemaVersion = 10;
 Console.OutputEncoding = new UTF8Encoding(false);
 Console.InputEncoding = new UTF8Encoding(false);
 
@@ -55,6 +55,7 @@ try
             Path.GetFullPath(RequireValue(options, "output")),
             jsonOptions);
         Console.WriteLine($"Changed maps: {report.PatchedMaps.Count}");
+        Console.WriteLine($"Changed AI bundles: {report.LuaBundles.Count}");
         Console.WriteLine($"Changed slots: {report.ChangedSlots}");
         Console.WriteLine($"Output: {report.OutputDirectory}");
     }
@@ -248,6 +249,28 @@ static GameCatalog ScanGame(string gameDirectory)
         }
     }
 
+    var aiBundlePaths = maps
+        .Select(map => NormalizeAiMapId(map.Id))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .Select(mapId => Path.Combine(
+            gameDirectory, "script", $"{mapId}.luabnd.dcx"))
+        .Append(Path.Combine(
+            gameDirectory, "script", "aiCommon.luabnd.dcx"))
+        .ToList();
+    foreach (var aiBundlePath in aiBundlePaths)
+    {
+        if (!File.Exists(aiBundlePath))
+            throw new FileNotFoundException(
+                "Required AI bundle not found.", aiBundlePath);
+        sourceFiles.Add(DescribeSource(aiBundlePath, gameDirectory));
+    }
+    var aiGoalIds = aiBundlePaths
+        .SelectMany(ReadLuaGoals)
+        .Select(goal => goal.ID)
+        .Distinct()
+        .Order()
+        .ToList();
+
     var archetypes = slots
         .Where(slot => slot.NpcParamId >= 0 && slot.ThinkParamId >= 0)
         .GroupBy(slot => new
@@ -265,6 +288,7 @@ static GameCatalog ScanGame(string gameDirectory)
             slot.EyeDistance,
             slot.EarDistance,
             slot.DisablePathMove,
+            slot.BattleGoalId,
         })
         .Select(group => new EnemyArchetypeRecord(
             $"{group.Key.ModelName}:{group.Key.NpcParamId}:{group.Key.ThinkParamId}:{group.Key.CharaInitId}",
@@ -281,6 +305,7 @@ static GameCatalog ScanGame(string gameDirectory)
             group.Key.EyeDistance,
             group.Key.EarDistance,
             group.Key.DisablePathMove,
+            group.Key.BattleGoalId,
             group.Count(),
             group.Select(slot => slot.MapId).Distinct().Order().ToArray(),
             group.Count(slot => slot.SafeCandidate)))
@@ -358,6 +383,7 @@ static GameCatalog ScanGame(string gameDirectory)
         shopEntries,
         startingEquipmentPools,
         bossNames,
+        aiGoalIds,
         errors,
         ignoredFiles);
 }
@@ -647,7 +673,8 @@ static EnemyMetadataLookup ReadEnemyMetadata(
             GetCellFloat(row, "BattleStartDist"),
             GetCellFloat(row, "eye_dist"),
             GetCellFloat(row, "ear_dist"),
-            GetCellInt(row, "disablePathMove") != 0));
+            GetCellInt(row, "disablePathMove") != 0,
+            GetCellInt(row, "battleGoalID")));
     return new EnemyMetadataLookup(npcRows, thinkRows);
 }
 
@@ -751,6 +778,18 @@ static bool IsGameplayMap(string mapId)
     return mapId[2] is >= '0' and <= '8';
 }
 
+static string NormalizeAiMapId(string mapId) =>
+    mapId == "m12_00_00_01" ? "m12_00_00_00" : mapId;
+
+static List<LUAINFO.Goal> ReadLuaGoals(string bundlePath)
+{
+    var binder = BND3.Read(bundlePath);
+    var infoFile = binder.Files.SingleOrDefault(file => file.ID == 1_000_001)
+        ?? throw new InvalidDataException(
+            $"LUAINFO entry is missing from {Path.GetFileName(bundlePath)}.");
+    return LUAINFO.Read(infoFile.Bytes).Goals;
+}
+
 static bool IsBossModel(string modelName) => modelName is
     "c2230" or "c2231" or "c2232" or "c2240" or "c2250" or "c2320" or
     "c2360" or "c2730" or "c3320" or "c3471" or "c4100" or "c4500" or
@@ -838,6 +877,7 @@ static PatchReport PatchEnemies(
                     : "",
                 element.GetProperty("targetNpcParamId").GetInt32(),
                 element.GetProperty("targetThinkParamId").GetInt32(),
+                element.GetProperty("targetBattleGoalId").GetInt32(),
                 element.GetProperty("sourceNpcParamId").GetInt32(),
                 element.TryGetProperty("scaledNpcParamId", out var scaledNpc) &&
                     scaledNpc.ValueKind == JsonValueKind.Number
@@ -1074,6 +1114,9 @@ static PatchReport PatchEnemies(
             HashFile(outputPath)));
     }
 
+    var patchedLuaBundles = PatchLuaAiBundles(
+        gameDirectory, outputDirectory, catalog, allEnemyPlacements);
+
     var patchedEvents = PatchBossNames(
         gameDirectory, outputDirectory, catalog, bossPlacements);
 
@@ -1097,17 +1140,229 @@ static PatchReport PatchEnemies(
         : null;
 
     var report = new PatchReport(
-        1,
+        2,
         DateTimeOffset.UtcNow,
         outputDirectory,
         changedSlots,
         patchedMaps,
+        patchedLuaBundles,
         patchedEvents,
         patchedGameParam);
     File.WriteAllText(
         Path.Combine(outputDirectory, "patch-manifest.json"),
         JsonSerializer.Serialize(report, jsonOptions) + Environment.NewLine);
     return report;
+}
+
+static List<PatchedFile> PatchLuaAiBundles(
+    string gameDirectory,
+    string outputDirectory,
+    GameCatalog catalog,
+    List<PatchPlacement> placements)
+{
+    const int luaGnlId = 1_000_000;
+    const int luaInfoId = 1_000_001;
+    var bundleRecords = catalog.SourceFiles
+        .Where(source =>
+            source.Path.StartsWith("script/m1", StringComparison.OrdinalIgnoreCase) &&
+            source.Path.EndsWith(".luabnd.dcx", StringComparison.OrdinalIgnoreCase))
+        .OrderBy(source => source.Path, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+    var commonRecord = catalog.SourceFiles.SingleOrDefault(source =>
+        source.Path.Equals(
+            "script/aiCommon.luabnd.dcx",
+            StringComparison.OrdinalIgnoreCase))
+        ?? throw new InvalidDataException("aiCommon is missing from the catalog.");
+
+    BND3 ReadBundle(SourceFile source)
+    {
+        var sourcePath = ResolveGamePath(gameDirectory, source.Path);
+        AssertHash(sourcePath, source.Sha256, $"{source.Path} changed after extraction");
+        return BND3.Read(sourcePath);
+    }
+
+    static LUAINFO ReadInfo(BND3 binder, string name)
+    {
+        var file = binder.Files.SingleOrDefault(entry => entry.ID == luaInfoId)
+            ?? throw new InvalidDataException($"LUAINFO is missing from {name}.");
+        return LUAINFO.Read(file.Bytes);
+    }
+
+    static LUAGNL ReadGlobals(BND3 binder, string name)
+    {
+        var file = binder.Files.SingleOrDefault(entry => entry.ID == luaGnlId)
+            ?? throw new InvalidDataException($"LUAGNL is missing from {name}.");
+        return LUAGNL.Read(file.Bytes);
+    }
+
+    var commonGoals = ReadInfo(
+            ReadBundle(commonRecord),
+            commonRecord.Path)
+        .Goals.Select(goal => goal.ID)
+        .ToHashSet();
+    var sourceBundles = bundleRecords
+        .Select(record =>
+        {
+            var binder = ReadBundle(record);
+            return new LuaBundleSource(
+                record,
+                binder,
+                ReadInfo(binder, record.Path),
+                ReadGlobals(binder, record.Path));
+        })
+        .ToList();
+    var results = new List<PatchedFile>();
+    foreach (var mapGroup in placements
+                 .GroupBy(placement => NormalizeAiMapId(placement.MapId))
+                 .OrderBy(group => group.Key, StringComparer.Ordinal))
+    {
+        var targetRelative = $"script/{mapGroup.Key}.luabnd.dcx";
+        var targetSource = bundleRecords.SingleOrDefault(record =>
+            record.Path.Equals(
+                targetRelative,
+                StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidDataException(
+                $"AI bundle missing from catalog: {targetRelative}");
+        var targetPath = ResolveGamePath(gameDirectory, targetRelative);
+        AssertHash(
+            targetPath,
+            targetSource.Sha256,
+            $"{targetRelative} changed after extraction");
+        var targetBinder = BND3.Read(targetPath);
+        var targetInfoFile = targetBinder.Files.Single(file => file.ID == luaInfoId);
+        var targetGnlFile = targetBinder.Files.Single(file => file.ID == luaGnlId);
+        var targetInfo = LUAINFO.Read(targetInfoFile.Bytes);
+        var targetGlobals = LUAGNL.Read(targetGnlFile.Bytes);
+        var existingGoalIds = targetInfo.Goals
+            .Select(goal => goal.ID)
+            .ToHashSet();
+        var requiredGoalIds = mapGroup
+            .Select(placement => placement.TargetBattleGoalId)
+            .Distinct()
+            .Order()
+            .ToList();
+        var missingGoalIds = requiredGoalIds
+            .Where(id =>
+                !existingGoalIds.Contains(id) &&
+                !commonGoals.Contains(id))
+            .ToList();
+        if (missingGoalIds.Count == 0)
+            continue;
+
+        var requiredSources = new List<LuaBundleSource>();
+        foreach (var goalId in missingGoalIds)
+        {
+            var source = sourceBundles.FirstOrDefault(bundle =>
+                bundle.Info.Goals.Any(goal => goal.ID == goalId));
+            if (source == null)
+            {
+                throw new InvalidDataException(
+                    $"No Lua AI goal {goalId} was found for {mapGroup.Key}. " +
+                    "This replacement is not safe.");
+            }
+            if (!requiredSources.Any(value =>
+                    value.Record.Path.Equals(
+                        source.Record.Path,
+                        StringComparison.OrdinalIgnoreCase)))
+            {
+                requiredSources.Add(source);
+            }
+        }
+
+        var existingScriptNames = targetBinder.Files
+            .Where(file => file.ID != luaGnlId && file.ID != luaInfoId)
+            .Select(file => Path.GetFileName(file.Name))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var existingGlobals = targetGlobals.Globals
+            .ToHashSet(StringComparer.Ordinal);
+        var nextFileId = targetBinder.Files
+            .Where(file => file.ID < luaGnlId)
+            .Select(file => file.ID)
+            .DefaultIfEmpty(0)
+            .Max();
+        var metadataIndex = targetBinder.Files.FindIndex(file =>
+            file.ID is luaGnlId or luaInfoId);
+        if (metadataIndex < 0)
+            metadataIndex = targetBinder.Files.Count;
+
+        foreach (var source in requiredSources)
+        {
+            foreach (var file in source.Binder.Files.Where(file =>
+                         file.ID != luaGnlId &&
+                         file.ID != luaInfoId))
+            {
+                var scriptName = Path.GetFileName(file.Name);
+                if (!existingScriptNames.Add(scriptName))
+                    continue;
+                var copy = new BinderFile(
+                    file.Flags,
+                    ++nextFileId,
+                    file.Name,
+                    file.Bytes.ToArray())
+                {
+                    CompressionType = file.CompressionType,
+                };
+                targetBinder.Files.Insert(metadataIndex++, copy);
+            }
+            var newGlobals = source.Globals.Globals
+                .Where(value => existingGlobals.Add(value))
+                .ToList();
+            targetGlobals.Globals.InsertRange(0, newGlobals);
+            foreach (var goal in source.Info.Goals)
+            {
+                if (!existingGoalIds.Add(goal.ID))
+                    continue;
+                targetInfo.Goals.Insert(
+                    0,
+                    new LUAINFO.Goal(
+                        goal.ID,
+                        goal.Name,
+                        goal.BattleInterrupt,
+                        goal.LogicInterrupt,
+                        goal.LogicInterruptName ?? ""));
+            }
+        }
+
+        targetGnlFile.Bytes = targetGlobals.Write();
+        targetInfoFile.Bytes = targetInfo.Write();
+        var outputRelative = $"mod/{targetRelative}";
+        var outputPath = ResolvePackagePath(outputDirectory, outputRelative);
+        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+        targetBinder.Write(outputPath);
+
+        var verification = BND3.Read(outputPath);
+        var verifiedGoals = ReadInfo(verification, outputRelative)
+            .Goals.Select(goal => goal.ID)
+            .ToHashSet();
+        var unavailable = requiredGoalIds
+            .Where(id =>
+                !verifiedGoals.Contains(id) &&
+                !commonGoals.Contains(id))
+            .ToList();
+        if (unavailable.Count > 0)
+        {
+            throw new InvalidDataException(
+                $"Lua AI goals did not persist for {mapGroup.Key}: " +
+                string.Join(", ", unavailable));
+        }
+        var verifiedScripts = verification.Files
+            .Where(file => file.ID != luaGnlId && file.ID != luaInfoId)
+            .Select(file => Path.GetFileName(file.Name))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!existingScriptNames.IsSubsetOf(verifiedScripts))
+            throw new InvalidDataException(
+                $"Lua AI scripts did not persist for {mapGroup.Key}.");
+        AssertHash(
+            targetPath,
+            targetSource.Sha256,
+            $"Source AI bundle changed during patching: {mapGroup.Key}");
+        results.Add(new PatchedFile(
+            targetRelative,
+            outputRelative,
+            targetSource.Sha256,
+            HashFile(outputPath)));
+    }
+    return results;
 }
 
 static List<PatchedFile> PatchBossNames(
@@ -2003,6 +2258,7 @@ static List<PatchedFile> GetPatchFiles(PatchReport report)
 {
     var files = report.PatchedMaps.Select(map => new PatchedFile(
         map.Source, map.Output, map.SourceSha256, map.OutputSha256)).ToList();
+    files.AddRange(report.LuaBundles ?? new List<PatchedFile>());
     files.AddRange(report.Events ?? new List<PatchedFile>());
     if (report.GameParam != null)
         files.Add(report.GameParam);
@@ -2176,7 +2432,8 @@ static EnemySlotRecord ToSlot(
         think?.BattleStartDistance ?? -1,
         think?.EyeDistance ?? -1,
         think?.EarDistance ?? -1,
-        think?.DisablePathMove ?? false);
+        think?.DisablePathMove ?? false,
+        think?.BattleGoalId ?? -1);
 }
 
 static SourceFile DescribeSource(string filePath, string root)
@@ -2238,10 +2495,16 @@ record GameCatalog(
     List<ShopEntryRecord> ShopEntries,
     StartingEquipmentPools StartingEquipmentPools,
     Dictionary<string, string> BossNames,
+    List<int> AiGoalIds,
     List<ScanError> Errors,
     List<string> IgnoredFiles);
 
 record SourceFile(string Path, long Size, DateTime LastWriteTimeUtc, string Sha256);
+record LuaBundleSource(
+    SourceFile Record,
+    BND3 Binder,
+    LUAINFO Info,
+    LUAGNL Globals);
 record MapRecord(string Id, string Name, int Enemies, int DummyEnemies);
 record VectorRecord(float X, float Y, float Z);
 
@@ -2273,7 +2536,8 @@ record EnemySlotRecord(
     float BattleStartDistance,
     float EyeDistance,
     float EarDistance,
-    bool DisablePathMove);
+    bool DisablePathMove,
+    int BattleGoalId);
 
 record EnemyArchetypeRecord(
     string Id,
@@ -2290,6 +2554,7 @@ record EnemyArchetypeRecord(
     float EyeDistance,
     float EarDistance,
     bool DisablePathMove,
+    int BattleGoalId,
     int SlotCount,
     string[] Maps,
     int SafeSlotCount);
@@ -2304,7 +2569,8 @@ record ThinkMetadata(
     float BattleStartDistance,
     float EyeDistance,
     float EarDistance,
-    bool DisablePathMove);
+    bool DisablePathMove,
+    int BattleGoalId);
 record EnemyMetadataLookup(
     Dictionary<int, NpcMetadata> Npcs,
     Dictionary<int, ThinkMetadata> Thinks);
@@ -2408,6 +2674,7 @@ record PatchPlacement(
     string TargetModelName,
     int TargetNpcParamId,
     int TargetThinkParamId,
+    int TargetBattleGoalId,
     int SourceNpcParamId,
     int? ScaledNpcParamId,
     int EntityId)
@@ -2448,6 +2715,7 @@ record PatchReport(
     string OutputDirectory,
     int ChangedSlots,
     List<PatchedMap> PatchedMaps,
+    List<PatchedFile> LuaBundles,
     List<PatchedFile> Events,
     PatchedFile? GameParam);
 record ActivationFile(

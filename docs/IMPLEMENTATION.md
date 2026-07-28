@@ -15,10 +15,10 @@ The scanner never invents missing IDs and the generator never writes directly to
 the source installation. A catalog is a local snapshot of the selected game
 files; source hashes prevent applying it to a different installation state.
 
-## Implemented in 0.5.11
+## Implemented in 0.5.12
 
-- Real catalog schema 9 with 18 maps, event sources, English item and boss
-  names, and 2,192 enemy parts
+- Real catalog schema 10 with 18 maps, event and Lua AI sources, English item
+  and boss names, and 2,192 enemy parts
 - Per-seed `cheat-locations.txt` showing every randomized world item's original
   and randomized area and Item Lot ID, plus the boss assigned to every
   randomized encounter
@@ -28,6 +28,9 @@ files; source hashes prevent applying it to a different installation state.
 - Scaled replacements inherit every combat-scaling `SpEffect` from the
   destination, preventing hidden late-game HP and attack multipliers
 - Randomized boss AI is explicitly enabled when its health bar appears
+- Required cross-map Lua battle scripts, goals, and globals are merged into
+  each destination map's `luabnd`
+- Replacements with known non-portable or event-bound AI are excluded
 - 1,600+ hostile regular-enemy slots, including event-linked visible enemies
 - `NpcParam` team classification that excludes friendly and neutral characters
 - Movement type, dimensions, pathing, and detection-aware replacement pools
