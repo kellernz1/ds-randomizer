@@ -5,7 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using SoulsFormats;
 
-const int SchemaVersion = 10;
+const int SchemaVersion = 11;
 Console.OutputEncoding = new UTF8Encoding(false);
 Console.InputEncoding = new UTF8Encoding(false);
 
@@ -631,9 +631,10 @@ static Dictionary<string, string> ReadEnglishBossNames(
         .Select(modelName => new
         {
             ModelName = modelName,
-            NameId = int.TryParse(modelName.AsSpan(1), out var value)
-                ? value
-                : -1,
+            NameId = GetBossNameId(modelName) ??
+                (int.TryParse(modelName.AsSpan(1), out var value)
+                    ? (short)value
+                    : (short)-1),
         })
         .Where(entry => names.ContainsKey(entry.NameId))
         .ToDictionary(
@@ -799,14 +800,15 @@ static bool IsBossModel(string modelName) => modelName is
 
 static short? GetBossNameId(string modelName) => modelName switch
 {
-    "c2230" => 2230,
-    "c2231" => 2231,
+    "c2230" => 2231,
+    "c2231" => 2230,
     "c2232" => 2232,
     "c2240" => 2240,
     "c2250" => 2250,
     "c2320" => 2320,
     "c2360" => 2360,
     "c2730" => 2730,
+    "c3320" => 3320,
     "c3471" => 3471,
     "c4100" => 4100,
     "c4500" => 4500,
@@ -815,6 +817,7 @@ static short? GetBossNameId(string modelName) => modelName switch
     "c5220" => 5220,
     "c5260" => 5260,
     "c5270" => 5270,
+    "c5271" => 5270,
     "c5280" => 5280,
     "c5350" => 5350,
     "c5370" => 5370,

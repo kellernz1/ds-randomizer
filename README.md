@@ -20,6 +20,8 @@ package before touching the game.
 - Primary boss encounters shuffled through portable, size-compatible pools
 - The first Undead Asylum boss uses a safe floor-spawn event path when replaced
 - Boss health bars updated to the randomized boss name
+- Boss assignments are a strict derangement: no vanilla boss remains in its
+  native encounter, and multi-part encounters share one model/name assignment
 - Randomized boss AI explicitly activated when the encounter health bar appears
 - Known event-bound and non-portable enemy AI excluded from replacement pools
 - 500+ world pickup and chest item lots
@@ -32,6 +34,7 @@ package before touching the game.
 - A `cheat-locations.txt` report with English item and boss names, original and
   randomized item areas, exact Item Lot IDs, and each encounter's assigned boss
 - Portable seed files with version and clean-catalog compatibility checks
+- One explicit custom configuration model with no hidden preset system
 - Hash-checked activation, per-seed backups, atomic replacement, and safe restore
 
 The ten vanilla classes never receive weapons, shields, tools, or armor already

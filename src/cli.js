@@ -3,7 +3,7 @@ import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { generateSeed, normalizeConfig, presets } from "./core/config.js";
+import { defaultConfig, generateSeed, normalizeConfig } from "./core/config.js";
 import { generate } from "./core/generator.js";
 import { writeOutput } from "./core/output.js";
 import { runDataTool, startServer } from "./server.js";
@@ -26,13 +26,9 @@ async function configFromArgs() {
   if (configFile) {
     fileConfig = JSON.parse(await readFile(path.resolve(String(configFile)), "utf8"));
   }
-  const presetName = String(flag("preset", fileConfig.preset || "standard"));
-  const preset = presets[presetName] || presets.standard;
   return normalizeConfig({
-    ...preset,
     ...fileConfig,
     seed: flag("seed", fileConfig.seed || generateSeed()),
-    preset: presetName,
     outputDirectory: flag("output", fileConfig.outputDirectory || "output"),
     gameDirectory: flag("game", fileConfig.gameDirectory || ""),
     offlineAcknowledged: Boolean(
@@ -81,7 +77,7 @@ async function run() {
     if (!Number.isInteger(count) || count <= 0) throw new Error("--count must be positive.");
     let valid = 0;
     for (let index = 0; index < count; index += 1) {
-      const result = generate({ ...presets.standard, seed: String(index + 1) });
+      const result = generate({ ...defaultConfig, seed: String(index + 1) });
       if (result.validation.valid) valid += 1;
     }
     console.log(`Generated seeds: ${count}`);

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { generate } from "../src/core/generator.js";
-import { presets } from "../src/core/config.js";
+import { defaultConfig } from "../src/core/config.js";
 
 async function catalog() {
   return JSON.parse(await readFile("data/dsr-catalog.json", "utf8"));
@@ -42,7 +42,7 @@ function vanillaStartingIds(gameCatalog) {
 
 test("real catalog produces deterministic enemies with visibly different models", async () => {
   const gameCatalog = await catalog();
-  const config = { ...presets.standard, seed: "real-catalog-01" };
+  const config = { ...defaultConfig, seed: "real-catalog-01" };
   const first = generate(config, { gameCatalog });
   const second = generate(config, { gameCatalog });
   assert.equal(first.dataStatus, "extracted");
@@ -164,14 +164,14 @@ test("real catalog produces deterministic enemies with visibly different models"
 
 test("friendly NPC and human-character slots are never randomized", async () => {
   const gameCatalog = await catalog();
-  assert.equal(gameCatalog.schemaVersion, 10);
+  assert.equal(gameCatalog.schemaVersion, 11);
   const protectedSlots = gameCatalog.enemySlots.filter(
     (slot) => slot.teamType >= 2 || slot.modelName === "c0000",
   );
   assert.ok(protectedSlots.length > 150);
   assert.ok(protectedSlots.every((slot) => slot.safeCandidate === false));
   const result = generate(
-    { ...presets.standard, seed: "npc-protection-01" },
+    { ...defaultConfig, seed: "npc-protection-01" },
     { gameCatalog },
   );
   const randomizedIds = new Set(
@@ -185,7 +185,7 @@ test("obsolete catalogs require a fresh import", async () => {
   assert.throws(
     () =>
       generate(
-        { ...presets.standard, seed: "obsolete-catalog" },
+        { ...defaultConfig, seed: "obsolete-catalog" },
         { gameCatalog: { ...gameCatalog, schemaVersion: 5 } },
       ),
     /import its data again/u,
@@ -195,7 +195,7 @@ test("obsolete catalogs require a fresh import", async () => {
 test("real catalog produces real boss and world-item placements", async () => {
   const gameCatalog = await catalog();
   const result = generate(
-    { ...presets.standard, seed: "real-no-prototype" },
+    { ...defaultConfig, seed: "real-no-prototype" },
     { gameCatalog },
   );
   assert.ok(result.placements.bosses.length > 20);
@@ -203,7 +203,12 @@ test("real catalog produces real boss and world-item placements", async () => {
     result.placements.items.length,
     gameCatalog.worldItemLots.filter((lot) => !lot.protectedProgression).length,
   );
-  assert.ok(result.placements.bosses.filter((entry) => entry.changed).length > 20);
+  assert.ok(result.placements.bosses.every((entry) => entry.changed));
+  assert.ok(
+    result.placements.bosses.every(
+      (entry) => entry.targetModelName !== entry.modelName,
+    ),
+  );
   assert.ok(
     result.placements.bosses.filter((entry) => entry.changed).every(
       (entry) => !["c2232", "c5200", "c5271", "c5290", "c5351", "c5390"].includes(
@@ -221,8 +226,26 @@ test("real catalog produces real boss and world-item placements", async () => {
     (entry) => entry.slot === "m18_01_00_00:c2230_0000",
   );
   assert.ok(stray);
-  assert.equal(stray.targetModelName, "c2230");
-  assert.equal(stray.changed, false);
+  assert.notEqual(stray.targetModelName, "c2230");
+  const assignmentsByVanillaModel = new Map();
+  for (const entry of result.placements.bosses) {
+    const previous = assignmentsByVanillaModel.get(entry.modelName);
+    if (previous) {
+      assert.equal(entry.targetModelName, previous.targetModelName);
+      assert.equal(entry.targetThinkParamId, previous.targetThinkParamId);
+    } else {
+      assignmentsByVanillaModel.set(entry.modelName, entry);
+    }
+  }
+  for (const [primary, linked] of [
+    ["c5270", "c5271"],
+    ["c5350", "c5351"],
+  ]) {
+    assert.equal(
+      assignmentsByVanillaModel.get(linked).targetModelName,
+      assignmentsByVanillaModel.get(primary).targetModelName,
+    );
+  }
   assert.ok(result.placements.items.every((entry) => !entry.preserved));
   assert.ok(
     result.placements.items.every(
@@ -234,7 +257,7 @@ test("real catalog produces real boss and world-item placements", async () => {
 test("classes use deterministic stats and general-catalog equipment", async () => {
   const gameCatalog = await catalog();
   const config = {
-    ...presets.standard,
+    ...defaultConfig,
     seed: "starting-classes-01",
     randomizeStartingClass: true,
     randomizeStartingEquipment: true,
@@ -312,7 +335,7 @@ test("every class receives a primary weapon as its first pickup", async () => {
   for (let seed = 1; seed <= 100; seed += 1) {
     const result = generate(
       {
-        ...presets.standard,
+        ...defaultConfig,
         seed: `primary-weapon-${seed}`,
         randomizeStartingClass: true,
         randomizeStartingEquipment: true,
@@ -348,7 +371,7 @@ test("every class receives a primary weapon as its first pickup", async () => {
 test("real gifts, drops, and shops are independent and deterministic", async () => {
   const gameCatalog = await catalog();
   const config = {
-    ...presets.standard,
+    ...defaultConfig,
     seed: "economy-01",
     randomizeGifts: true,
     randomizeEnemyDrops: true,
@@ -369,7 +392,7 @@ test("progression protection fixes Lordvessel and Key to the Seal", async () => 
   const gameCatalog = await catalog();
   const protectedResult = generate(
     {
-      ...presets.standard,
+      ...defaultConfig,
       seed: "gifts-protected",
       randomizeGifts: true,
       progressionLogic: true,
@@ -378,7 +401,7 @@ test("progression protection fixes Lordvessel and Key to the Seal", async () => 
   );
   const chaosResult = generate(
     {
-      ...presets.standard,
+      ...defaultConfig,
       seed: "gifts-protected",
       randomizeGifts: true,
       progressionLogic: false,
@@ -395,7 +418,7 @@ test("progression protection excludes finite and event-bound shop goods", async 
   const gameCatalog = await catalog();
   const protectedResult = generate(
     {
-      ...presets.standard,
+      ...defaultConfig,
       seed: "shops-protected",
       randomizeShops: true,
       progressionLogic: true,
@@ -404,7 +427,7 @@ test("progression protection excludes finite and event-bound shop goods", async 
   );
   const unprotectedResult = generate(
     {
-      ...presets.standard,
+      ...defaultConfig,
       seed: "shops-protected",
       randomizeShops: true,
       progressionLogic: false,

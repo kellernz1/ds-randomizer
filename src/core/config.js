@@ -1,59 +1,10 @@
 import { randomBytes } from "node:crypto";
 
-export const RANDOMIZER_VERSION = "0.5.13";
-
-export const presets = Object.freeze({
-  beginner: {
-    randomizeEnemies: true,
-    randomizeBosses: false,
-    randomizeItems: true,
-    randomizeKeyItems: false,
-    progressionLogic: true,
-    enemyScaling: "area",
-    guaranteeEarlyWeapon: true,
-    balancedEarlyLoot: true,
-    randomizeStartingClass: false,
-    randomizeStartingEquipment: false,
-    randomizeGifts: false,
-    randomizeEnemyDrops: false,
-    randomizeShops: false,
-  },
-  standard: {
-    randomizeEnemies: true,
-    randomizeBosses: true,
-    randomizeItems: true,
-    randomizeKeyItems: false,
-    progressionLogic: true,
-    enemyScaling: "area",
-    guaranteeEarlyWeapon: true,
-    balancedEarlyLoot: true,
-    randomizeStartingClass: false,
-    randomizeStartingEquipment: false,
-    randomizeGifts: false,
-    randomizeEnemyDrops: false,
-    randomizeShops: false,
-  },
-  chaos: {
-    randomizeEnemies: true,
-    randomizeBosses: true,
-    randomizeItems: true,
-    randomizeKeyItems: true,
-    progressionLogic: true,
-    enemyScaling: "vanilla",
-    guaranteeEarlyWeapon: false,
-    balancedEarlyLoot: false,
-    randomizeStartingClass: true,
-    randomizeStartingEquipment: true,
-    randomizeGifts: true,
-    randomizeEnemyDrops: true,
-    randomizeShops: true,
-  },
-});
+export const RANDOMIZER_VERSION = "0.5.14";
 
 export const defaultConfig = Object.freeze({
   version: RANDOMIZER_VERSION,
   seed: "817293615",
-  preset: "standard",
   gameDirectory: "",
   outputDirectory: "output",
   lastPackageDirectory: "",
@@ -102,14 +53,10 @@ export function generateSeed() {
 }
 
 export function normalizeConfig(input = {}) {
-  const selectedPreset =
-    input.preset === "custom" || Object.hasOwn(presets, input.preset)
-      ? input.preset
-      : defaultConfig.preset;
-  const base = input.applyPreset
-    ? { ...defaultConfig, ...(presets[selectedPreset] || {}) }
-    : { ...defaultConfig };
-  const config = { ...base, ...input, preset: selectedPreset };
+  const config = { ...defaultConfig };
+  for (const key of Object.keys(defaultConfig)) {
+    if (Object.hasOwn(input, key)) config[key] = input[key];
+  }
 
   config.seed = String(config.seed || generateSeed()).trim();
   config.version = RANDOMIZER_VERSION;
@@ -124,7 +71,6 @@ export function normalizeConfig(input = {}) {
     config[key] = Boolean(config[key]);
   }
 
-  delete config.applyPreset;
   return config;
 }
 

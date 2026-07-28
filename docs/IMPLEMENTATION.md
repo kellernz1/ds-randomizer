@@ -15,9 +15,9 @@ The scanner never invents missing IDs and the generator never writes directly to
 the source installation. A catalog is a local snapshot of the selected game
 files; source hashes prevent applying it to a different installation state.
 
-## Implemented in 0.5.13
+## Implemented in 0.5.14
 
-- Real catalog schema 10 with 18 maps, event and Lua AI sources, English item
+- Real catalog schema 11 with 18 maps, event and Lua AI sources, English item
   and boss names, and 2,192 enemy parts
 - Per-seed `cheat-locations.txt` showing every randomized world item's original
   and randomized area and Item Lot ID, plus the boss assigned to every
@@ -28,11 +28,14 @@ files; source hashes prevent applying it to a different installation state.
 - Scaled replacements inherit every combat-scaling `SpEffect` from the
   destination, preventing hidden late-game HP and attack multipliers
 - Randomized boss AI is explicitly enabled when its health bar appears
+- Boss models use a strict non-vanilla assignment, while duplicate parts and
+  alternate-map copies of one encounter share the same replacement and name
 - Only required cross-map Lua battle/logic scripts, matching goal records, and
   referenced globals are merged into each destination map's `luabnd`
 - EMEVD instruction edits preserve parameter indices, and the adapted Asylum
   AI activation runs before the intro event terminates
 - Replacements with known non-portable or event-bound AI are excluded
+- Preset definitions and preset CLI/config handling have been removed
 - 1,600+ hostile regular-enemy slots, including event-linked visible enemies
 - `NpcParam` team classification that excludes friendly and neutral characters
 - Movement type, dimensions, pathing, and detection-aware replacement pools

@@ -203,8 +203,12 @@ const bossSize = new Map(
 
 const portableBossModels = new Set([
   "c2230", "c2231", "c2240", "c2250", "c2320", "c2360",
-  "c2730", "c4100", "c4500", "c5210", "c5220",
+  "c2730", "c3320", "c4100", "c4500", "c5210", "c5220",
   "c5260", "c5270", "c5280", "c5350", "c5370",
+]);
+const canonicalBossModel = new Map([
+  ["c5271", "c5270"],
+  ["c5351", "c5350"],
 ]);
 
 function randomizeExtractedBosses(config, catalog) {
@@ -217,7 +221,7 @@ function randomizeExtractedBosses(config, catalog) {
   const bossNames = catalog.bossNames || {};
   const sources = catalog.bossSlots.filter(
     (slot) =>
-      bossSize.has(slot.modelName) &&
+      bossSize.has(canonicalBossModel.get(slot.modelName) || slot.modelName) &&
       slot.npcParamId >= 0 &&
       slot.thinkParamId >= 0,
   );
@@ -233,23 +237,36 @@ function randomizeExtractedBosses(config, catalog) {
       ]),
     ).values(),
   ];
+  const replacementsByModel = new Map();
+  for (const modelName of new Set(sources.map(
+    (slot) => canonicalBossModel.get(slot.modelName) || slot.modelName,
+  ))) {
+    const sourceSize = bossSize.get(modelName);
+    const candidates = archetypes.filter(
+      (candidate) =>
+        candidate.modelName !== modelName &&
+        bossSize.get(candidate.modelName) <= sourceSize,
+    );
+    if (candidates.length === 0) {
+      throw new Error(
+        `No portable non-vanilla boss can replace ${modelName}.`,
+      );
+    }
+    replacementsByModel.set(
+      modelName,
+      candidates[rng.int(candidates.length)],
+    );
+  }
   return sources.map((slot, index) => {
-    const size = bossSize.get(slot.modelName);
+    const sourceModelName =
+      canonicalBossModel.get(slot.modelName) || slot.modelName;
     const isFirstAsylumBoss =
       slot.mapId === "m18_01_00_00" && slot.modelName === "c2232";
-    const isStrayDemon =
-      slot.mapId === "m18_01_00_00" && slot.modelName === "c2230";
-    const candidates = archetypes.filter((candidate) =>
-      isStrayDemon
-        ? false
-        : candidate.modelName !== slot.modelName &&
-          bossSize.get(candidate.modelName) === size,
-    );
-    const replacement =
-      candidates.length > 0 ? candidates[rng.int(candidates.length)] : slot;
-    const changed = replacement.modelName !== slot.modelName;
+    const replacement = replacementsByModel.get(sourceModelName);
+    const changed = true;
     const originalBossName =
-      bossNames[slot.modelName] || `${slot.modelName} [NPC ${slot.npcParamId}]`;
+      bossNames[sourceModelName] ||
+      `${sourceModelName} [NPC ${slot.npcParamId}]`;
     const randomizedBossName =
       bossNames[replacement.modelName] ||
       `${replacement.modelName} [NPC ${replacement.npcParamId}]`;
@@ -278,11 +295,11 @@ function randomizeExtractedBosses(config, catalog) {
           ? null
           : 9_200_000 + index,
       changed,
-      compatibility: !changed
-        ? "vanilla-preserved-no-compatible-boss"
+      compatibility: canonicalBossModel.has(slot.modelName)
+        ? "linked-boss-form"
         : isFirstAsylumBoss
         ? "asylum-floor-spawn"
-        : "portable-same-size-boss",
+        : "portable-same-or-smaller-boss",
       scaling: config.enemyScaling,
     };
   });
@@ -709,7 +726,7 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
   if (errors.length > 0) {
     throw new Error(errors.join("\n"));
   }
-  if (gameCatalog && gameCatalog.schemaVersion !== 10) {
+  if (gameCatalog && gameCatalog.schemaVersion !== 11) {
     throw new Error(
       `Catalog schema ${gameCatalog.schemaVersion} is obsolete. ` +
         "Verify the clean game and import its data again.",

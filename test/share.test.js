@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { generate } from "../src/core/generator.js";
-import { presets, RANDOMIZER_VERSION } from "../src/core/config.js";
+import { defaultConfig, RANDOMIZER_VERSION } from "../src/core/config.js";
 import {
   createSharedSeed,
   readSharedSeed,
@@ -16,7 +16,7 @@ async function catalog() {
 test("shared seed reproduces placements without leaking local paths", async () => {
   const gameCatalog = await catalog();
   const source = {
-    ...presets.standard,
+    ...defaultConfig,
     seed: "share-me-01",
     gameDirectory: "C:\\private\\game",
     outputDirectory: "C:\\private\\output",
@@ -46,7 +46,7 @@ test("shared seed reproduces placements without leaking local paths", async () =
 test("shared seed rejects incompatible versions and catalogs", async () => {
   const gameCatalog = await catalog();
   const shared = createSharedSeed(
-    { ...presets.standard, seed: "share-guard", useExtractedData: true },
+    { ...defaultConfig, seed: "share-guard", useExtractedData: true },
     gameCatalog,
   );
   assert.throws(
