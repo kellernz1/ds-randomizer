@@ -5,7 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using SoulsFormats;
 
-const int SchemaVersion = 7;
+const int SchemaVersion = 8;
 Console.OutputEncoding = new UTF8Encoding(false);
 Console.InputEncoding = new UTF8Encoding(false);
 
@@ -163,10 +163,14 @@ static GameCatalog ScanGame(string gameDirectory)
         gameDirectory, "param", "GameParam", "GameParam.parambnd.dcx");
     var paramdefPath = Path.Combine(
         gameDirectory, "paramdef", "paramdef.paramdefbnd.dcx");
+    var itemMessagePath = Path.Combine(
+        gameDirectory, "msg", "ENGLISH", "item.msgbnd.dcx");
     if (!File.Exists(executablePath))
         throw new FileNotFoundException("DarkSoulsRemastered.exe not found.", executablePath);
     if (!Directory.Exists(mapDirectory))
         throw new DirectoryNotFoundException($"MapStudio not found: {mapDirectory}");
+    if (!File.Exists(itemMessagePath))
+        throw new FileNotFoundException("English item messages not found.", itemMessagePath);
 
     var errors = new List<ScanError>();
     var enemyMetadata = new EnemyMetadataLookup(new(), new());
@@ -193,6 +197,7 @@ static GameCatalog ScanGame(string gameDirectory)
         sourceFiles.Add(DescribeSource(gameParamPath, gameDirectory));
     if (File.Exists(paramdefPath))
         sourceFiles.Add(DescribeSource(paramdefPath, gameDirectory));
+    sourceFiles.Add(DescribeSource(itemMessagePath, gameDirectory));
 
     var maps = new List<MapRecord>();
     var slots = new List<EnemySlotRecord>();
@@ -292,6 +297,7 @@ static GameCatalog ScanGame(string gameDirectory)
     var shopEntries = new List<ShopEntryRecord>();
     var startingEquipmentPools = new StartingEquipmentPools(
         new(), new(), new(), new(), new());
+    var itemNames = ReadEnglishItemNames(itemMessagePath);
     if (File.Exists(gameParamPath))
     {
         try
@@ -310,6 +316,7 @@ static GameCatalog ScanGame(string gameDirectory)
                 var randomizerData = ReadRandomizerParamData(
                     binder,
                     paramdefPath,
+                    itemNames,
                     slots.Where(slot => slot.SafeCandidate)
                         .Select(slot => slot.NpcParamId)
                         .ToHashSet());
@@ -356,6 +363,7 @@ static GameCatalog ScanGame(string gameDirectory)
 static RandomizerParamData ReadRandomizerParamData(
     BND3 gameParam,
     string paramdefPath,
+    ItemNameLookup itemNames,
     HashSet<int> safeNpcParamIds)
 {
     var paramdefs = BND3.Read(paramdefPath).Files
@@ -443,9 +451,16 @@ static RandomizerParamData ReadRandomizerParamData(
                     entry.ItemId is 138 or 139 or 149));
             var area = row.ID / 100_000 % 100;
             var block = row.ID / 10_000 % 10;
+            var displayName = string.Join(" + ", entries.Select(entry =>
+            {
+                var name = itemNames.GetName(entry.Category, entry.ItemId);
+                return entry.Quantity > 1 ? $"{name} x{entry.Quantity}" : name;
+            }));
             return new WorldItemLotRecord(
                 row.ID,
-                $"World item lot {row.ID}",
+                string.IsNullOrWhiteSpace(displayName)
+                    ? $"Unknown item lot {row.ID}"
+                    : displayName,
                 $"m{area:00}_{block:00}_00_00",
                 protectedProgression,
                 entries);
@@ -544,6 +559,29 @@ static RandomizerParamData ReadRandomizerParamData(
         worldItemLots,
         shopEntries,
         startingEquipmentPools);
+}
+
+static ItemNameLookup ReadEnglishItemNames(string itemMessagePath)
+{
+    var binder = BND3.Read(itemMessagePath);
+    Dictionary<int, string> ReadTable(string fileName)
+    {
+        var file = binder.Files.FirstOrDefault(entry =>
+            Path.GetFileName(entry.Name).Equals(
+                fileName, StringComparison.OrdinalIgnoreCase));
+        if (file is null)
+            return new();
+        return FMG.Read(file.Bytes).Entries
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.Text))
+            .GroupBy(entry => entry.ID)
+            .ToDictionary(group => group.Key, group => group.First().Text.Trim());
+    }
+
+    return new ItemNameLookup(
+        ReadTable("Item_name_.fmg"),
+        ReadTable("Weapon_name_.fmg"),
+        ReadTable("Armor_name_.fmg"),
+        ReadTable("Accessory_name_.fmg"));
 }
 
 static EnemyMetadataLookup ReadEnemyMetadata(
@@ -2209,6 +2247,26 @@ record StartingData(
     List<StartingItemLotRecord> ItemLots);
 record ParamRowRecord(int RowId, string Name);
 record ItemLotEntryRecord(int ItemId, int Category, int Quantity);
+record ItemNameLookup(
+    Dictionary<int, string> Goods,
+    Dictionary<int, string> Weapons,
+    Dictionary<int, string> Armor,
+    Dictionary<int, string> Accessories)
+{
+    public string GetName(int category, int itemId)
+    {
+        var names = category switch
+        {
+            0 => Weapons,
+            0x10000000 => Armor,
+            0x20000000 => Accessories,
+            0x40000000 => Goods,
+            _ => null,
+        };
+        return names?.GetValueOrDefault(itemId)
+            ?? $"Unknown item (category {category}, ID {itemId})";
+    }
+}
 record WorldItemLotRecord(
     int RowId,
     string Name,

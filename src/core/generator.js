@@ -223,6 +223,14 @@ function randomizeExtractedBosses(config, catalog) {
 
 function randomizeExtractedItems(config, catalog) {
   if (!catalog?.worldItemLots?.length) return [];
+  const areaNames = new Map(
+    (catalog.maps || []).map((map) => [map.id, map.name]),
+  );
+  const describeLocation = (lot) => ({
+    area: areaNames.get(lot.mapId) || lot.mapId,
+    map: lot.mapId,
+    itemLot: lot.rowId,
+  });
   const lots = catalog.worldItemLots.filter((lot) =>
     lot.protectedProgression
       ? config.randomizeKeyItems && !config.progressionLogic
@@ -245,6 +253,9 @@ function randomizeExtractedItems(config, catalog) {
         map: target.mapId,
         from: target.name,
         to: source.name,
+        itemName: source.name,
+        originalLocation: describeLocation(source),
+        randomizedLocation: describeLocation(target),
         progression: source.protectedProgression,
         preserved: target.rowId === source.rowId,
       });
@@ -631,7 +642,7 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
   if (errors.length > 0) {
     throw new Error(errors.join("\n"));
   }
-  if (gameCatalog && gameCatalog.schemaVersion !== 7) {
+  if (gameCatalog && gameCatalog.schemaVersion !== 8) {
     throw new Error(
       `Catalog schema ${gameCatalog.schemaVersion} is obsolete. ` +
         "Verify the clean game and import its data again.",

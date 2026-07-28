@@ -24,6 +24,8 @@ package before touching the game.
 - NPC gifts, renewable enemy drops, and shops
 - Independent deterministic RNG streams for every category
 - Progression-item protection, spoiler logs, and reproducible placement hashes
+- An `item-locations.txt` file for every item seed, with English item names,
+  original areas, randomized areas, and exact Item Lot IDs
 - Portable seed files with version and clean-catalog compatibility checks
 - Hash-checked activation, per-seed backups, atomic replacement, and safe restore
 
@@ -61,6 +63,10 @@ In the configurator:
 4. Enter a seed, disable **Safe simulation**, and confirm offline play.
 5. Click **Generate Randomizer**.
 6. Click **Activate in Game**, then launch the game normally.
+
+The generated seed folder always includes `item-locations.txt` when world items
+are randomized. This report is created even when the full spoiler log option is
+disabled.
 
 Use **Export** beside the seed to create a small JSON file containing the seed
 and every option that affects placements. Another player can use **Import seed**

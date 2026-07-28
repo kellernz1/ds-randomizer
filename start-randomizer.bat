@@ -10,7 +10,7 @@ if errorlevel 1 (
 )
 
 echo Starting DSR Randomizer...
-node src\cli.js ui
+start "DSR Randomizer" /D "%~dp0" cmd.exe /c node src\cli.js ui
 if errorlevel 1 goto :startup_failed
 exit /b 0
 

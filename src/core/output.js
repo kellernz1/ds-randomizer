@@ -5,6 +5,46 @@ function safeSeed(seed) {
   return seed.replace(/[^\w.-]/gu, "_");
 }
 
+function formatItemLocation(location, fallbackMap, fallbackLot) {
+  if (!location) {
+    return `${fallbackMap || "Unknown area"} (Item Lot ${fallbackLot ?? "unknown"})`;
+  }
+  return `${location.area} (${location.map}, Item Lot ${location.itemLot})`;
+}
+
+function itemPlacementLine(placement) {
+  const itemName = placement.itemName || placement.to;
+  const original = formatItemLocation(
+    placement.originalLocation,
+    placement.map,
+    placement.sourceRowId,
+  );
+  const randomized = formatItemLocation(
+    placement.randomizedLocation,
+    placement.map,
+    placement.rowId,
+  );
+  return `${itemName}\n  Original: ${original}\n  Randomized: ${randomized}`;
+}
+
+function itemLocationsText(result) {
+  const placements = [...result.placements.items].sort(
+    (left, right) =>
+      (left.itemName || left.to).localeCompare(right.itemName || right.to) ||
+      (left.sourceRowId ?? 0) - (right.sourceRowId ?? 0),
+  );
+  return `${[
+    "DARK SOULS REMASTERED RANDOMIZER - ITEM LOCATIONS",
+    `Seed: ${result.seed}`,
+    `Hash: ${result.placementHash}`,
+    `Version: ${result.randomizerVersion}`,
+    "",
+    "Each entry shows where the item normally appears and where this seed placed it.",
+    "",
+    ...placements.flatMap((placement) => [itemPlacementLine(placement), ""]),
+  ].join("\n")}\n`;
+}
+
 function spoilerText(result) {
   const lines = [
     "DARK SOULS REMASTERED RANDOMIZER",
@@ -23,7 +63,7 @@ function spoilerText(result) {
   }
   lines.push("", "=== WORLD ITEMS ===");
   for (const placement of result.placements.items) {
-    lines.push(`[${placement.map}] ${placement.from} -> ${placement.to}`);
+    lines.push(itemPlacementLine(placement));
   }
   lines.push("", "=== STARTING CLASSES ===");
   for (const placement of result.placements.startingClasses || []) {
@@ -75,6 +115,13 @@ export async function writeOutput(result, baseDirectory) {
   );
   if (result.config.generateSpoilerLog) {
     await writeFile(path.join(directory, "spoiler.txt"), spoilerText(result), "utf8");
+  }
+  if (result.placements.items.length > 0) {
+    await writeFile(
+      path.join(directory, "item-locations.txt"),
+      itemLocationsText(result),
+      "utf8",
+    );
   }
   await writeFile(
     path.join(directory, "README.txt"),

@@ -136,7 +136,7 @@ test("real catalog produces deterministic enemies with visibly different models"
 
 test("friendly NPC and human-character slots are never randomized", async () => {
   const gameCatalog = await catalog();
-  assert.equal(gameCatalog.schemaVersion, 7);
+  assert.equal(gameCatalog.schemaVersion, 8);
   const protectedSlots = gameCatalog.enemySlots.filter(
     (slot) => slot.teamType >= 2 || slot.modelName === "c0000",
   );

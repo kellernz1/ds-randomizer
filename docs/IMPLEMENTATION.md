@@ -15,9 +15,14 @@ The scanner never invents missing IDs and the generator never writes directly to
 the source installation. A catalog is a local snapshot of the selected game
 files; source hashes prevent applying it to a different installation state.
 
-## Implemented in 0.5.7
+## Implemented in 0.5.8
 
-- Real catalog schema 7 with 18 maps, event sources, and 2,192 enemy parts
+- Real catalog schema 8 with 18 maps, event sources, English item names, and
+  2,192 enemy parts
+- Per-seed `item-locations.txt` showing every randomized world item's original
+  and randomized area and Item Lot ID
+- A detached interactive Command Prompt launcher, so stopping the server does
+  not show Windows' localized batch-file termination question
 - 1,600+ hostile regular-enemy slots, including event-linked visible enemies
 - `NpcParam` team classification that excludes friendly and neutral characters
 - Movement type, dimensions, pathing, and detection-aware replacement pools
