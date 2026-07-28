@@ -15,7 +15,7 @@ The scanner never invents missing IDs and the generator never writes directly to
 the source installation. A catalog is a local snapshot of the selected game
 files; source hashes prevent applying it to a different installation state.
 
-## Implemented in 0.5.10
+## Implemented in 0.5.11
 
 - Real catalog schema 9 with 18 maps, event sources, English item and boss
   names, and 2,192 enemy parts
@@ -24,6 +24,10 @@ files; source hashes prevent applying it to a different installation state.
   randomized encounter
 - A detached interactive Command Prompt launcher, so stopping the server does
   not show Windows' localized batch-file termination question
+- Regular-enemy targets come from autonomous, event-free source spawns
+- Scaled replacements inherit every combat-scaling `SpEffect` from the
+  destination, preventing hidden late-game HP and attack multipliers
+- Randomized boss AI is explicitly enabled when its health bar appears
 - 1,600+ hostile regular-enemy slots, including event-linked visible enemies
 - `NpcParam` team classification that excludes friendly and neutral characters
 - Movement type, dimensions, pathing, and detection-aware replacement pools
@@ -31,7 +35,7 @@ files; source hashes prevent applying it to a different installation state.
 - Round-trip assertions that preserve every spawn transform and all unselected NPCs
 - Ordinary event enable/disable references do not block cross-model enemies
 - Tighter height, radius, and vertical-offset checks for regular-enemy spawns
-- Area scaling copies the game's native level `SpEffect` from the destination
+- Area scaling copies every combat-scaling `SpEffect` from the destination
 - Auxiliary/unnamed boss variants are excluded from the replacement pool
 - First Asylum boss rooftop animation is replaced by a safe floor spawn
 - Adapted Asylum intro explicitly enables replacement AI after arena entry

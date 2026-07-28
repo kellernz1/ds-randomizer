@@ -45,6 +45,19 @@ function randomizeExtractedEnemies(config, catalog) {
   const bossModels = new Set(
     (catalog.bossSlots || []).map((slot) => slot.modelName),
   );
+  const portableArchetypes = new Set(
+    catalog.enemySlots
+      .filter(
+        (slot) =>
+          slot.safeCandidate &&
+          !slot.eventModelLocked &&
+          !slot.hasEntityId,
+      )
+      .map(
+        (slot) =>
+          `${slot.modelName}:${slot.npcParamId}:${slot.thinkParamId}`,
+      ),
+  );
   const slots = catalog.enemySlots.filter(
     (slot) =>
       slot.safeCandidate &&
@@ -58,6 +71,9 @@ function randomizeExtractedEnemies(config, catalog) {
       archetype.safeSlotCount > 0 &&
       archetype.battleStartDistance > 0 &&
       (archetype.eyeDistance > 0 || archetype.earDistance > 0) &&
+      portableArchetypes.has(
+        `${archetype.modelName}:${archetype.npcParamId}:${archetype.thinkParamId}`,
+      ) &&
       !bossModels.has(archetype.modelName),
   );
   const archetypesByModel = new Map();
@@ -702,7 +718,7 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
       notes: extractedData
         ? [
             "Ordinary event-linked enemies use tighter compatible cross-model replacements; model-specific boss events receive dedicated handling.",
-            "Area scaling preserves the destination slot's native level multiplier.",
+            "Area scaling inherits destination combat stats and replaces hidden level multipliers from the selected enemy.",
             "Bosses use portable size-compatible pools; the first Undead Asylum boss uses a safe floor-spawn event path.",
             config.progressionLogic
               ? "World items are randomized while progression lots remain in their original locations."

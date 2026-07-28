@@ -11,12 +11,14 @@ package before touching the game.
 
 - 1,600+ hostile regular-enemy slots across all 18 gameplay maps
 - Movement-, size-, and AI-compatible enemy replacements
+- Autonomous regular-enemy target archetypes that do not depend on spawn events
 - Regular enemies with ordinary enable/disable event references remain eligible
   for compatible cross-model replacements
 - Friendly NPCs, merchants, quest characters, and their spawns are protected
 - Primary boss encounters shuffled through portable, size-compatible pools
 - The first Undead Asylum boss uses a safe floor-spawn event path when replaced
 - Boss health bars updated to the randomized boss name
+- Randomized boss AI explicitly activated when the encounter health bar appears
 - 500+ world pickup and chest item lots
 - Starting-class stats and equipment
 - Unique, stat-compatible starting weapons collected in the Undead Asylum
@@ -113,10 +115,11 @@ event-bound shop goods in their original locations. Boss replacement preserves
 the original map entity IDs so map events continue to target the encounter.
 Area scaling creates a dedicated NPC parameter row for every replacement and
 inherits HP, stamina, defenses, resistances, and souls from the original enemy
-in that slot. It also inherits the destination area's native level multiplier,
-which scales attack power and stamina. Model-specific effects and animations
-remain attached to the replacement so it can animate, navigate, and enter
-combat normally. The first Asylum boss bypasses the original model-only rooftop
+in that slot. Every combat-scaling `SpEffect` also comes from the destination,
+so hidden late-game HP, defense, and attack multipliers cannot leak into an
+early encounter. Replacement models use autonomous NPC/AI combinations, and
+incompatible initial animation IDs are cleared so they can animate, navigate,
+and enter combat normally. The first Asylum boss bypasses the original rooftop
 drop animation, is placed at the arena floor, and has its AI explicitly enabled
 after the player enters the arena.
 Boss mode remains experimental because some encounters contain bespoke

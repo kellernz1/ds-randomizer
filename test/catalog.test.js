@@ -93,6 +93,22 @@ test("real catalog produces deterministic enemies with visibly different models"
       slot.hitYOffset,
     ]),
   );
+  const portableArchetypeKeys = new Set(
+    gameCatalog.enemySlots
+      .filter(
+        (slot) =>
+          slot.safeCandidate &&
+          !slot.eventModelLocked &&
+          !slot.hasEntityId,
+      )
+      .map(
+        (slot) =>
+          `${slot.modelName}:${slot.npcParamId}:${slot.thinkParamId}`,
+      ),
+  );
+  const portableNpcKeys = new Set(
+    [...portableArchetypeKeys].map((key) => key.split(":").slice(0, 2).join(":")),
+  );
   for (const placement of first.placements.enemies.filter(
     (entry) => entry.changed,
   )) {
@@ -130,6 +146,17 @@ test("real catalog produces deterministic enemies with visibly different models"
     if (slot.eventModelLocked) {
       assert.equal(placement.targetModelName, placement.modelName);
       assert.equal(placement.targetThinkParamId, placement.sourceThinkParamId);
+      assert.ok(
+        portableNpcKeys.has(
+          `${placement.targetModelName}:${placement.targetNpcParamId}`,
+        ),
+      );
+    } else {
+      assert.ok(
+        portableArchetypeKeys.has(
+          `${placement.targetModelName}:${placement.targetNpcParamId}:${placement.targetThinkParamId}`,
+        ),
+      );
     }
   }
 });

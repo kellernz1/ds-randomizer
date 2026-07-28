@@ -1128,6 +1128,13 @@ static List<PatchedFile> PatchBossNames(
             .ToDictionary(
                 group => group.Key,
                 group => GetBossNameId(group.First().TargetModelName)!.Value);
+        var bossSlotsById = catalog.BossSlots.ToDictionary(slot => slot.Id);
+        var randomizedEntityIds = mapGroup
+            .Where(placement =>
+                bossSlotsById.TryGetValue(placement.SlotId, out var slot) &&
+                slot.ModelName != placement.TargetModelName)
+            .Select(placement => placement.EntityId)
+            .ToHashSet();
         var relativeSource = $"event/{mapGroup.Key}.emevd.dcx";
         var sourceRecord = catalog.SourceFiles.SingleOrDefault(source =>
             source.Path.Equals(relativeSource, StringComparison.OrdinalIgnoreCase));
@@ -1173,23 +1180,48 @@ static List<PatchedFile> PatchBossNames(
                 new object[] { 1810800, 1 }));
             changed++;
         }
-        foreach (var instruction in emevd.Events
-                     .SelectMany(entry => entry.Instructions)
-                     .Where(value =>
-                         value.Bank == 2003 &&
-                         value.ID == 11 &&
-                         value.ArgData.Length == 12))
+        foreach (var entry in emevd.Events)
         {
-            var entityId = BitConverter.ToInt32(instruction.ArgData, 4);
-            if (!namesByEntity.TryGetValue(entityId, out var nameId))
-                continue;
-            var nameBytes = BitConverter.GetBytes(nameId);
-            if (instruction.ArgData[10] == nameBytes[0] &&
-                instruction.ArgData[11] == nameBytes[1])
-                continue;
-            instruction.ArgData[10] = nameBytes[0];
-            instruction.ArgData[11] = nameBytes[1];
-            changed++;
+            for (var index = 0; index < entry.Instructions.Count; index++)
+            {
+                var instruction = entry.Instructions[index];
+                if (instruction.Bank != 2003 ||
+                    instruction.ID != 11 ||
+                    instruction.ArgData.Length != 12)
+                    continue;
+                var entityId = BitConverter.ToInt32(instruction.ArgData, 4);
+                if (!namesByEntity.TryGetValue(entityId, out var nameId))
+                    continue;
+                var nameBytes = BitConverter.GetBytes(nameId);
+                if (instruction.ArgData[10] != nameBytes[0] ||
+                    instruction.ArgData[11] != nameBytes[1])
+                {
+                    instruction.ArgData[10] = nameBytes[0];
+                    instruction.ArgData[11] = nameBytes[1];
+                    changed++;
+                }
+                if (!randomizedEntityIds.Contains(entityId))
+                    continue;
+                var nextIsEnable =
+                    index + 1 < entry.Instructions.Count &&
+                    entry.Instructions[index + 1].Bank == 2004 &&
+                    entry.Instructions[index + 1].ID == 1 &&
+                    entry.Instructions[index + 1].ArgData.Length == 8 &&
+                    BitConverter.ToInt32(
+                        entry.Instructions[index + 1].ArgData, 0) == entityId &&
+                    BitConverter.ToInt32(
+                        entry.Instructions[index + 1].ArgData, 4) == 1;
+                if (nextIsEnable)
+                    continue;
+                entry.Instructions.Insert(
+                    index + 1,
+                    new EMEVD.Instruction(
+                        2004,
+                        1,
+                        new object[] { entityId, 1 }));
+                index++;
+                changed++;
+            }
         }
         if (changed == 0)
             continue;
@@ -1238,6 +1270,31 @@ static List<PatchedFile> PatchBossNames(
                 BitConverter.ToInt16(instruction.ArgData, 10) != expectedNameId)
                 throw new InvalidDataException(
                     $"Boss name did not persist for entity {entityId} in {mapGroup.Key}.");
+        }
+        foreach (var entry in verification.Events)
+        {
+            for (var index = 0; index + 1 < entry.Instructions.Count; index++)
+            {
+                var instruction = entry.Instructions[index];
+                if (instruction.Bank != 2003 ||
+                    instruction.ID != 11 ||
+                    instruction.ArgData.Length != 12)
+                    continue;
+                var entityId = BitConverter.ToInt32(instruction.ArgData, 4);
+                if (!randomizedEntityIds.Contains(entityId))
+                    continue;
+                var enable = entry.Instructions[index + 1];
+                if (enable.Bank != 2004 ||
+                    enable.ID != 1 ||
+                    enable.ArgData.Length != 8 ||
+                    BitConverter.ToInt32(enable.ArgData, 0) != entityId ||
+                    BitConverter.ToInt32(enable.ArgData, 4) != 1)
+                {
+                    throw new InvalidDataException(
+                        $"Randomized boss AI activation did not persist for " +
+                        $"entity {entityId} in {mapGroup.Key}.");
+                }
+            }
         }
         results.Add(new PatchedFile(
             relativeSource,
@@ -1578,8 +1635,15 @@ static PatchedFile? PatchGameParam(
         var source = verifiedNpcs.Rows.Single(row => row.ID == placement.SourceNpcParamId);
         var target = verifiedNpcs.Rows.Single(row => row.ID == placement.TargetNpcParamId);
         AssertCell(scaled, "hp", GetCellInt(source, "hp"));
-        AssertCell(scaled, "spEffectID0", GetCellInt(target, "spEffectID0"));
-        AssertCell(scaled, "spEffectID4", GetCellInt(source, "spEffectID4"));
+        foreach (var cell in scaled.Cells.Where(cell =>
+                     cell.Def.InternalName.StartsWith(
+                         "spEffectID", StringComparison.Ordinal)))
+        {
+            AssertCell(
+                scaled,
+                cell.Def.InternalName,
+                GetCellInt(source, cell.Def.InternalName));
+        }
         AssertCell(scaled, "nameId", GetCellInt(target, "nameId"));
     }
     AssertHash(sourcePath, sourceRecord.Sha256, "Source GameParam changed");
@@ -1606,11 +1670,16 @@ static void AddScaledNpcRows(PARAM npcParam, List<PatchPlacement> placements)
         "physGuardCutRate", "magGuardCutRate", "fireGuardCutRate",
         "thunGuardCutRate", "slashGuardCutRate", "blowGuardCutRate",
         "thrustGuardCutRate",
-        // Slot 4 is the game's own area-level multiplier (7001, 7002, ...).
-        // Copy only this effect so attack, stamina, HP, and defense scaling match
-        // the destination while model-specific effects remain on the replacement.
-        "spEffectID4",
     };
+    foreach (var cell in npcParam.Rows[0].Cells.Where(cell =>
+                 cell.Def.InternalName.StartsWith(
+                     "spEffectID", StringComparison.Ordinal)))
+    {
+        // NPC SpEffects can contain hidden HP, defense, and attack multipliers.
+        // Keeping them from a late-game replacement can overpower an early slot,
+        // so every scaling effect comes from the destination encounter.
+        combatFields.Add(cell.Def.InternalName);
+    }
 
     foreach (var placement in placements)
     {
