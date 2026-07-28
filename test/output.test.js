@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { writeOutput } from "../src/core/output.js";
@@ -61,9 +61,19 @@ test("item and boss report is written independently of the full spoiler log", as
       validation: { valid: true },
     };
 
+    const expectedOutputDirectory = path.join(
+      temporaryDirectory,
+      "seed_report-test",
+    );
+    await mkdir(expectedOutputDirectory, { recursive: true });
+    await writeFile(
+      path.join(expectedOutputDirectory, "item-locations.txt"),
+      "legacy report",
+      "utf8",
+    );
     const outputDirectory = await writeOutput(result, temporaryDirectory);
     const report = await readFile(
-      path.join(outputDirectory, "item-locations.txt"),
+      path.join(outputDirectory, "cheat-locations.txt"),
       "utf8",
     );
     assert.match(report, /Avelyn/u);
@@ -72,6 +82,9 @@ test("item and boss report is written independently of the full spoiler log", as
     assert.match(report, /Original boss: Asylum Demon/u);
     assert.match(report, /Randomized boss: Sanctuary Guardian/u);
     assert.match(report, /Undead Asylum/u);
+    await assert.rejects(
+      readFile(path.join(outputDirectory, "item-locations.txt")),
+    );
     await assert.rejects(readFile(path.join(outputDirectory, "spoiler.txt")));
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true });

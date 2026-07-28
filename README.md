@@ -24,7 +24,7 @@ package before touching the game.
 - NPC gifts, renewable enemy drops, and shops
 - Independent deterministic RNG streams for every category
 - Progression-item protection, spoiler logs, and reproducible placement hashes
-- An `item-locations.txt` report with English item and boss names, original and
+- A `cheat-locations.txt` report with English item and boss names, original and
   randomized item areas, exact Item Lot IDs, and each encounter's assigned boss
 - Portable seed files with version and clean-catalog compatibility checks
 - Hash-checked activation, per-seed backups, atomic replacement, and safe restore
@@ -64,7 +64,7 @@ In the configurator:
 5. Click **Generate Randomizer**.
 6. Click **Activate in Game**, then launch the game normally.
 
-The generated seed folder includes `item-locations.txt` when world items or
+The generated seed folder includes `cheat-locations.txt` when world items or
 bosses are randomized. This report is created even when the full spoiler log
 option is disabled.
 

@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 function safeSeed(seed) {
@@ -132,6 +132,7 @@ function spoilerText(result) {
 export async function writeOutput(result, baseDirectory) {
   const directory = path.resolve(baseDirectory, `seed_${safeSeed(result.seed)}`);
   await mkdir(directory, { recursive: true });
+  await rm(path.join(directory, "item-locations.txt"), { force: true });
   await writeFile(
     path.join(directory, "randomizer.json"),
     `${JSON.stringify(result, null, 2)}\n`,
@@ -150,7 +151,7 @@ export async function writeOutput(result, baseDirectory) {
     result.placements.bosses.length > 0
   ) {
     await writeFile(
-      path.join(directory, "item-locations.txt"),
+      path.join(directory, "cheat-locations.txt"),
       itemLocationsText(result),
       "utf8",
     );
