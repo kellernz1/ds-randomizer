@@ -165,6 +165,10 @@ const portableBossModels = new Set([
 function randomizeExtractedBosses(config, catalog) {
   if (!config.randomizeBosses || !catalog?.bossSlots?.length) return [];
   const rng = createStream(config.seed, "bosses", config.version);
+  const areaNames = new Map(
+    (catalog.maps || []).map((map) => [map.id, map.name]),
+  );
+  const bossNames = catalog.bossNames || {};
   const sources = catalog.bossSlots.filter(
     (slot) =>
       bossSize.has(slot.modelName) &&
@@ -194,12 +198,24 @@ function randomizeExtractedBosses(config, catalog) {
     const replacement =
       candidates.length > 0 ? candidates[rng.int(candidates.length)] : slot;
     const changed = replacement.modelName !== slot.modelName;
+    const originalBossName =
+      bossNames[slot.modelName] || `${slot.modelName} [NPC ${slot.npcParamId}]`;
+    const randomizedBossName =
+      bossNames[replacement.modelName] ||
+      `${replacement.modelName} [NPC ${replacement.npcParamId}]`;
     return {
       slot: slot.id,
       map: slot.mapId,
       entityId: slot.entityId,
       from: `${slot.modelName} [NPC ${slot.npcParamId} / AI ${slot.thinkParamId}]`,
       to: `${replacement.modelName} [NPC ${replacement.npcParamId} / AI ${replacement.thinkParamId}]`,
+      originalBossName,
+      randomizedBossName,
+      encounterLocation: {
+        area: areaNames.get(slot.mapId) || slot.mapId,
+        map: slot.mapId,
+        slot: slot.name,
+      },
       modelName: slot.modelName,
       targetModelName: replacement.modelName,
       sourceNpcParamId: slot.npcParamId,
@@ -642,7 +658,7 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
   if (errors.length > 0) {
     throw new Error(errors.join("\n"));
   }
-  if (gameCatalog && gameCatalog.schemaVersion !== 8) {
+  if (gameCatalog && gameCatalog.schemaVersion !== 9) {
     throw new Error(
       `Catalog schema ${gameCatalog.schemaVersion} is obsolete. ` +
         "Verify the clean game and import its data again.",

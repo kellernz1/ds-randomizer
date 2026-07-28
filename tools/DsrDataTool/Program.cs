@@ -5,7 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using SoulsFormats;
 
-const int SchemaVersion = 8;
+const int SchemaVersion = 9;
 Console.OutputEncoding = new UTF8Encoding(false);
 Console.InputEncoding = new UTF8Encoding(false);
 
@@ -298,6 +298,7 @@ static GameCatalog ScanGame(string gameDirectory)
     var startingEquipmentPools = new StartingEquipmentPools(
         new(), new(), new(), new(), new());
     var itemNames = ReadEnglishItemNames(itemMessagePath);
+    var bossNames = ReadEnglishBossNames(itemMessagePath, slots);
     if (File.Exists(gameParamPath))
     {
         try
@@ -356,6 +357,7 @@ static GameCatalog ScanGame(string gameDirectory)
         worldItemLots,
         shopEntries,
         startingEquipmentPools,
+        bossNames,
         errors,
         ignoredFiles);
 }
@@ -582,6 +584,35 @@ static ItemNameLookup ReadEnglishItemNames(string itemMessagePath)
         ReadTable("Weapon_name_.fmg"),
         ReadTable("Armor_name_.fmg"),
         ReadTable("Accessory_name_.fmg"));
+}
+
+static Dictionary<string, string> ReadEnglishBossNames(
+    string itemMessagePath,
+    List<EnemySlotRecord> slots)
+{
+    var binder = BND3.Read(itemMessagePath);
+    var file = binder.Files.First(entry =>
+        Path.GetFileName(entry.Name).Equals(
+            "NPC_name_.fmg", StringComparison.OrdinalIgnoreCase));
+    var names = FMG.Read(file.Bytes).Entries
+        .Where(entry => !string.IsNullOrWhiteSpace(entry.Text))
+        .GroupBy(entry => entry.ID)
+        .ToDictionary(group => group.Key, group => group.First().Text.Trim());
+    return slots
+        .Where(slot => IsBossModel(slot.ModelName))
+        .Select(slot => slot.ModelName)
+        .Distinct()
+        .Select(modelName => new
+        {
+            ModelName = modelName,
+            NameId = int.TryParse(modelName.AsSpan(1), out var value)
+                ? value
+                : -1,
+        })
+        .Where(entry => names.ContainsKey(entry.NameId))
+        .ToDictionary(
+            entry => entry.ModelName,
+            entry => names[entry.NameId]);
 }
 
 static EnemyMetadataLookup ReadEnemyMetadata(
@@ -2104,6 +2135,7 @@ static Dictionary<string, string> CreateMapNames() => new()
     ["m10_02_00_00"] = "Firelink Shrine",
     ["m11_00_00_00"] = "Painted World of Ariamis",
     ["m12_00_00_00"] = "Darkroot Garden / Darkroot Basin",
+    ["m12_00_00_01"] = "Darkroot Garden / Darkroot Basin",
     ["m12_01_00_00"] = "Oolacile / Royal Wood",
     ["m13_00_00_00"] = "The Catacombs",
     ["m13_01_00_00"] = "Tomb of the Giants",
@@ -2136,6 +2168,7 @@ record GameCatalog(
     List<WorldItemLotRecord> WorldItemLots,
     List<ShopEntryRecord> ShopEntries,
     StartingEquipmentPools StartingEquipmentPools,
+    Dictionary<string, string> BossNames,
     List<ScanError> Errors,
     List<string> IgnoredFiles);
 

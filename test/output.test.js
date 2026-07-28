@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { writeOutput } from "../src/core/output.js";
 
-test("item location report is written independently of the full spoiler log", async () => {
+test("item and boss report is written independently of the full spoiler log", async () => {
   const temporaryDirectory = await mkdtemp(
     path.join(os.tmpdir(), "dsr-randomizer-output-"),
   );
@@ -18,7 +18,21 @@ test("item location report is written independently of the full spoiler log", as
       config: { generateSpoilerLog: false },
       placements: {
         enemies: [],
-        bosses: [],
+        bosses: [
+          {
+            slot: "m18_01_00_00:c2232_0000",
+            map: "m18_01_00_00",
+            from: "c2232 [NPC 223200 / AI 223200]",
+            to: "c4500 [NPC 450000 / AI 450000]",
+            originalBossName: "Asylum Demon",
+            randomizedBossName: "Sanctuary Guardian",
+            encounterLocation: {
+              area: "Undead Asylum",
+              map: "m18_01_00_00",
+              slot: "c2232_0000",
+            },
+          },
+        ],
         startingClasses: [],
         gifts: [],
         enemyDrops: [],
@@ -55,6 +69,9 @@ test("item location report is written independently of the full spoiler log", as
     assert.match(report, /Avelyn/u);
     assert.match(report, /Original: The Duke's Archives/u);
     assert.match(report, /Randomized: Painted World of Ariamis/u);
+    assert.match(report, /Original boss: Asylum Demon/u);
+    assert.match(report, /Randomized boss: Sanctuary Guardian/u);
+    assert.match(report, /Undead Asylum/u);
     await assert.rejects(readFile(path.join(outputDirectory, "spoiler.txt")));
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true });

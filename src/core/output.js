@@ -27,21 +27,50 @@ function itemPlacementLine(placement) {
   return `${itemName}\n  Original: ${original}\n  Randomized: ${randomized}`;
 }
 
+function bossPlacementLine(placement) {
+  const location = placement.encounterLocation
+    ? `${placement.encounterLocation.area} (${placement.encounterLocation.map}, Encounter ${placement.encounterLocation.slot})`
+    : `${placement.map || "Unknown area"} (${placement.slot || "Unknown encounter"})`;
+  return `${location}\n  Original boss: ${placement.originalBossName || placement.from}\n  Randomized boss: ${placement.randomizedBossName || placement.to}`;
+}
+
 function itemLocationsText(result) {
-  const placements = [...result.placements.items].sort(
+  const itemPlacements = [...result.placements.items].sort(
     (left, right) =>
       (left.itemName || left.to).localeCompare(right.itemName || right.to) ||
       (left.sourceRowId ?? 0) - (right.sourceRowId ?? 0),
   );
+  const bossPlacements = [...result.placements.bosses].sort(
+    (left, right) =>
+      (left.encounterLocation?.area || left.map).localeCompare(
+        right.encounterLocation?.area || right.map,
+      ) ||
+      left.slot.localeCompare(right.slot),
+  );
+  const sections = [];
+  if (itemPlacements.length > 0) {
+    sections.push(
+      "=== WORLD ITEMS ===",
+      "",
+      ...itemPlacements.flatMap((placement) => [itemPlacementLine(placement), ""]),
+    );
+  }
+  if (bossPlacements.length > 0) {
+    sections.push(
+      "=== BOSSES ===",
+      "",
+      ...bossPlacements.flatMap((placement) => [bossPlacementLine(placement), ""]),
+    );
+  }
   return `${[
-    "DARK SOULS REMASTERED RANDOMIZER - ITEM LOCATIONS",
+    "DARK SOULS REMASTERED RANDOMIZER - ITEM AND BOSS LOCATIONS",
     `Seed: ${result.seed}`,
     `Hash: ${result.placementHash}`,
     `Version: ${result.randomizerVersion}`,
     "",
-    "Each entry shows where the item normally appears and where this seed placed it.",
+    "This report shows item placements and the boss assigned to each encounter.",
     "",
-    ...placements.flatMap((placement) => [itemPlacementLine(placement), ""]),
+    ...sections,
   ].join("\n")}\n`;
 }
 
@@ -59,7 +88,7 @@ function spoilerText(result) {
   }
   lines.push("", "=== BOSSES ===");
   for (const placement of result.placements.bosses) {
-    lines.push(`[${placement.map}] ${placement.from} -> ${placement.to}`);
+    lines.push(bossPlacementLine(placement));
   }
   lines.push("", "=== WORLD ITEMS ===");
   for (const placement of result.placements.items) {
@@ -116,7 +145,10 @@ export async function writeOutput(result, baseDirectory) {
   if (result.config.generateSpoilerLog) {
     await writeFile(path.join(directory, "spoiler.txt"), spoilerText(result), "utf8");
   }
-  if (result.placements.items.length > 0) {
+  if (
+    result.placements.items.length > 0 ||
+    result.placements.bosses.length > 0
+  ) {
     await writeFile(
       path.join(directory, "item-locations.txt"),
       itemLocationsText(result),
