@@ -1233,9 +1233,28 @@ static List<PatchedFile> PatchLuaAiBundles(
         var targetGnlFile = targetBinder.Files.Single(file => file.ID == luaGnlId);
         var targetInfo = LUAINFO.Read(targetInfoFile.Bytes);
         var targetGlobals = LUAGNL.Read(targetGnlFile.Bytes);
+        static string GoalKey(LUAINFO.Goal goal) =>
+            $"{goal.ID}\0{goal.Name}\0{goal.BattleInterrupt}\0" +
+            $"{goal.LogicInterrupt}\0{goal.LogicInterruptName}";
+        static bool ContainsAscii(byte[] bytes, string value)
+        {
+            var needle = Encoding.ASCII.GetBytes(value);
+            if (needle.Length == 0 || needle.Length > bytes.Length)
+                return false;
+            for (var offset = 0; offset <= bytes.Length - needle.Length; offset++)
+            {
+                if (bytes.AsSpan(offset, needle.Length).SequenceEqual(needle))
+                    return true;
+            }
+            return false;
+        }
+
         var existingGoalIds = targetInfo.Goals
             .Select(goal => goal.ID)
             .ToHashSet();
+        var existingGoalKeys = targetInfo.Goals
+            .Select(GoalKey)
+            .ToHashSet(StringComparer.Ordinal);
         var requiredGoalIds = mapGroup
             .Select(placement => placement.TargetBattleGoalId)
             .Distinct()
@@ -1249,24 +1268,46 @@ static List<PatchedFile> PatchLuaAiBundles(
         if (missingGoalIds.Count == 0)
             continue;
 
-        var requiredSources = new List<LuaBundleSource>();
+        var requiredEntries = new List<LuaAiEntry>();
         foreach (var goalId in missingGoalIds)
         {
             var source = sourceBundles.FirstOrDefault(bundle =>
-                bundle.Info.Goals.Any(goal => goal.ID == goalId));
+                    bundle.Info.Goals.Any(goal =>
+                        goal.ID == goalId && goal.BattleInterrupt))
+                ?? sourceBundles.FirstOrDefault(bundle =>
+                    bundle.Info.Goals.Any(goal => goal.ID == goalId));
             if (source == null)
             {
                 throw new InvalidDataException(
                     $"No Lua AI goal {goalId} was found for {mapGroup.Key}. " +
                     "This replacement is not safe.");
             }
-            if (!requiredSources.Any(value =>
-                    value.Record.Path.Equals(
-                        source.Record.Path,
-                        StringComparison.OrdinalIgnoreCase)))
+            var scriptPrefix = $"{goalId:D6}_";
+            var scripts = source.Binder.Files
+                .Where(file =>
+                    file.ID != luaGnlId &&
+                    file.ID != luaInfoId &&
+                    Path.GetFileName(file.Name).StartsWith(
+                        scriptPrefix,
+                        StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (scripts.Count == 0)
             {
-                requiredSources.Add(source);
+                throw new InvalidDataException(
+                    $"No Lua AI script for goal {goalId} was found in " +
+                    $"{source.Record.Path}.");
             }
+            var goals = source.Info.Goals
+                .Where(goal => goal.ID == goalId)
+                .ToList();
+            var globals = source.Globals.Globals
+                .Where(value => scripts.Any(script =>
+                    ContainsAscii(script.Bytes, value)))
+                .ToList();
+            requiredEntries.Add(new LuaAiEntry(
+                scripts,
+                goals,
+                globals));
         }
 
         var existingScriptNames = targetBinder.Files
@@ -1285,13 +1326,16 @@ static List<PatchedFile> PatchLuaAiBundles(
         if (metadataIndex < 0)
             metadataIndex = targetBinder.Files.Count;
 
-        foreach (var source in requiredSources)
+        var expectedScriptNames = new HashSet<string>(
+            StringComparer.OrdinalIgnoreCase);
+        var expectedGoalKeys = new HashSet<string>(StringComparer.Ordinal);
+        var expectedGlobals = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var entry in requiredEntries)
         {
-            foreach (var file in source.Binder.Files.Where(file =>
-                         file.ID != luaGnlId &&
-                         file.ID != luaInfoId))
+            foreach (var file in entry.Scripts)
             {
                 var scriptName = Path.GetFileName(file.Name);
+                expectedScriptNames.Add(scriptName);
                 if (!existingScriptNames.Add(scriptName))
                     continue;
                 var copy = new BinderFile(
@@ -1304,14 +1348,19 @@ static List<PatchedFile> PatchLuaAiBundles(
                 };
                 targetBinder.Files.Insert(metadataIndex++, copy);
             }
-            var newGlobals = source.Globals.Globals
+            foreach (var value in entry.Globals)
+                expectedGlobals.Add(value);
+            var newGlobals = entry.Globals
                 .Where(value => existingGlobals.Add(value))
                 .ToList();
             targetGlobals.Globals.InsertRange(0, newGlobals);
-            foreach (var goal in source.Info.Goals)
+            foreach (var goal in entry.Goals)
             {
-                if (!existingGoalIds.Add(goal.ID))
+                var goalKey = GoalKey(goal);
+                expectedGoalKeys.Add(goalKey);
+                if (!existingGoalKeys.Add(goalKey))
                     continue;
+                existingGoalIds.Add(goal.ID);
                 targetInfo.Goals.Insert(
                     0,
                     new LUAINFO.Goal(
@@ -1332,11 +1381,16 @@ static List<PatchedFile> PatchLuaAiBundles(
 
         var verification = BND3.Read(outputPath);
         var verifiedGoals = ReadInfo(verification, outputRelative)
-            .Goals.Select(goal => goal.ID)
+            .Goals;
+        var verifiedGoalIds = verifiedGoals
+            .Select(goal => goal.ID)
             .ToHashSet();
+        var verifiedGoalKeys = verifiedGoals
+            .Select(GoalKey)
+            .ToHashSet(StringComparer.Ordinal);
         var unavailable = requiredGoalIds
             .Where(id =>
-                !verifiedGoals.Contains(id) &&
+                !verifiedGoalIds.Contains(id) &&
                 !commonGoals.Contains(id))
             .ToList();
         if (unavailable.Count > 0)
@@ -1352,6 +1406,17 @@ static List<PatchedFile> PatchLuaAiBundles(
         if (!existingScriptNames.IsSubsetOf(verifiedScripts))
             throw new InvalidDataException(
                 $"Lua AI scripts did not persist for {mapGroup.Key}.");
+        if (!expectedScriptNames.IsSubsetOf(verifiedScripts) ||
+            !expectedGoalKeys.IsSubsetOf(verifiedGoalKeys))
+        {
+            throw new InvalidDataException(
+                $"Required Lua AI entries did not persist for {mapGroup.Key}.");
+        }
+        var verifiedGlobals = ReadGlobals(verification, outputRelative)
+            .Globals.ToHashSet(StringComparer.Ordinal);
+        if (!expectedGlobals.IsSubsetOf(verifiedGlobals))
+            throw new InvalidDataException(
+                $"Required Lua AI globals did not persist for {mapGroup.Key}.");
         AssertHash(
             targetPath,
             targetSource.Sha256,
@@ -1363,6 +1428,31 @@ static List<PatchedFile> PatchLuaAiBundles(
             HashFile(outputPath)));
     }
     return results;
+}
+
+static void InsertEventInstruction(
+    EMEVD.Event entry,
+    int index,
+    EMEVD.Instruction instruction)
+{
+    foreach (var parameter in entry.Parameters.Where(parameter =>
+                 parameter.InstructionIndex >= index))
+        parameter.InstructionIndex++;
+    entry.Instructions.Insert(index, instruction);
+}
+
+static void RemoveEventInstruction(EMEVD.Event entry, int index)
+{
+    if (entry.Parameters.Any(parameter =>
+            parameter.InstructionIndex == index))
+    {
+        throw new InvalidDataException(
+            $"Cannot remove parameterized instruction {index} from event {entry.ID}.");
+    }
+    foreach (var parameter in entry.Parameters.Where(parameter =>
+                 parameter.InstructionIndex > index))
+        parameter.InstructionIndex--;
+    entry.Instructions.RemoveAt(index);
 }
 
 static List<PatchedFile> PatchBossNames(
@@ -1409,12 +1499,19 @@ static List<PatchedFile> PatchBossNames(
         if (patchAsylumIntro)
         {
             var intro = emevd.Events.Single(entry => entry.ID == 11810310);
-            var removed = intro.Instructions.RemoveAll(instruction =>
-                instruction.ArgData.Length >= 4 &&
-                BitConverter.ToInt32(instruction.ArgData, 0) == 1810800 &&
-                ((instruction.Bank == 2004 &&
-                  instruction.ID is 8 or 9 or 21) ||
-                 (instruction.Bank == 2003 && instruction.ID == 18)));
+            var removed = 0;
+            for (var index = intro.Instructions.Count - 1; index >= 0; index--)
+            {
+                var instruction = intro.Instructions[index];
+                if (instruction.ArgData.Length < 4 ||
+                    BitConverter.ToInt32(instruction.ArgData, 0) != 1810800 ||
+                    !((instruction.Bank == 2004 &&
+                       instruction.ID is 8 or 9 or 21) ||
+                      (instruction.Bank == 2003 && instruction.ID == 18)))
+                    continue;
+                RemoveEventInstruction(intro, index);
+                removed++;
+            }
             changed += removed;
 
             var highWarp = intro.Instructions.Single(instruction =>
@@ -1427,12 +1524,20 @@ static List<PatchedFile> PatchBossNames(
             changed++;
 
             // The vanilla drop sequence disables AI before playing model-specific
-            // animations. Re-enable it explicitly after the adapted floor-spawn
-            // event reaches its end, rather than relying on the original flag chain.
-            intro.Instructions.Add(new EMEVD.Instruction(
-                2004,
-                1,
-                new object[] { 1810800, 1 }));
+            // animations. Re-enable it before the event terminates; instructions
+            // appended after EndEvent are unreachable.
+            var terminalIndex = intro.Instructions.FindLastIndex(instruction =>
+                instruction.Bank == 2006 && instruction.ID == 2);
+            if (terminalIndex < 0)
+                throw new InvalidDataException(
+                    "Asylum intro event has no terminal instruction.");
+            InsertEventInstruction(
+                intro,
+                terminalIndex,
+                new EMEVD.Instruction(
+                    2004,
+                    1,
+                    new object[] { 1810800, 1 }));
             changed++;
         }
         foreach (var entry in emevd.Events)
@@ -1468,7 +1573,8 @@ static List<PatchedFile> PatchBossNames(
                         entry.Instructions[index + 1].ArgData, 4) == 1;
                 if (nextIsEnable)
                     continue;
-                entry.Instructions.Insert(
+                InsertEventInstruction(
+                    entry,
                     index + 1,
                     new EMEVD.Instruction(
                         2004,
@@ -1490,6 +1596,14 @@ static List<PatchedFile> PatchBossNames(
         if (patchAsylumIntro)
         {
             var intro = verification.Events.Single(entry => entry.ID == 11810310);
+            var terminalIndex = intro.Instructions.FindLastIndex(instruction =>
+                instruction.Bank == 2006 && instruction.ID == 2);
+            var enableIndex = intro.Instructions.FindIndex(instruction =>
+                instruction.Bank == 2004 &&
+                instruction.ID == 1 &&
+                instruction.ArgData.Length == 8 &&
+                BitConverter.ToInt32(instruction.ArgData, 0) == 1810800 &&
+                BitConverter.ToInt32(instruction.ArgData, 4) == 1);
             if (intro.Instructions.Any(instruction =>
                     instruction.ArgData.Length >= 4 &&
                     BitConverter.ToInt32(instruction.ArgData, 0) == 1810800 &&
@@ -1502,12 +1616,9 @@ static List<PatchedFile> PatchBossNames(
                     instruction.ArgData.Length >= 12 &&
                     BitConverter.ToInt32(instruction.ArgData, 0) == 1810800 &&
                     BitConverter.ToInt32(instruction.ArgData, 8) == 1812300) ||
-                !intro.Instructions.Any(instruction =>
-                    instruction.Bank == 2004 &&
-                    instruction.ID == 1 &&
-                    instruction.ArgData.Length == 8 &&
-                    BitConverter.ToInt32(instruction.ArgData, 0) == 1810800 &&
-                    BitConverter.ToInt32(instruction.ArgData, 4) == 1))
+                enableIndex < 0 ||
+                terminalIndex < 0 ||
+                enableIndex >= terminalIndex)
             {
                 throw new InvalidDataException(
                     "Randomized Asylum boss intro did not persist safely.");
@@ -2505,6 +2616,10 @@ record LuaBundleSource(
     BND3 Binder,
     LUAINFO Info,
     LUAGNL Globals);
+record LuaAiEntry(
+    List<BinderFile> Scripts,
+    List<LUAINFO.Goal> Goals,
+    List<string> Globals);
 record MapRecord(string Id, string Name, int Enemies, int DummyEnemies);
 record VectorRecord(float X, float Y, float Z);
 

@@ -12,7 +12,8 @@ package before touching the game.
 - 1,600+ hostile regular-enemy slots across all 18 gameplay maps
 - Movement-, size-, and AI-compatible enemy replacements
 - Autonomous regular-enemy target archetypes that do not depend on spawn events
-- Cross-map Lua battle scripts merged into each destination map
+- Only the required cross-map Lua battle/logic scripts are merged into each
+  destination map, keeping AI bundles small and isolated
 - Regular enemies with ordinary enable/disable event references remain eligible
   for compatible cross-model replacements
 - Friendly NPCs, merchants, quest characters, and their spawns are protected
