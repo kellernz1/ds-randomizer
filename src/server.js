@@ -127,7 +127,6 @@ async function api(request, response, pathname) {
             available: true,
             maps: catalog.maps.length,
             enemySlots: catalog.enemySlots.length,
-            safeSlots: catalog.enemySlots.filter((slot) => slot.safeCandidate).length,
             errors: catalog.errors.length,
           }
         : { available: false },
@@ -192,7 +191,6 @@ async function api(request, response, pathname) {
       message: toolResult.stdout.trim(),
       maps: catalog.maps.length,
       enemySlots: catalog.enemySlots.length,
-      safeSlots: catalog.enemySlots.filter((slot) => slot.safeCandidate).length,
       errors: catalog.errors,
     });
   }

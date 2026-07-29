@@ -11,6 +11,68 @@ import {
 } from "../data/prototype-data.js";
 
 const byId = (values) => new Map(values.map((value) => [value.id, value]));
+const dragonBodyModels = new Set([
+  "c2730", // Crossbreed Priscilla
+  "c3420", // Undead Dragon
+  "c3421", // Bounding Demon / Undead Dragon legs
+  "c3430", // Hellkite Drake
+  "c3520", // Drake
+  "c4510", // Black Dragon Kalameet
+  "c5260", // Gaping Dragon
+  "c5290", // Seath the Scaleless
+]);
+const linkedPartModels = new Set([
+  "c2731", // Priscilla's tail
+  "c3422", // Undead Dragon wing
+  "c3431", // Hellkite tail
+  "c3451", // Everlasting Dragon tail; its friendly parent stays protected
+  "c3472", // Sanctuary Guardian tail
+  "c3531", // Hydra heads
+  "c4511", // Kalameet tail
+  "c5201", "c5202", // Centipede Demon limbs
+  "c5261", // Gaping Dragon tail
+  "c5291", // Seath's tail
+  "c5352", "c5353", // Gargoyle tails
+  "c5400", "c5401", // Bed of Chaos linked encounter parts
+]);
+const internalHelperModels = new Set([
+  "c3510", // Asylum transport crow
+]);
+const dragonNames = new Map([
+  ["c2730", "Crossbreed Priscilla"],
+  ["c3420", "Undead Dragon"],
+  ["c3421", "Bounding Demon"],
+  ["c3430", "Hellkite Drake"],
+  ["c3520", "Drake"],
+  ["c4510", "Black Dragon Kalameet"],
+  ["c5260", "Gaping Dragon"],
+  ["c5290", "Seath the Scaleless"],
+]);
+const additionalBossNames = new Map([
+  ["c3230", "Moonlight Butterfly"],
+  ["c5230", "Bed of Chaos"],
+  ["c5250", "Ceaseless Discharge"],
+  ["c5320", "Dark Sun Gwyndolin"],
+]);
+const additionalBossModels = new Set(additionalBossNames.keys());
+
+function effectiveBossSlots(catalog) {
+  const result = new Map(
+    (catalog.bossSlots || []).map((slot) => [slot.id, slot]),
+  );
+  for (const slot of catalog.enemySlots) {
+    const modelId = Number(slot.modelName.slice(1));
+    if (
+      additionalBossModels.has(slot.modelName) &&
+      !slot.dummy &&
+      slot.npcParamId === modelId * 100 &&
+      slot.thinkParamId > 1000
+    ) {
+      result.set(slot.id, slot);
+    }
+  }
+  return [...result.values()];
+}
 
 function pickCompatibleEnemy(rng, slot, pool) {
   const sizeOrder = { small: 0, medium: 1, large: 2 };
@@ -38,65 +100,367 @@ function randomizePrototypeEnemies(config) {
   });
 }
 
-function randomizeExtractedEnemies(config, catalog) {
-  if (!config.randomizeEnemies) return [];
-  const rng = createStream(config.seed, "enemies", config.version);
-  const bossSlotIds = new Set((catalog.bossSlots || []).map((slot) => slot.id));
-  const bossModels = new Set(
-    (catalog.bossSlots || []).map((slot) => slot.modelName),
+function groundYForBoss(slot, catalog) {
+  if (slot.mapId === "m18_01_00_00" && slot.modelName === "c2232") {
+    return catalog.enemySlots.find(
+      (candidate) =>
+        candidate.mapId === slot.mapId && candidate.modelName === "c2230",
+    )?.position.y ?? slot.position.y;
+  }
+  return Math.min(
+    ...catalog.enemySlots
+      .filter(
+        (candidate) =>
+          candidate.mapId === slot.mapId &&
+          candidate.modelName === slot.modelName &&
+          !candidate.dummy,
+      )
+      .map((candidate) => candidate.position.y),
   );
-  const aiGoalIds = new Set(catalog.aiGoalIds || []);
-  const unsupportedReplacementModels = new Set([
-    "c2232", // AI activation is tied to the vanilla Asylum encounter.
-    "c2300", // Titanite Demon AI does not activate reliably cross-map.
-    "c2670", // Ghost can become invisible outside its native setup.
-    "c2680", // Lightning Ghost AI does not activate reliably.
-    "c2731", // Boss helper/weapon character has no standalone body model.
-    "c2780", // Mimic activation is event-script controlled.
-    "c2940", // Skeleton Baby frequently fails to render.
-    "c3230", // Moonlight Butterfly requires bespoke flight/arena logic.
-    "c3300", // Crystal Lizard is passive and not a combat replacement.
-    "c3330", // Pisaca AI activation is event controlled.
-    "c3390", // Rockworm navigation is tied to its burrow.
-    "c3420", // Undead Dragon AI activation is event controlled.
-    "c3421", // Bounding Demon has arena-specific navigation.
-    "c3430", // Hellkite Drake is bridge-script controlled.
-    "c3480", // Chaos Bug behavior is not portable.
-    "c3490", // Good Vagrant is non-hostile.
-    "c3530", // Hydra requires bespoke arena positioning.
-    "c4170", "c4171", "c4172", // Invisible Duke's Archives helper characters.
-    "c5201", "c5202", // Centipede limbs require their parent model.
-    "c5261", // Boss helper character has no standalone body model.
-    "c5240", // Wall Hugger requires native geometry.
-    "c5250", // Ceaseless Discharge requires bespoke arena logic.
-    "c5320", // Gwyndolin AI activation is encounter controlled.
-  ]);
+}
+
+function enemyPlacement(config, target, source, scaledNpcParamId, extra = {}) {
+  const changed =
+    source.modelName !== target.modelName ||
+    source.npcParamId !== target.npcParamId ||
+    source.thinkParamId !== target.thinkParamId;
+  return {
+    slot: target.id,
+    sourceSlot: source.id,
+    sourceMap: source.mapId,
+    map: target.mapId,
+    entityId: target.entityId,
+    from: `${target.modelName} [NPC ${target.npcParamId} / AI ${target.thinkParamId}]`,
+    to: `${source.modelName} [NPC ${source.npcParamId} / AI ${source.thinkParamId}]`,
+    modelName: target.modelName,
+    targetModelName: source.modelName,
+    sourceNpcParamId: target.npcParamId,
+    sourceThinkParamId: target.thinkParamId,
+    targetNpcParamId: source.npcParamId,
+    targetThinkParamId: source.thinkParamId,
+    targetBattleGoalId: source.battleGoalId,
+    scaledNpcParamId:
+      config.enemyScaling === "vanilla" || !changed
+        ? null
+        : scaledNpcParamId,
+    changed,
+    scaling: config.enemyScaling,
+    ...extra,
+  };
+}
+
+function buildDragonPlan(config, catalog) {
+  const bossSlotIds = new Set(effectiveBossSlots(catalog).map((slot) => slot.id));
+  const slots = catalog.enemySlots;
+  const byModel = (modelName, mapId = null) =>
+    slots.filter(
+      (slot) =>
+        slot.modelName === modelName &&
+        (!mapId || slot.mapId === mapId),
+    );
+  const unit = (id, bodies, parts = []) => ({ id, bodies, parts });
+  const units = [
+    unit(
+      "priscilla",
+      byModel("c2730", "m11_00_00_00"),
+      byModel("c2731", "m11_00_00_00"),
+    ),
+    unit(
+      "painted-undead-dragon",
+      byModel("c3420", "m11_00_00_00"),
+      [
+        ...byModel("c3421", "m11_00_00_00"),
+        ...byModel("c3422", "m11_00_00_00"),
+      ],
+    ),
+    unit(
+      "valley-undead-dragon",
+      byModel("c3420", "m16_00_00_00"),
+    ),
+    unit(
+      "hellkite",
+      byModel("c3430", "m10_01_00_00"),
+      byModel("c3431", "m10_01_00_00"),
+    ),
+    unit(
+      "kalameet",
+      byModel("c4510", "m12_01_00_00"),
+      byModel("c4511", "m12_01_00_00"),
+    ),
+    unit(
+      "gaping-dragon",
+      byModel("c5260", "m10_00_00_00"),
+      byModel("c5261", "m10_00_00_00"),
+    ),
+    unit(
+      "seath",
+      byModel("c5290", "m17_00_00_00"),
+      byModel("c5291", "m17_00_00_00"),
+    ),
+    ...byModel("c3421", "m14_01_00_00").map((body) =>
+      unit(`bounding-${body.id}`, [body])),
+    ...byModel("c3520").map((body) => unit(`drake-${body.id}`, [body])),
+  ].filter((entry) => entry.bodies.length > 0);
+
+  const enabled = units.filter((entry) => {
+    const boss = entry.bodies.some((body) => bossSlotIds.has(body.id));
+    return boss ? config.randomizeBosses : config.randomizeEnemies;
+  });
+  const assignments = new Map();
+  const rng = createStream(config.seed, "dragons", config.version);
+  for (const partCount of new Set(enabled.map((entry) => entry.parts.length))) {
+    const targets = enabled.filter((entry) => entry.parts.length === partCount);
+    const sources = shuffledWithoutFixedPoints(rng, targets);
+    targets.forEach((target, index) => assignments.set(target.id, sources[index]));
+  }
+
+  const areaNames = new Map(
+    (catalog.maps || []).map((map) => [map.id, map.name]),
+  );
+  const bossNames = catalog.bossNames || {};
+  const result = { enemies: [], bosses: [], reservedSlotIds: new Set() };
+  let enemyIndex = 0;
+  let bossIndex = 0;
+  for (const target of enabled) {
+    const source = assignments.get(target.id);
+    [...target.bodies, ...target.parts].forEach((slot) =>
+      result.reservedSlotIds.add(slot.id),
+    );
+    target.bodies.forEach((targetBody, index) => {
+      const sourceBody = source.bodies[index % source.bodies.length];
+      const isBoss = bossSlotIds.has(targetBody.id);
+      const extra = isBoss
+        ? {
+            originalBossName:
+              bossNames[targetBody.modelName] ||
+              dragonNames.get(targetBody.modelName) ||
+              targetBody.modelName,
+            randomizedBossName:
+              bossNames[sourceBody.modelName] ||
+              dragonNames.get(sourceBody.modelName) ||
+              sourceBody.modelName,
+            encounterLocation: {
+              area: areaNames.get(targetBody.mapId) || targetBody.mapId,
+              map: targetBody.mapId,
+              slot: targetBody.name,
+            },
+            compatibility: "grounded-dragon-group-permutation",
+            groundY: groundYForBoss(targetBody, catalog),
+            linkedDragonGroup: target.id,
+          }
+        : {
+            compatibility: "dragon-only-group-permutation",
+            linkedDragonGroup: target.id,
+          };
+      const placement = enemyPlacement(
+        config,
+        targetBody,
+        sourceBody,
+        isBoss ? 9_250_000 + bossIndex++ : 9_150_000 + enemyIndex++,
+        extra,
+      );
+      (isBoss ? result.bosses : result.enemies).push(placement);
+    });
+    target.parts.forEach((targetPart, index) => {
+      const sourcePart = source.parts[index];
+      result.enemies.push(enemyPlacement(
+        config,
+        targetPart,
+        sourcePart,
+        9_150_000 + enemyIndex++,
+        {
+          compatibility: "linked-dragon-part-permutation",
+          linkedDragonGroup: target.id,
+        },
+      ));
+    });
+  }
+
+  if (config.randomizeEnemies) {
+    const hydras = ["m12_00_00_00", "m12_00_00_01", "m13_02_00_00"]
+      .map((mapId) =>
+        unit(
+          `hydra-${mapId}`,
+          byModel("c3530", mapId),
+          byModel("c3531", mapId),
+        ))
+      .filter((entry) => entry.bodies.length && entry.parts.length);
+    const hydraSources = shuffledWithoutFixedPoints(rng, hydras);
+    hydras.forEach((target, unitIndex) => {
+      const source = hydraSources[unitIndex];
+      [...target.bodies, ...target.parts].forEach((slot) =>
+        result.reservedSlotIds.add(slot.id),
+      );
+      target.bodies.forEach((targetBody, index) => {
+        result.enemies.push(enemyPlacement(
+          config,
+          targetBody,
+          source.bodies[index],
+          9_150_000 + enemyIndex++,
+          {
+            compatibility: "linked-hydra-group-permutation",
+            linkedEnemyGroup: target.id,
+          },
+        ));
+      });
+      target.parts.forEach((targetPart, index) => {
+        result.enemies.push(enemyPlacement(
+          config,
+          targetPart,
+          source.parts[index],
+          9_150_000 + enemyIndex++,
+          {
+            compatibility: "linked-hydra-part-permutation",
+            linkedEnemyGroup: target.id,
+          },
+        ));
+      });
+    });
+  }
+
+  if (config.randomizeBosses) {
+    const linkedBossRng = createStream(
+      config.seed,
+      "linked-bosses",
+      config.version,
+    );
+    const linkedBosses = [
+      unit(
+        "sanctuary-guardian",
+        byModel("c3471", "m12_01_00_00"),
+        byModel("c3472", "m12_01_00_00"),
+      ),
+      unit(
+        "bell-gargoyles",
+        byModel("c5350", "m10_01_00_00"),
+        byModel("c5352", "m10_01_00_00"),
+      ),
+      unit(
+        "anor-londo-gargoyles",
+        byModel("c5351", "m15_01_00_00"),
+        byModel("c5353", "m15_01_00_00"),
+      ),
+      unit(
+        "centipede-demon",
+        byModel("c5200", "m14_01_00_00"),
+        [
+          ...byModel("c5201", "m14_01_00_00"),
+          ...byModel("c5202", "m14_01_00_00"),
+        ],
+      ),
+    ].filter((entry) => entry.bodies.length && entry.parts.length);
+    const linkedBossSources = shuffledWithoutFixedPoints(
+      linkedBossRng,
+      linkedBosses,
+    );
+    linkedBosses.forEach((target, unitIndex) => {
+      const source = linkedBossSources[unitIndex];
+      [...target.bodies, ...target.parts].forEach((slot) =>
+        result.reservedSlotIds.add(slot.id),
+      );
+      target.bodies.forEach((targetBody, index) => {
+        const sourceBody = source.bodies[index % source.bodies.length];
+        const isBossSlot = bossSlotIds.has(targetBody.id);
+        const placement = enemyPlacement(
+          config,
+          targetBody,
+          sourceBody,
+          isBossSlot
+            ? 9_300_000 + bossIndex++
+            : 9_350_000 + enemyIndex++,
+          isBossSlot
+            ? {
+                originalBossName:
+                  bossNames[targetBody.modelName] || targetBody.modelName,
+                randomizedBossName:
+                  bossNames[sourceBody.modelName] || sourceBody.modelName,
+                encounterLocation: {
+                  area: areaNames.get(targetBody.mapId) || targetBody.mapId,
+                  map: targetBody.mapId,
+                  slot: targetBody.name,
+                },
+                compatibility: "grounded-linked-boss-group-permutation",
+                groundY: groundYForBoss(targetBody, catalog),
+                linkedEnemyGroup: target.id,
+              }
+            : {
+                compatibility: "grounded-linked-boss-auxiliary",
+                groundY: groundYForBoss(targetBody, catalog),
+                linkedEnemyGroup: target.id,
+              },
+        );
+        (isBossSlot ? result.bosses : result.enemies).push(placement);
+      });
+      target.parts.forEach((targetPart, index) => {
+        const sourcePart = source.parts[index % source.parts.length];
+        result.enemies.push(enemyPlacement(
+          config,
+          targetPart,
+          sourcePart,
+          9_350_000 + enemyIndex++,
+          {
+            compatibility: "linked-boss-part-permutation",
+            linkedEnemyGroup: target.id,
+          },
+        ));
+      });
+    });
+
+    const bedBodies = byModel("c5230", "m14_01_00_00");
+    const bedParts = [
+      ...byModel("c5400", "m14_01_00_00"),
+      ...byModel("c5401", "m14_01_00_00"),
+    ];
+    [...bedBodies, ...bedParts].forEach((slot) =>
+      result.reservedSlotIds.add(slot.id),
+    );
+    for (const body of bedBodies) {
+      result.bosses.push(enemyPlacement(config, body, body, null, {
+        originalBossName: "Bed of Chaos",
+        randomizedBossName: "Bed of Chaos",
+        encounterLocation: {
+          area: areaNames.get(body.mapId) || body.mapId,
+          map: body.mapId,
+          slot: body.name,
+        },
+        compatibility: "vanilla-preserved-linked-bed-of-chaos",
+        groundY: groundYForBoss(body, catalog),
+        linkedEnemyGroup: "bed-of-chaos",
+      }));
+    }
+    for (const part of bedParts) {
+      result.enemies.push(enemyPlacement(config, part, part, null, {
+        compatibility: "vanilla-preserved-linked-bed-of-chaos-part",
+        linkedEnemyGroup: "bed-of-chaos",
+      }));
+    }
+  }
+  return result;
+}
+
+function randomizeExtractedEnemies(config, catalog, dragonPlan) {
+  if (!config.randomizeEnemies) return dragonPlan.enemies;
+  const rng = createStream(config.seed, "enemies", config.version);
+  const bossSlotIds = new Set(effectiveBossSlots(catalog).map((slot) => slot.id));
   const slots = catalog.enemySlots.filter(
     (slot) =>
-      slot.safeCandidate &&
       /^m1[0-8]_/u.test(slot.mapId) &&
-      !bossSlotIds.has(slot.id),
-  );
-  const movableSlots = slots.filter(
-    (slot) =>
-      !slot.eventModelLocked &&
-      slot.charaInitId < 0 &&
-      slot.teamType === 0 &&
+      !bossSlotIds.has(slot.id) &&
+      !dragonPlan.reservedSlotIds.has(slot.id) &&
+      (slot.teamType === 0 || slot.modelName === "c3501") &&
+      slot.modelName !== "c0000" &&
+      slot.modelName.startsWith("c") &&
+      slot.npcParamId >= 0 &&
+      slot.thinkParamId >= 0 &&
       slot.baseHp > 0 &&
-      slot.battleStartDistance > 0 &&
-      (slot.eyeDistance > 0 || slot.earDistance > 0) &&
-      aiGoalIds.has(slot.battleGoalId) &&
-      !unsupportedReplacementModels.has(slot.modelName) &&
-      !bossModels.has(slot.modelName),
+      !dragonBodyModels.has(slot.modelName) &&
+      !linkedPartModels.has(slot.modelName) &&
+      !internalHelperModels.has(slot.modelName),
   );
 
-  // Every movable source is used exactly once in an unrestricted global
-  // permutation. Geometry, movement, navigation, AI type, and original
-  // difficulty do not constrain the destination. Unsafe helpers and
-  // event-controlled characters remain vanilla.
-  const shuffledSources = shuffledWithoutFixedPoints(rng, movableSlots);
+  const shuffledSources = shuffledWithoutFixedPoints(rng, slots);
   const assignment = new Map(
-    movableSlots.map((target, index) => [target.id, shuffledSources[index]]),
+    slots.map((target, index) => [target.id, shuffledSources[index]]),
   );
 
   return slots.map((slot, index) => {
@@ -105,122 +469,69 @@ function randomizeExtractedEnemies(config, catalog) {
       replacement.modelName !== slot.modelName ||
       replacement.npcParamId !== slot.npcParamId ||
       replacement.thinkParamId !== slot.thinkParamId;
-    const relocated = replacement.id !== slot.id;
-    return {
-      slot: slot.id,
-      sourceSlot: replacement.id,
-      sourceMap: replacement.mapId,
-      map: slot.mapId,
-      entityId: slot.entityId,
-      from: `${slot.modelName} [NPC ${slot.npcParamId} / AI ${slot.thinkParamId}]`,
-      to: `${replacement.modelName} [NPC ${replacement.npcParamId} / AI ${replacement.thinkParamId}]`,
-      modelName: slot.modelName,
-      targetModelName: replacement.modelName,
-      sourceNpcParamId: slot.npcParamId,
-      sourceThinkParamId: slot.thinkParamId,
-      targetNpcParamId: replacement.npcParamId,
-      targetThinkParamId: replacement.thinkParamId,
-      targetBattleGoalId: replacement.battleGoalId,
-      scaledNpcParamId:
-        config.enemyScaling === "vanilla" || !changed
-          ? null
-          : 9_100_000 + index,
-      changed,
+    return enemyPlacement(config, slot, replacement, 9_100_000 + index, {
       compatibility: changed
         ? "count-preserving-unrestricted-permutation"
-        : relocated
+        : replacement.id !== slot.id
           ? "count-preserving-identical-source-permutation"
-          : "vanilla-preserved-unsafe-source",
-      scaling: config.enemyScaling,
-    };
-  });
+          : "count-preserving-fixed-point",
+    });
+  }).concat(dragonPlan.enemies);
 }
 
-const bossSize = new Map(
-  Object.entries({
-    c2230: 3, c2231: 3, c2232: 3, c2240: 3, c2250: 3, c2320: 4,
-    c2360: 3, c2730: 3, c3320: 1, c3471: 3, c4100: 3,
-    c4500: 3, c4510: 4, c5200: 4, c5210: 4, c5220: 3,
-    c5260: 5, c5270: 2, c5280: 3, c5290: 4,
-    c5350: 2, c5370: 1, c5390: 2,
-  }),
-);
-
-const portableBossModels = new Set([
-  "c2230", "c2231", "c2240", "c2250", "c2320", "c2360",
-  "c2730", "c3320", "c4100", "c4500", "c5210", "c5220",
-  "c5260", "c5270", "c5280", "c5350", "c5370",
-]);
 const canonicalBossModel = new Map([
   ["c5271", "c5270"],
   ["c5351", "c5350"],
 ]);
 
-function randomizeExtractedBosses(config, catalog) {
+function randomizeExtractedBosses(config, catalog, dragonPlan) {
   if (!config.randomizeBosses || !catalog?.bossSlots?.length) return [];
   const rng = createStream(config.seed, "bosses", config.version);
-  const aiGoalIds = new Set(catalog.aiGoalIds || []);
   const areaNames = new Map(
     (catalog.maps || []).map((map) => [map.id, map.name]),
   );
   const bossNames = catalog.bossNames || {};
-  const sources = catalog.bossSlots.filter(
+  const sources = effectiveBossSlots(catalog).filter(
     (slot) =>
-      bossSize.has(canonicalBossModel.get(slot.modelName) || slot.modelName) &&
+      !dragonPlan.reservedSlotIds.has(slot.id) &&
       slot.npcParamId >= 0 &&
       slot.thinkParamId >= 0,
   );
-  const archetypes = [
-    ...new Map(
-      sources.filter(
-        (slot) =>
-          portableBossModels.has(slot.modelName) &&
-          aiGoalIds.has(slot.battleGoalId),
-      ).map((slot) => [
-        `${slot.modelName}:${slot.npcParamId}:${slot.thinkParamId}`,
-        slot,
-      ]),
-    ).values(),
+  const modelNames = [
+    ...new Set(sources.map(
+      (slot) => canonicalBossModel.get(slot.modelName) || slot.modelName,
+    )),
   ];
+  const archetypes = modelNames.map((modelName) =>
+    sources.find(
+      (slot) =>
+        (canonicalBossModel.get(slot.modelName) || slot.modelName) ===
+          modelName &&
+        slot.modelName === modelName,
+    ) ?? sources.find(
+      (slot) =>
+        (canonicalBossModel.get(slot.modelName) || slot.modelName) ===
+        modelName,
+    ),
+  );
+  const shuffled = shuffledWithoutFixedPoints(rng, archetypes);
   const replacementsByModel = new Map();
-  for (const modelName of new Set(sources.map(
-    (slot) => canonicalBossModel.get(slot.modelName) || slot.modelName,
-  ))) {
-    const sourceSize = bossSize.get(modelName);
-    const candidates = archetypes.filter(
-      (candidate) =>
-        candidate.modelName !== modelName &&
-        bossSize.get(candidate.modelName) <= sourceSize,
-    );
-    if (candidates.length === 0) {
-      throw new Error(
-        `No portable non-vanilla boss can replace ${modelName}.`,
-      );
-    }
-    replacementsByModel.set(
-      modelName,
-      candidates[rng.int(candidates.length)],
-    );
-  }
-  return sources.map((slot, index) => {
+  modelNames.forEach((modelName, index) =>
+    replacementsByModel.set(modelName, shuffled[index]),
+  );
+  const placements = sources.map((slot, index) => {
     const sourceModelName =
       canonicalBossModel.get(slot.modelName) || slot.modelName;
-    const isFirstAsylumBoss =
-      slot.mapId === "m18_01_00_00" && slot.modelName === "c2232";
     const replacement = replacementsByModel.get(sourceModelName);
-    const changed = true;
     const originalBossName =
       bossNames[sourceModelName] ||
+      additionalBossNames.get(sourceModelName) ||
       `${sourceModelName} [NPC ${slot.npcParamId}]`;
     const randomizedBossName =
       bossNames[replacement.modelName] ||
+      additionalBossNames.get(replacement.modelName) ||
       `${replacement.modelName} [NPC ${replacement.npcParamId}]`;
-    return {
-      slot: slot.id,
-      map: slot.mapId,
-      entityId: slot.entityId,
-      from: `${slot.modelName} [NPC ${slot.npcParamId} / AI ${slot.thinkParamId}]`,
-      to: `${replacement.modelName} [NPC ${replacement.npcParamId} / AI ${replacement.thinkParamId}]`,
+    return enemyPlacement(config, slot, replacement, 9_200_000 + index, {
       originalBossName,
       randomizedBossName,
       encounterLocation: {
@@ -228,26 +539,13 @@ function randomizeExtractedBosses(config, catalog) {
         map: slot.mapId,
         slot: slot.name,
       },
-      modelName: slot.modelName,
-      targetModelName: replacement.modelName,
-      sourceNpcParamId: slot.npcParamId,
-      sourceThinkParamId: slot.thinkParamId,
-      targetNpcParamId: replacement.npcParamId,
-      targetThinkParamId: replacement.thinkParamId,
-      targetBattleGoalId: replacement.battleGoalId,
-      scaledNpcParamId:
-        config.enemyScaling === "vanilla" || !changed
-          ? null
-          : 9_200_000 + index,
-      changed,
       compatibility: canonicalBossModel.has(slot.modelName)
         ? "linked-boss-form"
-        : isFirstAsylumBoss
-        ? "asylum-floor-spawn"
-        : "portable-same-or-smaller-boss",
-      scaling: config.enemyScaling,
-    };
+        : "grounded-unrestricted-boss-permutation",
+      groundY: groundYForBoss(slot, catalog),
+    });
   });
+  return placements.concat(dragonPlan.bosses);
 }
 
 function randomizeExtractedItems(config, catalog) {
@@ -681,6 +979,9 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
   const extractedData = Boolean(
     gameCatalog?.enemySlots?.length && gameCatalog?.enemyArchetypes?.length,
   );
+  const dragonPlan = extractedData
+    ? buildDragonPlan(config, gameCatalog)
+    : null;
   const result = {
     schemaVersion: 1,
     randomizerVersion: config.version,
@@ -692,10 +993,10 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
     config,
     placements: {
       enemies: extractedData
-        ? randomizeExtractedEnemies(config, gameCatalog)
+        ? randomizeExtractedEnemies(config, gameCatalog, dragonPlan)
         : randomizePrototypeEnemies(config),
       bosses: extractedData
-        ? randomizeExtractedBosses(config, gameCatalog)
+        ? randomizeExtractedBosses(config, gameCatalog, dragonPlan)
         : randomizeBosses(config),
       items: extractedData
         ? randomizeExtractedItems(config, gameCatalog)
@@ -714,9 +1015,9 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
       finalBossReachable: config.randomizeKeyItems ? config.progressionLogic : true,
       notes: extractedData
         ? [
-            "Regular enemies use an unrestricted count-preserving global permutation; unsafe event-linked and invisible helper characters stay vanilla.",
+            "All hostile regular-enemy slots use an unrestricted count-preserving global permutation; friendly NPCs and invisible technical helpers stay vanilla.",
             "Area scaling inherits destination combat stats and replaces hidden level multipliers from the selected enemy.",
-            "Bosses use portable size-compatible pools; the first Undead Asylum boss uses a safe floor-spawn event path.",
+            "Bosses use an unrestricted permutation and are grounded at their destination encounter; dragons only exchange complete linked dragon groups.",
             config.progressionLogic
               ? "World items are randomized while progression lots remain in their original locations."
               : "World items and progression lots are randomized independently.",

@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using SoulsFormats;
 
 const int SchemaVersion = 12;
@@ -56,6 +57,7 @@ try
             jsonOptions);
         Console.WriteLine($"Changed maps: {report.PatchedMaps.Count}");
         Console.WriteLine($"Changed AI bundles: {report.LuaBundles.Count}");
+        Console.WriteLine($"Changed effect bundles: {(report.FfxBundle == null ? 0 : 1)}");
         Console.WriteLine($"Changed slots: {report.ChangedSlots}");
         Console.WriteLine($"Output: {report.OutputDirectory}");
     }
@@ -825,10 +827,10 @@ static List<LUAINFO.Goal> ReadLuaGoals(string bundlePath)
 
 static bool IsBossModel(string modelName) => modelName is
     "c2230" or "c2231" or "c2232" or "c2240" or "c2250" or "c2320" or
-    "c2360" or "c2730" or "c3320" or "c3471" or "c4100" or "c4500" or
-    "c4510" or "c5200" or "c5210" or "c5220" or "c5260" or "c5270" or
-    "c5271" or "c5280" or "c5290" or "c5350" or "c5351" or "c5370" or
-    "c5390";
+    "c2360" or "c2730" or "c3230" or "c3320" or "c3471" or "c4100" or
+    "c4500" or "c4510" or "c5200" or "c5210" or "c5220" or "c5230" or "c5250" or
+    "c5260" or "c5270" or "c5271" or "c5280" or "c5290" or "c5320" or
+    "c5350" or "c5351" or "c5370" or "c5390";
 
 static short? GetBossNameId(string modelName) => modelName switch
 {
@@ -840,19 +842,30 @@ static short? GetBossNameId(string modelName) => modelName switch
     "c2320" => 2320,
     "c2360" => 2360,
     "c2730" => 2730,
+    "c3230" => 3230,
     "c3320" => 3320,
+    "c3420" => 3420,
+    "c3421" => 3421,
+    "c3430" => 3430,
     "c3471" => 3471,
+    "c3520" => 3520,
     "c4100" => 4100,
     "c4500" => 4500,
     "c4510" => 4510,
+    "c5200" => 5200,
     "c5210" => 5210,
     "c5220" => 5220,
+    "c5230" => 5230,
+    "c5250" => 5250,
     "c5260" => 5260,
     "c5270" => 5270,
     "c5271" => 5270,
     "c5280" => 5280,
+    "c5290" => 5290,
+    "c5320" => 5320,
     "c5350" => 5350,
     "c5370" => 5370,
+    "c5390" => 5390,
     _ => null,
 };
 
@@ -920,7 +933,15 @@ static PatchReport PatchEnemies(
                         : null,
                 element.TryGetProperty("entityId", out var entityId)
                     ? entityId.GetInt32()
-                    : -1))
+                    : -1,
+                element.TryGetProperty("groundY", out var groundY) &&
+                    groundY.ValueKind == JsonValueKind.Number
+                        ? groundY.GetSingle()
+                        : null,
+                element.TryGetProperty("linkedDragonGroup", out var dragonGroup) &&
+                    dragonGroup.ValueKind == JsonValueKind.String ||
+                element.TryGetProperty("linkedEnemyGroup", out var enemyGroup) &&
+                    enemyGroup.ValueKind == JsonValueKind.String))
             .Where(placement =>
                 placement.TargetNpcParamId >= 0 && placement.TargetThinkParamId >= 0);
     }
@@ -930,20 +951,24 @@ static PatchReport PatchEnemies(
     foreach (var placement in regularEnemyPlacements)
     {
         if (!slotsById.TryGetValue(placement.SlotId, out var slot) ||
-            !slot.SafeCandidate ||
-            slot.TeamType != 0 ||
+            (slot.TeamType != 0 &&
+             slot.ModelName != "c3501" &&
+             !placement.LinkedEnemyGroup) ||
             slot.ModelName == "c0000" ||
             slot.NpcParamId != placement.SourceNpcParamId ||
-            (slot.EventModelLocked &&
-             (slot.ModelName != placement.TargetModelName ||
-              slot.ThinkParamId != placement.TargetThinkParamId)))
+            placement.TargetNpcParamId < 0 ||
+            placement.TargetThinkParamId < 0)
         {
             throw new InvalidDataException(
                 $"Protected or obsolete regular-enemy placement: {placement.SlotId}. " +
                 "Generate a new package from a fresh catalog.");
         }
     }
-    var bossSlotIds = catalog.BossSlots.Select(slot => slot.Id).ToHashSet();
+    var bossSlotIds = catalog.BossSlots
+        .Concat(catalog.EnemySlots.Where(slot =>
+            IsBossModel(slot.ModelName) && IsPrimaryBossSlot(slot)))
+        .Select(slot => slot.Id)
+        .ToHashSet();
     if (bossPlacements.Any(placement => !bossSlotIds.Contains(placement.SlotId)))
         throw new InvalidDataException("A boss placement targets a protected slot.");
     var allEnemyPlacements = regularEnemyPlacements
@@ -1032,9 +1057,12 @@ static PatchReport PatchEnemies(
         }
 
         var msb = MSB1.Read(sourcePath);
-        var enemiesByName = msb.Parts.Enemies.ToDictionary(
+        var allMapEnemies = msb.Parts.Enemies
+            .Cast<MSB1.Part.EnemyBase>()
+            .Concat(msb.Parts.DummyEnemies);
+        var enemiesByName = allMapEnemies.ToDictionary(
             enemy => enemy.Name, StringComparer.Ordinal);
-        var originalEnemies = msb.Parts.Enemies.ToDictionary(
+        var originalEnemies = allMapEnemies.ToDictionary(
             enemy => enemy.Name,
             SnapshotEnemy,
             StringComparer.Ordinal);
@@ -1067,7 +1095,12 @@ static PatchReport PatchEnemies(
             enemy.ModelName = targetModelName;
             enemy.NPCParamID = placement.EffectiveNpcParamId;
             enemy.ThinkParamID = placement.TargetThinkParamId;
-            if (modelChanged)
+            if (placement.GroundY.HasValue)
+                enemy.Position = new System.Numerics.Vector3(
+                    enemy.Position.X,
+                    placement.GroundY.Value,
+                    enemy.Position.Z);
+            if (modelChanged || placement.GroundY.HasValue)
             {
                 // Initial/damage animation IDs belong to the original character
                 // model. Retaining them can leave a replacement in a frozen bind
@@ -1086,10 +1119,23 @@ static PatchReport PatchEnemies(
         Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
         msb.Write(outputPath);
         var verification = MSB1.Read(outputPath);
-        if (verification.Parts.Enemies.Count != msb.Parts.Enemies.Count)
+        if (verification.Parts.Enemies.Count != msb.Parts.Enemies.Count ||
+            verification.Parts.DummyEnemies.Count != msb.Parts.DummyEnemies.Count)
             throw new InvalidDataException($"Invalid round-trip for map {mapGroup.Key}.");
-        var verifiedEnemies = verification.Parts.Enemies.ToDictionary(
+        var verifiedEnemies = verification.Parts.Enemies
+            .Cast<MSB1.Part.EnemyBase>()
+            .Concat(verification.Parts.DummyEnemies)
+            .ToDictionary(
             enemy => enemy.Name, StringComparer.Ordinal);
+        var placementsByName = mapGroup.ToDictionary(
+            placement =>
+            {
+                var separator = placement.SlotId.IndexOf(':');
+                return separator >= 0
+                    ? placement.SlotId[(separator + 1)..]
+                    : placement.SlotId;
+            },
+            StringComparer.Ordinal);
         var placedNames = mapGroup
             .Select(placement =>
             {
@@ -1102,7 +1148,10 @@ static PatchReport PatchEnemies(
         foreach (var (name, original) in originalEnemies)
         {
             var verified = verifiedEnemies[name];
-            AssertSpawnUnchanged(original, verified, mapGroup.Key);
+            var expectedY = placementsByName.TryGetValue(name, out var placement)
+                ? placement.GroundY
+                : null;
+            AssertSpawnUnchanged(original, verified, mapGroup.Key, expectedY);
             if (!placedNames.Contains(name) &&
                 SnapshotEnemy(verified) != original)
             {
@@ -1125,7 +1174,9 @@ static PatchReport PatchEnemies(
                     $"Enemy model declaration did not persist: {expectedModel} in {mapGroup.Key}.");
             if (verifiedEnemy.ModelName != expectedModel ||
                 verifiedEnemy.NPCParamID != placement.EffectiveNpcParamId ||
-                verifiedEnemy.ThinkParamID != placement.TargetThinkParamId)
+                verifiedEnemy.ThinkParamID != placement.TargetThinkParamId ||
+                (placement.GroundY.HasValue &&
+                 verifiedEnemy.Position.Y != placement.GroundY.Value))
                 throw new InvalidDataException(
                     $"Enemy placement did not persist: {placement.SlotId}.");
             var original = originalEnemies[enemyName];
@@ -1155,6 +1206,14 @@ static PatchReport PatchEnemies(
     var patchedEvents = PatchBossNames(
         gameDirectory, outputDirectory, catalog, bossPlacements);
 
+    // Enemy effects are normally spread across map-local SFX bundles. An enemy
+    // moved to another map can otherwise attack correctly while its projectile
+    // or elemental effect is invisible (for example, the Demonic Statue fire).
+    // Make the transferable enemy effects globally available to this package.
+    var patchedFfxBundle = allEnemyPlacements.Count > 0
+        ? PatchEnemyEffects(gameDirectory, outputDirectory)
+        : null;
+
     var patchedGameParam =
         allEnemyPlacements.Any(placement => placement.ScaledNpcParamId.HasValue) ||
         startingPlacements.Count > 0 ||
@@ -1182,11 +1241,105 @@ static PatchReport PatchEnemies(
         patchedMaps,
         patchedLuaBundles,
         patchedEvents,
+        patchedFfxBundle,
         patchedGameParam);
     File.WriteAllText(
         Path.Combine(outputDirectory, "patch-manifest.json"),
         JsonSerializer.Serialize(report, jsonOptions) + Environment.NewLine);
     return report;
+}
+
+static PatchedFile PatchEnemyEffects(string gameDirectory, string outputDirectory)
+{
+    const string commonRelative = "sfx/FRPG_SfxBnd_CommonEffects.ffxbnd.dcx";
+    var mapBundles = new[]
+    {
+        "m10", "m10_00", "m10_01", "m10_02", "m11", "m12", "m12_00",
+        "m12_01", "m13", "m13_00", "m13_01", "m13_02", "m14", "m14_00",
+        "m14_01", "m15", "m15_00", "m15_01", "m16", "m17", "m18",
+        "m18_00", "m18_01",
+    };
+    var effectName = new Regex(@"f00([1-9][0-9]{4})\.ffx$", RegexOptions.IgnoreCase);
+    var resourceName = new Regex(@"s([1-9][0-9]{4})\.(flver|tpf)$", RegexOptions.IgnoreCase);
+
+    static BinderFile CopyFile(BinderFile file, int id) => new(
+        file.Flags,
+        id,
+        file.Name,
+        file.Bytes.ToArray())
+    {
+        CompressionType = file.CompressionType,
+    };
+
+    bool IsEnemyEffect(BinderFile file)
+    {
+        var name = Path.GetFileName(file.Name);
+        var effectMatch = effectName.Match(name);
+        if (effectMatch.Success)
+            return int.Parse(effectMatch.Groups[1].Value) < 20_001;
+        var resourceMatch = resourceName.Match(name);
+        return resourceMatch.Success &&
+            int.Parse(resourceMatch.Groups[1].Value) < 20_001;
+    }
+
+    var sourcePath = ResolveGamePath(gameDirectory, commonRelative);
+    if (!File.Exists(sourcePath))
+        throw new FileNotFoundException("Common enemy-effect bundle was not found.", sourcePath);
+    var sourceHash = HashFile(sourcePath);
+    var binder = BND3.Read(sourcePath);
+    var existingNames = binder.Files
+        .Select(file => file.Name)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    var nextIds = new Dictionary<int, int>
+    {
+        [0] = binder.Files.Where(file => file.ID < 100_000)
+            .Select(file => file.ID).DefaultIfEmpty(0).Max(),
+        [1] = binder.Files.Where(file => file.ID is >= 100_000 and < 200_000)
+            .Select(file => file.ID).DefaultIfEmpty(100_000).Max(),
+        [2] = binder.Files.Where(file => file.ID >= 200_000)
+            .Select(file => file.ID).DefaultIfEmpty(200_000).Max(),
+    };
+    var additions = new List<BinderFile>();
+    foreach (var mapId in mapBundles)
+    {
+        var relative = $"sfx/FRPG_SfxBnd_{mapId}.ffxbnd.dcx";
+        var mapPath = ResolveGamePath(gameDirectory, relative);
+        if (!File.Exists(mapPath))
+            throw new FileNotFoundException("Map enemy-effect bundle was not found.", mapPath);
+        var mapHash = HashFile(mapPath);
+        foreach (var file in BND3.Read(mapPath).Files.Where(IsEnemyEffect))
+        {
+            if (!existingNames.Add(file.Name))
+                continue;
+            var group = file.ID < 100_000 ? 0 : file.ID < 200_000 ? 1 : 2;
+            additions.Add(CopyFile(file, ++nextIds[group]));
+        }
+        if (!HashFile(mapPath).Equals(mapHash, StringComparison.OrdinalIgnoreCase))
+            throw new IOException($"Source effect bundle changed during patching: {relative}");
+    }
+
+    if (additions.Count == 0)
+        throw new InvalidDataException("No transferable enemy effects were found.");
+    // The engine expects effect, texture, and model entries grouped by ID range.
+    binder.Files.AddRange(additions.OrderBy(file => file.ID));
+    var outputRelative = $"mod/{commonRelative}";
+    var outputPath = ResolvePackagePath(outputDirectory, outputRelative);
+    Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+    binder.Write(outputPath);
+
+    var verification = BND3.Read(outputPath);
+    var verifiedNames = verification.Files
+        .Select(file => file.Name)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    if (!additions.Select(file => file.Name).All(verifiedNames.Contains))
+        throw new InvalidDataException("Enemy effects did not persist in CommonEffects.");
+    if (!HashFile(sourcePath).Equals(sourceHash, StringComparison.OrdinalIgnoreCase))
+        throw new IOException("Source CommonEffects bundle changed during patching.");
+    return new PatchedFile(
+        commonRelative,
+        outputRelative,
+        sourceHash,
+        HashFile(outputPath));
 }
 
 static List<PatchedFile> PatchLuaAiBundles(
@@ -1246,6 +1399,11 @@ static List<PatchedFile> PatchLuaAiBundles(
                 ReadGlobals(binder, record.Path));
         })
         .ToList();
+    var transferableGoalIds = sourceBundles
+        .SelectMany(bundle => bundle.Info.Goals)
+        .Select(goal => goal.ID)
+        .Concat(commonGoals)
+        .ToHashSet();
     var results = new List<PatchedFile>();
     foreach (var mapGroup in placements
                  .GroupBy(placement => NormalizeAiMapId(placement.MapId))
@@ -1298,7 +1456,8 @@ static List<PatchedFile> PatchLuaAiBundles(
         var missingGoalIds = requiredGoalIds
             .Where(id =>
                 !existingGoalIds.Contains(id) &&
-                !commonGoals.Contains(id))
+                !commonGoals.Contains(id) &&
+                transferableGoalIds.Contains(id))
             .ToList();
         if (missingGoalIds.Count == 0)
             continue;
@@ -1318,13 +1477,22 @@ static List<PatchedFile> PatchLuaAiBundles(
                     "This replacement is not safe.");
             }
             var scriptPrefix = $"{goalId:D6}_";
+            var goals = source.Info.Goals
+                .Where(goal => goal.ID == goalId)
+                .ToList();
+            var logicScriptNames = goals
+                .Select(goal => goal.LogicInterruptName)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Select(name => Path.GetFileName(name!))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
             var scripts = source.Binder.Files
                 .Where(file =>
                     file.ID != luaGnlId &&
                     file.ID != luaInfoId &&
-                    Path.GetFileName(file.Name).StartsWith(
-                        scriptPrefix,
-                        StringComparison.OrdinalIgnoreCase))
+                    (Path.GetFileName(file.Name).StartsWith(
+                         scriptPrefix,
+                         StringComparison.OrdinalIgnoreCase) ||
+                     logicScriptNames.Contains(Path.GetFileName(file.Name))))
                 .ToList();
             if (scripts.Count == 0)
             {
@@ -1332,9 +1500,6 @@ static List<PatchedFile> PatchLuaAiBundles(
                     $"No Lua AI script for goal {goalId} was found in " +
                     $"{source.Record.Path}.");
             }
-            var goals = source.Info.Goals
-                .Where(goal => goal.ID == goalId)
-                .ToList();
             var globals = source.Globals.Globals
                 .Where(value => scripts.Any(script =>
                     ContainsAscii(script.Bytes, value)))
@@ -1425,6 +1590,7 @@ static List<PatchedFile> PatchLuaAiBundles(
             .ToHashSet(StringComparer.Ordinal);
         var unavailable = requiredGoalIds
             .Where(id =>
+                transferableGoalIds.Contains(id) &&
                 !verifiedGoalIds.Contains(id) &&
                 !commonGoals.Contains(id))
             .ToList();
@@ -1508,7 +1674,11 @@ static List<PatchedFile> PatchBossNames(
             .ToDictionary(
                 group => group.Key,
                 group => GetBossNameId(group.First().TargetModelName)!.Value);
-        var bossSlotsById = catalog.BossSlots.ToDictionary(slot => slot.Id);
+        var bossSlotsById = catalog.BossSlots
+            .Concat(catalog.EnemySlots.Where(slot =>
+                IsBossModel(slot.ModelName) && IsPrimaryBossSlot(slot)))
+            .DistinctBy(slot => slot.Id)
+            .ToDictionary(slot => slot.Id);
         var randomizedEntityIds = mapGroup
             .Where(placement =>
                 bossSlotsById.TryGetValue(placement.SlotId, out var slot) &&
@@ -2406,6 +2576,8 @@ static List<PatchedFile> GetPatchFiles(PatchReport report)
         map.Source, map.Output, map.SourceSha256, map.OutputSha256)).ToList();
     files.AddRange(report.LuaBundles ?? new List<PatchedFile>());
     files.AddRange(report.Events ?? new List<PatchedFile>());
+    if (report.FfxBundle != null)
+        files.Add(report.FfxBundle);
     if (report.GameParam != null)
         files.Add(report.GameParam);
     return files;
@@ -2472,10 +2644,11 @@ static EnemyPartSnapshot SnapshotEnemy(MSB1.Part.EnemyBase enemy) => new(
 static void AssertSpawnUnchanged(
     EnemyPartSnapshot original,
     MSB1.Part.EnemyBase verified,
-    string mapId)
+    string mapId,
+    float? expectedY = null)
 {
     if (verified.Position.X != original.PositionX ||
-        verified.Position.Y != original.PositionY ||
+        verified.Position.Y != (expectedY ?? original.PositionY) ||
         verified.Position.Z != original.PositionZ ||
         verified.Rotation.X != original.RotationX ||
         verified.Rotation.Y != original.RotationY ||
@@ -2851,7 +3024,9 @@ record PatchPlacement(
     int TargetBattleGoalId,
     int SourceNpcParamId,
     int? ScaledNpcParamId,
-    int EntityId)
+    int EntityId,
+    float? GroundY,
+    bool LinkedEnemyGroup)
 {
     public int EffectiveNpcParamId => ScaledNpcParamId ?? TargetNpcParamId;
 }
@@ -2891,6 +3066,7 @@ record PatchReport(
     List<PatchedMap> PatchedMaps,
     List<PatchedFile> LuaBundles,
     List<PatchedFile> Events,
+    PatchedFile? FfxBundle,
     PatchedFile? GameParam);
 record ActivationFile(
     string RelativePath,
