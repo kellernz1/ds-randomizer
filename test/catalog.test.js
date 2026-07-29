@@ -91,21 +91,32 @@ test("real catalog produces deterministic enemies with visibly different models"
       [
         "count-preserving-unrestricted-permutation",
         "count-preserving-identical-source-permutation",
-        "vanilla-preserved-unsafe-source",
+        "count-preserving-fixed-point",
+        "dragon-only-group-permutation",
+        "linked-dragon-part-permutation",
+        "linked-hydra-group-permutation",
+        "linked-hydra-part-permutation",
+        "grounded-linked-boss-auxiliary",
+        "linked-boss-part-permutation",
+        "vanilla-preserved-linked-bed-of-chaos-part",
       ].includes(placement.compatibility),
     ),
   );
 
   const slots = new Map(gameCatalog.enemySlots.map((slot) => [slot.id, slot]));
+  const ordinaryPlacements = first.placements.enemies.filter(
+    (placement) =>
+      !placement.linkedDragonGroup && !placement.linkedEnemyGroup,
+  );
   assert.equal(
-    new Set(first.placements.enemies.map((placement) => placement.sourceSlot)).size,
-    first.placements.enemies.length,
+    new Set(ordinaryPlacements.map((placement) => placement.sourceSlot)).size,
+    ordinaryPlacements.length,
   );
   const placementsBySlot = new Map(
-    first.placements.enemies.map((placement) => [placement.slot, placement]),
+    ordinaryPlacements.map((placement) => [placement.slot, placement]),
   );
   let longestCycle = 0;
-  for (const placement of first.placements.enemies) {
+  for (const placement of ordinaryPlacements) {
     const visited = new Set();
     let current = placement.slot;
     while (!visited.has(current)) {
@@ -120,15 +131,13 @@ test("real catalog produces deterministic enemies with visibly different models"
   let ignoresMovementCompatibility = false;
   let ignoresSizeCompatibility = false;
   let ignoresDifficultyCompatibility = false;
-  for (const placement of first.placements.enemies.filter(
+  for (const placement of ordinaryPlacements.filter(
     (entry) => entry.changed,
   )) {
     const slot = slots.get(placement.slot);
     const source = slots.get(placement.sourceSlot);
-    assert.equal(slot.teamType, 0);
+    assert.ok(slot.teamType === 0 || slot.modelName === "c3501");
     assert.notEqual(slot.modelName, "c0000");
-    assert.ok(source.safeCandidate);
-    assert.equal(source.eventModelLocked, false);
     assert.equal(placement.targetModelName, source.modelName);
     assert.equal(placement.targetNpcParamId, source.npcParamId);
     assert.equal(placement.targetThinkParamId, source.thinkParamId);
@@ -149,17 +158,49 @@ test("real catalog produces deterministic enemies with visibly different models"
         source.soulReward >
           Math.max(slot.soulReward * 3, slot.soulReward + 200))
     );
-    assert.equal(slot.eventModelLocked, false);
   }
   assert.ok(ignoresMovementCompatibility);
   assert.ok(ignoresSizeCompatibility);
   assert.ok(ignoresDifficultyCompatibility);
   assert.ok(
-    first.placements.enemies.every(
+    ordinaryPlacements.every(
       (placement) =>
-        !["c2731", "c4170", "c4171", "c4172", "c5261"].includes(
-          placement.targetModelName,
-        ) || placement.sourceSlot === placement.slot,
+        !["c2731", "c3422", "c3431", "c3451", "c4511", "c5261",
+        ].includes(placement.targetModelName),
+    ),
+  );
+  assert.ok(
+    first.placements.enemies.filter(
+      (placement) => slots.get(placement.slot)?.dummy,
+    ).length > 150,
+  );
+  assert.ok(
+    first.placements.enemies.filter(
+      (placement) => slots.get(placement.slot)?.eventModelLocked,
+    ).length > 50,
+  );
+  const dragonModels = new Set([
+    "c2730", "c2731", "c3420", "c3421", "c3422", "c3430", "c3431",
+    "c3520", "c4510", "c4511", "c5260", "c5261", "c5290", "c5291",
+  ]);
+  assert.ok(
+    first.placements.enemies
+      .filter((placement) => placement.linkedDragonGroup)
+      .every(
+        (placement) =>
+          dragonModels.has(placement.modelName) &&
+          dragonModels.has(placement.targetModelName),
+      ),
+  );
+  const hydraPlacements = first.placements.enemies.filter(
+    (placement) => placement.linkedEnemyGroup?.startsWith("hydra-"),
+  );
+  assert.equal(hydraPlacements.length, 24);
+  assert.ok(
+    hydraPlacements.every(
+      (placement) =>
+        ["c3530", "c3531"].includes(placement.modelName) &&
+        ["c3530", "c3531"].includes(placement.targetModelName),
     ),
   );
   assert.ok(
@@ -169,13 +210,23 @@ test("real catalog produces deterministic enemies with visibly different models"
         placement.targetModelName !== placement.modelName,
     ).length > 10,
   );
+  const humanityModels = new Set(["c4170", "c4171", "c4172"]);
+  const humanitySlots = gameCatalog.enemySlots.filter((slot) =>
+    humanityModels.has(slot.modelName),
+  );
+  assert.equal(humanitySlots.length, 45);
+  assert.ok(
+    humanitySlots.every((slot) => placementsBySlot.has(slot.id)),
+  );
 });
 
 test("friendly NPC and human-character slots are never randomized", async () => {
   const gameCatalog = await catalog();
   assert.equal(gameCatalog.schemaVersion, 12);
   const protectedSlots = gameCatalog.enemySlots.filter(
-    (slot) => slot.teamType >= 2 || slot.modelName === "c0000",
+    (slot) =>
+      (slot.teamType >= 2 && slot.modelName !== "c5291") ||
+      slot.modelName === "c0000",
   );
   assert.ok(protectedSlots.length > 150);
   assert.ok(protectedSlots.every((slot) => slot.safeCandidate === false));
@@ -236,32 +287,42 @@ test("real catalog produces real boss and world-item placements", async () => {
     result.placements.items.map((entry) => entry.sourceRowId).sort((a, b) => a - b),
     result.placements.items.map((entry) => entry.rowId).sort((a, b) => a - b),
   );
-  assert.ok(result.placements.bosses.every((entry) => entry.changed));
   assert.ok(
     result.placements.bosses.every(
-      (entry) => entry.targetModelName !== entry.modelName,
+      (entry) =>
+        entry.changed || entry.linkedEnemyGroup === "bed-of-chaos",
     ),
   );
   assert.ok(
-    result.placements.bosses.filter((entry) => entry.changed).every(
-      (entry) => !["c2232", "c5200", "c5271", "c5290", "c5351", "c5390"].includes(
-        entry.targetModelName,
-      ) && !["c3471", "c4510"].includes(entry.targetModelName),
+    result.placements.bosses.every(
+      (entry) =>
+        entry.targetModelName !== entry.modelName ||
+        entry.linkedEnemyGroup === "bed-of-chaos",
     ),
   );
+  assert.ok(result.placements.bosses.every((entry) => Number.isFinite(entry.groundY)));
+  for (const modelName of ["c3230", "c5250", "c5320"]) {
+    assert.ok(
+      result.placements.bosses.some((entry) => entry.modelName === modelName),
+      `${modelName} must be included in the boss permutation`,
+    );
+  }
   const asylum = result.placements.bosses.find(
     (entry) => entry.slot === "m18_01_00_00:c2232_0000",
   );
   assert.ok(asylum);
   assert.notEqual(asylum.targetModelName, "c2232");
-  assert.equal(asylum.compatibility, "asylum-floor-spawn");
+  assert.equal(asylum.groundY, 182.11);
   const stray = result.placements.bosses.find(
     (entry) => entry.slot === "m18_01_00_00:c2230_0000",
   );
   assert.ok(stray);
   assert.notEqual(stray.targetModelName, "c2230");
   const assignmentsByVanillaModel = new Map();
-  for (const entry of result.placements.bosses) {
+  for (const entry of result.placements.bosses.filter(
+    (placement) =>
+      !placement.linkedDragonGroup && !placement.linkedEnemyGroup,
+  )) {
     const previous = assignmentsByVanillaModel.get(entry.modelName);
     if (previous) {
       assert.equal(entry.targetModelName, previous.targetModelName);
@@ -270,15 +331,57 @@ test("real catalog produces real boss and world-item placements", async () => {
       assignmentsByVanillaModel.set(entry.modelName, entry);
     }
   }
-  for (const [primary, linked] of [
-    ["c5270", "c5271"],
-    ["c5350", "c5351"],
-  ]) {
+  const dragonModels = new Set([
+    "c2730", "c3420", "c3421", "c3430", "c3520",
+    "c4510", "c5260", "c5290",
+  ]);
+  assert.ok(
+    result.placements.bosses
+      .filter((placement) => placement.linkedDragonGroup)
+      .every((placement) => dragonModels.has(placement.targetModelName)),
+  );
+  for (const [primary, linked] of [["c5270", "c5271"]]) {
     assert.equal(
       assignmentsByVanillaModel.get(linked).targetModelName,
       assignmentsByVanillaModel.get(primary).targetModelName,
     );
   }
+  const linkedBossFamilies = new Map([
+    ["sanctuary-guardian", new Set(["c3471", "c3472"])],
+    ["bell-gargoyles", new Set(["c5350", "c5352"])],
+    ["anor-londo-gargoyles", new Set(["c5351", "c5353"])],
+    ["centipede-demon", new Set(["c5200", "c5201", "c5202"])],
+  ]);
+  for (const [group, targetFamily] of linkedBossFamilies) {
+    const body = result.placements.bosses.find(
+      (entry) => entry.linkedEnemyGroup === group,
+    );
+    const parts = result.placements.enemies.filter(
+      (entry) => entry.linkedEnemyGroup === group,
+    );
+    assert.ok(body?.changed);
+    assert.ok(parts.length > 0);
+    const sourceFamily = [...linkedBossFamilies.values()].find((family) =>
+      family.has(body.targetModelName),
+    );
+    assert.ok(sourceFamily);
+    assert.ok(parts.every((entry) => sourceFamily.has(entry.targetModelName)));
+    assert.ok(
+      [...targetFamily].some((modelName) =>
+        [body, ...parts].some((entry) => entry.modelName === modelName),
+      ),
+    );
+  }
+  const bed = result.placements.bosses.find(
+    (entry) => entry.linkedEnemyGroup === "bed-of-chaos",
+  );
+  assert.equal(bed?.changed, false);
+  assert.equal(
+    result.placements.enemies.filter(
+      (entry) => entry.linkedEnemyGroup === "bed-of-chaos",
+    ).length,
+    2,
+  );
   assert.ok(result.placements.items.every((entry) => !entry.preserved));
   assert.ok(
     result.placements.items.every(

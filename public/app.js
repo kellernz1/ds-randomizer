@@ -56,8 +56,8 @@ if (state.package) {
 }
 if (state.catalog.available) {
   document.querySelector("#detection").textContent =
-    `Catalog: ${state.catalog.maps} maps, ${state.catalog.enemySlots} slots, ` +
-    `${state.catalog.safeSlots} conservative candidates.`;
+    `Catalog: ${state.catalog.maps} maps and ` +
+    `${state.catalog.enemySlots} character slots.`;
 }
 
 document.querySelector("#new-seed").addEventListener("click", async () => {
@@ -148,8 +148,7 @@ document.querySelector("#scan").addEventListener("click", async () => {
       body: JSON.stringify({ gameDirectory: form.elements.gameDirectory.value }),
     });
     detection.textContent =
-      `Imported: ${result.maps} maps, ${result.enemySlots} slots, and ` +
-      `${result.safeSlots} conservative candidates. ` +
+      `Imported: ${result.maps} maps and ${result.enemySlots} character slots. ` +
       `${result.errors.length} auxiliary files ignored.`;
     form.elements.useExtractedData.checked = true;
   } catch (error) {

@@ -9,29 +9,37 @@ package before touching the game.
 
 ## Features
 
-- 1,600+ hostile regular-enemy slots across all 18 gameplay maps
+- 1,800+ hostile regular-enemy slots across all 18 gameplay maps, including
+  dummy and event-linked slots
 - Unrestricted global enemy permutation: size, height, movement, navigation,
   AI type, and original difficulty do not restrict destinations
-- Every eligible original spawn is used exactly once, including permutation
+- Every ordinary hostile spawn is used exactly once, including permutation
   cycles involving any number of enemies
-- Invisible helper characters and unsafe event-controlled spawns remain in
-  their native locations
+- Friendly NPCs and invisible technical helpers remain in their native locations
 - Area and progressive scaling adapt combat stats to the destination slot;
   original-stat scaling deliberately retains the source enemy's strength
-- Replacement NPC/AI rows require working combat detection and available battle
-  goals; model-specific event-controlled spawns stay protected
 - Only the required cross-map Lua battle/logic scripts are merged into each
   destination map, keeping AI bundles small and isolated
-- Regular enemies with ordinary enable/disable event references remain eligible
-  for cross-model replacements
+- Event-controlled and dummy hostile slots participate in the same permutation
 - Friendly NPCs, merchants, quest characters, and their spawns are protected
-- Primary boss encounters shuffled through portable, size-compatible pools
-- The first Undead Asylum boss uses a safe floor-spawn event path when replaced
+- Boss encounters use an unrestricted permutation and replacements are placed
+  at the destination encounter's terrain height
+- Dragons only exchange locations with other dragons; detachable tails, wings,
+  legs, and encounter variants move as linked groups
+- Hydra bodies and all seven heads also move as linked hydra-only groups
+- Sanctuary Guardian, Gargoyle, and Centipede Demon bodies and removable parts
+  are randomized as inseparable boss groups
+- The three Bed of Chaos entities are kept together in their native scripted
+  encounter instead of entering the regular-enemy pool
+- Large, medium, and small Humanity enemies participate in the global
+  regular-enemy permutation
+- Moonlight Butterfly, Ceaseless Discharge, and Dark Sun Gwyndolin are included
+  in the boss pool
 - Boss health bars updated to the randomized boss name
 - Boss assignments are a strict derangement: no vanilla boss remains in its
-  native encounter, and multi-part encounters share one model/name assignment
+  native encounter except the script-bound Bed of Chaos; multi-part encounters
+  share one linked body/part assignment
 - Randomized boss AI explicitly activated when the encounter health bar appears
-- Known event-bound and non-portable enemy AI excluded from replacement pools
 - 500+ world pickup and chest item lots
 - Starting-class stats and equipment
 - Unique, stat-compatible starting weapons collected in the Undead Asylum
@@ -132,16 +140,16 @@ activation.
 
 Progression protection keeps recognized keys, embers, progression rings, and
 event-bound shop goods in their original locations. Boss replacement preserves
-the original map entity IDs so map events continue to target the encounter.
+the original map entity IDs so map events continue to target the encounter and
+places the replacement at a known terrain-level Y coordinate.
 Area scaling creates a dedicated NPC parameter row for every replacement and
 inherits HP, stamina, defenses, resistances, and souls from the original enemy
 in that slot. Every combat-scaling `SpEffect` also comes from the destination,
 so hidden late-game HP, defense, and attack multipliers cannot leak into an
-early encounter. Replacement models use combat-capable NPC/AI combinations, and
-incompatible initial animation IDs are cleared so they can animate, navigate,
-and enter combat normally. The first Asylum boss bypasses the original rooftop
-drop animation, is placed at the arena floor, and has its AI explicitly enabled
-after the player enters the arena.
+early encounter. Incompatible initial animation IDs are cleared so replacements
+can animate and enter combat normally. Boss replacements are grounded before
+play begins, and the first Asylum encounter bypasses its original rooftop drop
+animation.
 Boss mode remains experimental because some encounters contain bespoke
 animations and arena scripting.
 
