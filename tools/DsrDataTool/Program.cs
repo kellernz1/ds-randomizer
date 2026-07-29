@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using SoulsFormats;
 
-const int SchemaVersion = 12;
+const int SchemaVersion = 14;
 Console.OutputEncoding = new UTF8Encoding(false);
 Console.InputEncoding = new UTF8Encoding(false);
 
@@ -539,49 +539,16 @@ static RandomizerParamData ReadRandomizerParamData(
         .OrderBy(row => row.RowId)
         .ToList();
 
-    var usedWeaponIds = shopEntries
-        .Where(row => row.EquipType == 0 && row.EquipId < 2_000_000)
-        .Select(row => row.EquipId)
-        .ToHashSet();
-    var usedProtectorIds = shopEntries
-        .Where(row => row.EquipType == 1)
-        .Select(row => row.EquipId)
-        .ToHashSet();
-    foreach (var row in itemLotParam.Rows)
-    {
-        for (var slot = 1; slot <= 8; slot++)
-        {
-            var suffix = slot.ToString("00");
-            var itemId = GetCellInt(row, $"lotItemId{suffix}");
-            var category = GetCellInt(row, $"lotItemCategory{suffix}");
-            if (itemId < 0)
-                continue;
-            if (category == 0 && itemId < 2_000_000)
-                usedWeaponIds.Add(itemId);
-            else if (category == 1)
-                usedProtectorIds.Add(itemId);
-        }
-    }
-    var charaParam = ReadParam("CharaInitParam.param");
-    foreach (var row in charaParam.Rows.Where(row => row.ID is >= 2000 and <= 3009))
-    {
-        foreach (var field in new[] { "equip_Wep_Right", "equip_Wep_Left" })
-        {
-            var itemId = GetCellInt(row, field);
-            if (itemId >= 0 && itemId < 2_000_000)
-                usedWeaponIds.Add(itemId);
-        }
-        foreach (var field in new[] { "equip_Helm", "equip_Armer", "equip_Gaunt", "equip_Leg" })
-        {
-            var itemId = GetCellInt(row, field);
-            if (itemId >= 0)
-                usedProtectorIds.Add(itemId);
-        }
-    }
-
     var weaponParam = ReadParam("EquipParamWeapon.param");
     var weapons = weaponParam.Rows
-        .Where(row => usedWeaponIds.Contains(row.ID))
+        // Use every named base weapon rather than only equipment that happens
+        // to appear in a shop, loot table, or vanilla class. Explicitly named
+        // reinforcement levels (such as Pyromancy Flame +1) are not valid
+        // starting items.
+        .Where(row => row.ID is >= 0 and < 2_000_000)
+        .Where(row => row.ID % 10 == 0)
+        .Where(row => itemNames.Weapons.ContainsKey(row.ID))
+        .Where(row => !Regex.IsMatch(itemNames.Weapons[row.ID], @"\+\d+$"))
         .Select(row => new ItemCandidate(
             row.ID,
             itemNames.Weapons.GetValueOrDefault(row.ID) ?? $"Weapon {row.ID}",
@@ -594,7 +561,15 @@ static RandomizerParamData ReadRandomizerParamData(
         .ToList();
     var protectorParam = ReadParam("EquipParamProtector.param");
     var armorBySlot = protectorParam.Rows
-        .Where(row => usedProtectorIds.Contains(row.ID))
+        // The English item table filters unused/unnamed parameter rows while
+        // retaining every legitimate armor piece, including equipment that is
+        // never sold or placed as ordinary loot.
+        // IDs below 10,000 are character-creator hair/body entries. The
+        // 900,000+ range holds invisible, no-travel, and transformation parts
+        // rather than player armor. Neither range is safe for class previews
+        // or equipped starting gear.
+        .Where(row => row.ID is >= 10_000 and < 900_000)
+        .Where(row => itemNames.Armor.ContainsKey(row.ID))
         .Where(row => (row.ID / 1000) % 10 is >= 0 and <= 3)
         .Select(row => new
         {

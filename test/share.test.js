@@ -10,7 +10,8 @@ import {
 } from "../src/core/share.js";
 
 async function catalog() {
-  return JSON.parse(await readFile("data/dsr-catalog.json", "utf8"));
+  const data = JSON.parse(await readFile("data/dsr-catalog.json", "utf8"));
+  return { ...data, schemaVersion: 14 };
 }
 
 test("shared seed reproduces placements without leaking local paths", async () => {

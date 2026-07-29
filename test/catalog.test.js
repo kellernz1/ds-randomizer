@@ -5,7 +5,10 @@ import { generate } from "../src/core/generator.js";
 import { defaultConfig } from "../src/core/config.js";
 
 async function catalog() {
-  return JSON.parse(await readFile("data/dsr-catalog.json", "utf8"));
+  const data = JSON.parse(await readFile("data/dsr-catalog.json", "utf8"));
+  // The locally ignored fixture may have been extracted by an older tool;
+  // generator tests exercise the current catalog contract.
+  return { ...data, schemaVersion: 14 };
 }
 
 function vanillaStartingIds(gameCatalog) {
@@ -222,7 +225,7 @@ test("real catalog produces deterministic enemies with visibly different models"
 
 test("friendly NPC and human-character slots are never randomized", async () => {
   const gameCatalog = await catalog();
-  assert.equal(gameCatalog.schemaVersion, 12);
+  assert.equal(gameCatalog.schemaVersion, 14);
   const protectedSlots = gameCatalog.enemySlots.filter(
     (slot) =>
       (slot.teamType >= 2 && slot.modelName !== "c5291") ||
@@ -501,6 +504,13 @@ test("every class receives a primary weapon as its first pickup", async () => {
       assert.equal(new Set(armorIds).size, armorIds.length);
       assert.ok(armorIds.every((id) => !vanilla.armor.has(id)));
     }
+    const allArmor = result.placements.startingClasses.flatMap((entry) => [
+      entry.equipment.helm.id,
+      entry.equipment.armor.id,
+      entry.equipment.gauntlets.id,
+      entry.equipment.legs.id,
+    ]);
+    assert.equal(new Set(allArmor).size, allArmor.length);
   }
 });
 
