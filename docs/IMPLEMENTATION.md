@@ -15,7 +15,7 @@ The scanner never invents missing IDs and the generator never writes directly to
 the source installation. A catalog is a local snapshot of the selected game
 files; source hashes prevent applying it to a different installation state.
 
-## Implemented in 0.5.20
+## Implemented in 0.5.21
 
 - Real catalog schema 14 with 18 maps, event and Lua AI sources, English item
   and boss names, and 2,192 enemy parts
@@ -85,6 +85,8 @@ files; source hashes prevent applying it to a different installation state.
 - Full named base-weapon and armor pools, per-slot armor randomization, and
   vanilla starting-item exclusion; character-creator and technical armor parts
   are excluded from class previews and starting gear
+- Reinforced and infusion weapon IDs are excluded from starting lots; only the
+  base item is safe for the Undead Asylum pickup flow
 - Asylum floor pickups preserved separately from spawn equipment
 - 20 NPC gift lots, 64 renewable enemy-drop lots, and 392 shop rows
 - Isolated packages containing changed MSBs, AI/event bundles, `GameParam`,

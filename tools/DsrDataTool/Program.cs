@@ -546,7 +546,10 @@ static RandomizerParamData ReadRandomizerParamData(
         // reinforcement levels (such as Pyromancy Flame +1) are not valid
         // starting items.
         .Where(row => row.ID is >= 0 and < 2_000_000)
-        .Where(row => row.ID % 10 == 0)
+        // DSR reserves the final three digits for reinforcement/infusion
+        // variants. Starting lots must use the base item ID; giving a class a
+        // reinforced shield or weapon can corrupt the Asylum pickup flow.
+        .Where(row => row.ID % 1_000 == 0)
         .Where(row => itemNames.Weapons.ContainsKey(row.ID))
         .Where(row => !Regex.IsMatch(itemNames.Weapons[row.ID], @"\+\d+$"))
         .Select(row => new ItemCandidate(
@@ -556,7 +559,11 @@ static RandomizerParamData ReadRandomizerParamData(
             Math.Max(0, GetCellInt(row, "properAgility", 0)),
             Math.Max(0, GetCellInt(row, "properMagic", 0)),
             Math.Max(0, GetCellInt(row, "properFaith", 0)),
-            row.ID < 1_200_000))
+            row.ID < 1_200_000 &&
+                !string.Equals(
+                    itemNames.Weapons.GetValueOrDefault(row.ID),
+                    "Fists",
+                    StringComparison.OrdinalIgnoreCase)))
         .OrderBy(row => row.Id)
         .ToList();
     var protectorParam = ReadParam("EquipParamProtector.param");
@@ -2285,6 +2292,9 @@ static void ValidateStartingEquipmentPools(
                  equipment.PickupSpecial ?? -1,
              })
     {
+        if (id > 0 && id % 1_000 != 0)
+            throw new InvalidDataException(
+                $"Reinforced weapon {id} cannot be used as a starting pickup.");
         if (vanillaWeaponIds.Contains(id))
             throw new InvalidDataException(
                 $"Vanilla starting weapon {id} appeared in the randomized pool.");
