@@ -11,9 +11,14 @@ package before touching the game.
 
 - 1,600+ hostile regular-enemy slots across all 18 gameplay maps
 - Movement-, size-, and AI-compatible enemy replacements
+- Count-preserving enemy swaps: every eligible original spawn is used exactly
+  once, without repeatedly sampling a small set of archetypes
+- Invisible helper characters and unsafe event-controlled spawns remain in
+  their native locations
 - Area and progressive pools also match the source slot's original difficulty,
   preventing late-game attack sets from leaking into weak early encounters
-- Autonomous regular-enemy target archetypes that do not depend on spawn events
+- Replacement NPC/AI rows require working combat detection and available battle
+  goals; model-specific event-controlled spawns stay protected
 - Only the required cross-map Lua battle/logic scripts are merged into each
   destination map, keeping AI bundles small and isolated
 - Regular enemies with ordinary enable/disable event references remain eligible
@@ -31,12 +36,16 @@ package before touching the game.
 - Unique, stat-compatible starting weapons collected in the Undead Asylum
 - Randomized class armor shown on the creation screen and equipped at spawn
 - NPC gifts, renewable enemy drops, and shops
+- World items, NPC gifts, enemy-drop lots, and shops are true permutations:
+  existing contents trade locations without duplication or deletion
 - Independent deterministic RNG streams for every category
 - Progression-item protection, spoiler logs, and reproducible placement hashes
 - A `cheat-locations.txt` report with English item and boss names, original and
   randomized item areas, exact Item Lot IDs, and each encounter's assigned boss
 - Full spoiler reports use English FMG names for gifts, drops, shops, and
   starting equipment instead of internal Japanese parameter labels
+- Enemy spoiler entries include the original source map and spawn slot for
+  every reciprocal swap
 - Portable seed files with version and clean-catalog compatibility checks
 - One explicit custom configuration model with no hidden preset system
 - Hash-checked activation, per-seed backups, atomic replacement, and safe restore
@@ -127,7 +136,7 @@ Area scaling creates a dedicated NPC parameter row for every replacement and
 inherits HP, stamina, defenses, resistances, and souls from the original enemy
 in that slot. Every combat-scaling `SpEffect` also comes from the destination,
 so hidden late-game HP, defense, and attack multipliers cannot leak into an
-early encounter. Replacement models use autonomous NPC/AI combinations, and
+early encounter. Replacement models use combat-capable NPC/AI combinations, and
 incompatible initial animation IDs are cleared so they can animate, navigate,
 and enter combat normally. The first Asylum boss bypasses the original rooftop
 drop animation, is placed at the arena floor, and has its AI explicitly enabled

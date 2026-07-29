@@ -84,7 +84,12 @@ function spoilerText(result) {
     "=== ENEMIES ===",
   ];
   for (const placement of result.placements.enemies) {
-    lines.push(`[${placement.map}] ${placement.from} -> ${placement.to}`);
+    const sourceLocation = placement.sourceSlot
+      ? `; source location: ${placement.sourceMap} / ${placement.sourceSlot}`
+      : "";
+    lines.push(
+      `[${placement.map}] ${placement.from} -> ${placement.to}${sourceLocation}`,
+    );
   }
   lines.push("", "=== BOSSES ===");
   for (const placement of result.placements.bosses) {

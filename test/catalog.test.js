@@ -72,15 +72,28 @@ test("real catalog produces deterministic enemies with visibly different models"
   assert.ok(
     first.placements.enemies.every((placement) =>
       [
-        "movement-size-ai-and-difficulty-compatible",
-        "event-model-locked-source-ai",
-        "same-model-compatible-fallback",
-        "vanilla-preserved-no-compatible-replacement",
+        "count-preserving-compatible-permutation",
+        "count-preserving-same-model-permutation",
+        "count-preserving-compatible-fixed-point",
+        "vanilla-preserved-unsafe-source",
       ].includes(placement.compatibility),
     ),
   );
 
   const slots = new Map(gameCatalog.enemySlots.map((slot) => [slot.id, slot]));
+  assert.equal(
+    new Set(first.placements.enemies.map((placement) => placement.sourceSlot)).size,
+    first.placements.enemies.length,
+  );
+  const placementsBySlot = new Map(
+    first.placements.enemies.map((placement) => [placement.slot, placement]),
+  );
+  assert.ok(
+    first.placements.enemies.every(
+      (placement) =>
+        placementsBySlot.get(placement.sourceSlot).sourceSlot === placement.slot,
+    ),
+  );
   const archetypes = new Map(
     gameCatalog.enemyArchetypes.map((entry) => [
       `${entry.modelName}:${entry.npcParamId}:${entry.thinkParamId}`,
@@ -93,26 +106,11 @@ test("real catalog produces deterministic enemies with visibly different models"
       slot.hitYOffset,
     ]),
   );
-  const portableArchetypeKeys = new Set(
-    gameCatalog.enemySlots
-      .filter(
-        (slot) =>
-          slot.safeCandidate &&
-          !slot.eventModelLocked &&
-          !slot.hasEntityId,
-      )
-      .map(
-        (slot) =>
-          `${slot.modelName}:${slot.npcParamId}:${slot.thinkParamId}`,
-      ),
-  );
-  const portableNpcKeys = new Set(
-    [...portableArchetypeKeys].map((key) => key.split(":").slice(0, 2).join(":")),
-  );
   for (const placement of first.placements.enemies.filter(
     (entry) => entry.changed,
   )) {
     const slot = slots.get(placement.slot);
+    const source = slots.get(placement.sourceSlot);
     const target =
       archetypes.get(
         `${placement.targetModelName}:${placement.targetNpcParamId}:${placement.targetThinkParamId}`,
@@ -124,6 +122,11 @@ test("real catalog produces deterministic enemies with visibly different models"
       );
     assert.equal(slot.teamType, 0);
     assert.notEqual(slot.modelName, "c0000");
+    assert.ok(source.safeCandidate);
+    assert.equal(source.eventModelLocked, false);
+    assert.equal(placement.targetModelName, source.modelName);
+    assert.equal(placement.targetNpcParamId, source.npcParamId);
+    assert.equal(placement.targetThinkParamId, source.thinkParamId);
     assert.equal(target.teamType, 0);
     assert.equal(target.npcType, slot.npcType);
     assert.equal(target.moveType, slot.moveType);
@@ -153,22 +156,23 @@ test("real catalog produces deterministic enemies with visibly different models"
     assert.ok(target.battleStartDistance > 0);
     assert.ok(target.eyeDistance > 0 || target.earDistance > 0);
     assert.ok(gameCatalog.aiGoalIds.includes(target.battleGoalId));
-    if (slot.eventModelLocked) {
-      assert.equal(placement.targetModelName, placement.modelName);
-      assert.equal(placement.targetThinkParamId, placement.sourceThinkParamId);
-      assert.ok(
-        portableNpcKeys.has(
-          `${placement.targetModelName}:${placement.targetNpcParamId}`,
-        ),
-      );
-    } else {
-      assert.ok(
-        portableArchetypeKeys.has(
-          `${placement.targetModelName}:${placement.targetNpcParamId}:${placement.targetThinkParamId}`,
-        ),
-      );
-    }
+    assert.equal(slot.eventModelLocked, false);
   }
+  assert.ok(
+    first.placements.enemies.every(
+      (placement) =>
+        !["c2731", "c4170", "c4171", "c4172", "c5261"].includes(
+          placement.targetModelName,
+        ) || placement.sourceSlot === placement.slot,
+    ),
+  );
+  assert.ok(
+    first.placements.enemies.filter(
+      (placement) =>
+        placement.map === "m10_02_00_00" &&
+        placement.targetModelName !== placement.modelName,
+    ).length > 10,
+  );
 });
 
 test("friendly NPC and human-character slots are never randomized", async () => {
@@ -231,6 +235,10 @@ test("real catalog produces real boss and world-item placements", async () => {
   assert.equal(
     result.placements.items.length,
     gameCatalog.worldItemLots.filter((lot) => !lot.protectedProgression).length,
+  );
+  assert.deepEqual(
+    result.placements.items.map((entry) => entry.sourceRowId).sort((a, b) => a - b),
+    result.placements.items.map((entry) => entry.rowId).sort((a, b) => a - b),
   );
   assert.ok(result.placements.bosses.every((entry) => entry.changed));
   assert.ok(
@@ -415,6 +423,26 @@ test("real gifts, drops, and shops are independent and deterministic", async () 
   assert.ok(first.placements.gifts.every((entry) => entry.rowId !== entry.sourceRowId));
   assert.ok(first.placements.enemyDrops.every((entry) => entry.rowId !== entry.sourceRowId));
   assert.ok(first.placements.shops.every((entry) => entry.rowId !== entry.sourceRowId));
+  for (const placements of [
+    first.placements.gifts,
+    first.placements.enemyDrops,
+  ]) {
+    assert.deepEqual(
+      placements.map((entry) => entry.sourceRowId).sort((a, b) => a - b),
+      placements.map((entry) => entry.rowId).sort((a, b) => a - b),
+    );
+  }
+  for (const equipType of new Set(
+    first.placements.shops.map((entry) => entry.equipType),
+  )) {
+    const placements = first.placements.shops.filter(
+      (entry) => entry.equipType === equipType,
+    );
+    assert.deepEqual(
+      placements.map((entry) => entry.sourceRowId).sort((a, b) => a - b),
+      placements.map((entry) => entry.rowId).sort((a, b) => a - b),
+    );
+  }
 });
 
 test("progression protection fixes Lordvessel and Key to the Seal", async () => {

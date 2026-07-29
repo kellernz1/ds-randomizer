@@ -15,7 +15,7 @@ The scanner never invents missing IDs and the generator never writes directly to
 the source installation. A catalog is a local snapshot of the selected game
 files; source hashes prevent applying it to a different installation state.
 
-## Implemented in 0.5.15
+## Implemented in 0.5.16
 
 - Real catalog schema 12 with 18 maps, event and Lua AI sources, English item
   and boss names, and 2,192 enemy parts
@@ -23,12 +23,17 @@ files; source hashes prevent applying it to a different installation state.
   Japanese internal parameter labels from leaking into seed reports
 - Area and progressive replacement pools reject late-game archetypes whose
   original HP or soul reward is incompatible with a weaker destination slot
+- Regular enemies use reciprocal, count-preserving compatible swaps instead
+  of independently sampling archetypes with replacement
+- Invisible helper-only character resources are excluded from cross-map pools
+- World items, gifts, enemy drops, and shops preserve their source multisets
+  through deterministic permutations
 - Per-seed `cheat-locations.txt` showing every randomized world item's original
   and randomized area and Item Lot ID, plus the boss assigned to every
   randomized encounter
 - A detached interactive Command Prompt launcher, so stopping the server does
   not show Windows' localized batch-file termination question
-- Regular-enemy targets come from autonomous, event-free source spawns
+- Regular-enemy swaps exclude model-specific event-controlled source spawns
 - Scaled replacements inherit every combat-scaling `SpEffect` from the
   destination, preventing hidden late-game HP and attack multipliers
 - Randomized boss AI is explicitly enabled when its health bar appears

@@ -51,6 +51,7 @@ function randomizeExtractedEnemies(config, catalog) {
     "c2300", // Titanite Demon AI does not activate reliably cross-map.
     "c2670", // Ghost can become invisible outside its native setup.
     "c2680", // Lightning Ghost AI does not activate reliably.
+    "c2731", // Boss helper/weapon character has no standalone body model.
     "c2780", // Mimic activation is event-script controlled.
     "c2940", // Skeleton Baby frequently fails to render.
     "c3230", // Moonlight Butterfly requires bespoke flight/arena logic.
@@ -63,141 +64,136 @@ function randomizeExtractedEnemies(config, catalog) {
     "c3480", // Chaos Bug behavior is not portable.
     "c3490", // Good Vagrant is non-hostile.
     "c3530", // Hydra requires bespoke arena positioning.
+    "c4170", "c4171", "c4172", // Invisible Duke's Archives helper characters.
     "c5201", "c5202", // Centipede limbs require their parent model.
+    "c5261", // Boss helper character has no standalone body model.
     "c5240", // Wall Hugger requires native geometry.
     "c5250", // Ceaseless Discharge requires bespoke arena logic.
     "c5320", // Gwyndolin AI activation is encounter controlled.
   ]);
-  const portableArchetypes = new Set(
-    catalog.enemySlots
-      .filter(
-        (slot) =>
-          slot.safeCandidate &&
-          !slot.eventModelLocked &&
-          !slot.hasEntityId,
-      )
-      .map(
-        (slot) =>
-          `${slot.modelName}:${slot.npcParamId}:${slot.thinkParamId}`,
-      ),
-  );
   const slots = catalog.enemySlots.filter(
     (slot) =>
       slot.safeCandidate &&
       /^m1[0-8]_/u.test(slot.mapId) &&
       !bossSlotIds.has(slot.id),
   );
-  const pool = catalog.enemyArchetypes.filter(
-    (archetype) =>
-      archetype.charaInitId < 0 &&
-      archetype.teamType === 0 &&
-      archetype.safeSlotCount > 0 &&
-      archetype.baseHp > 0 &&
-      archetype.battleStartDistance > 0 &&
-      (archetype.eyeDistance > 0 || archetype.earDistance > 0) &&
-      aiGoalIds.has(archetype.battleGoalId) &&
-      portableArchetypes.has(
-        `${archetype.modelName}:${archetype.npcParamId}:${archetype.thinkParamId}`,
-      ) &&
-      !unsupportedReplacementModels.has(archetype.modelName) &&
-      !bossModels.has(archetype.modelName),
+  const movableSlots = slots.filter(
+    (slot) =>
+      !slot.eventModelLocked &&
+      slot.charaInitId < 0 &&
+      slot.teamType === 0 &&
+      slot.baseHp > 0 &&
+      slot.battleStartDistance > 0 &&
+      (slot.eyeDistance > 0 || slot.earDistance > 0) &&
+      aiGoalIds.has(slot.battleGoalId) &&
+      !unsupportedReplacementModels.has(slot.modelName) &&
+      !bossModels.has(slot.modelName),
   );
-  const archetypesByModel = new Map();
-  const hitYOffsetByArchetype = new Map(
-    catalog.enemySlots.map((slot) => [
-      `${slot.modelName}:${slot.npcParamId}:${slot.thinkParamId}`,
-      slot.hitYOffset ?? 0,
-    ]),
-  );
-  for (const archetype of pool) {
-    if (!archetypesByModel.has(archetype.modelName)) {
-      archetypesByModel.set(archetype.modelName, []);
+
+  const fitsSpawn = (target, source) => {
+    const fitsDifficulty = () => {
+      if (config.enemyScaling === "vanilla") return true;
+      const targetHp = Math.max(1, Number(target.baseHp) || 1);
+      const hpLimit = Math.max(targetHp * 2, targetHp + 100);
+      if (source.baseHp > hpLimit) return false;
+      const targetSouls = Math.max(0, Number(target.soulReward) || 0);
+      if (targetSouls === 0 || source.soulReward <= 0) return true;
+      const soulLimit = Math.max(targetSouls * 3, targetSouls + 200);
+      return source.soulReward <= soulLimit;
+    };
+    return (
+      fitsDifficulty() &&
+      source.npcType === target.npcType &&
+      source.moveType === target.moveType &&
+      source.disablePathMove === target.disablePathMove &&
+      source.hitRadius > 0 &&
+      source.hitHeight > 0 &&
+      source.hitRadius <=
+        Math.max(target.hitRadius * 1.35, target.hitRadius + 0.15) &&
+      source.hitHeight <=
+        Math.max(target.hitHeight * 1.35, target.hitHeight + 0.4) &&
+      Math.abs((source.hitYOffset ?? 0) - (target.hitYOffset ?? 0)) <=
+        Math.max(0.35, target.hitHeight * 0.35)
+    );
+  };
+
+  // Assign every movable source spawn exactly once. This is a constrained
+  // permutation, not independent random sampling: the global population and
+  // every NPC/AI tuple count are preserved while unsafe slots stay vanilla.
+  const assignment = new Map();
+  const remaining = new Set(movableSlots.map((slot) => slot.id));
+  for (const target of rng.shuffle(movableSlots)) {
+    if (!remaining.has(target.id)) continue;
+    const compatible = movableSlots.filter(
+      (source) =>
+        source.id !== target.id &&
+        remaining.has(source.id) &&
+        fitsSpawn(target, source) &&
+        fitsSpawn(source, target),
+    );
+    if (compatible.length === 0) {
+      assignment.set(target.id, target);
+      remaining.delete(target.id);
+      continue;
     }
-    archetypesByModel.get(archetype.modelName).push(archetype);
+    const bestTier = Math.min(
+      ...compatible.map((source) =>
+        source.modelName !== target.modelName
+          ? source.mapId !== target.mapId
+            ? 0
+            : 1
+          : 2,
+      ),
+    );
+    const preferred = compatible.filter(
+      (source) =>
+        (source.modelName !== target.modelName
+          ? source.mapId !== target.mapId
+            ? 0
+            : 1
+          : 2) === bestTier,
+    );
+    const source = preferred[rng.int(preferred.length)];
+    assignment.set(target.id, source);
+    assignment.set(source.id, target);
+    remaining.delete(target.id);
+    remaining.delete(source.id);
   }
 
   return slots.map((slot, index) => {
-    const fitsDifficulty = (candidate) => {
-      if (config.enemyScaling === "vanilla") return true;
-      const sourceHp = Math.max(1, Number(slot.baseHp) || 1);
-      const hpLimit = Math.max(sourceHp * 2, sourceHp + 100);
-      if (candidate.baseHp > hpLimit) return false;
-      const sourceSouls = Math.max(0, Number(slot.soulReward) || 0);
-      if (sourceSouls === 0 || candidate.soulReward <= 0) return true;
-      const soulLimit = Math.max(sourceSouls * 3, sourceSouls + 200);
-      return candidate.soulReward <= soulLimit;
-    };
-    const fitsSpawn = (candidate) =>
-      candidate.teamType === 0 &&
-      fitsDifficulty(candidate) &&
-      candidate.npcType === slot.npcType &&
-      candidate.moveType === slot.moveType &&
-      candidate.disablePathMove === slot.disablePathMove &&
-      candidate.hitRadius > 0 &&
-      candidate.hitHeight > 0 &&
-      candidate.hitRadius <= Math.max(slot.hitRadius * 1.35, slot.hitRadius + 0.15) &&
-      candidate.hitHeight <= Math.max(slot.hitHeight * 1.35, slot.hitHeight + 0.4) &&
-      Math.abs(
-        (hitYOffsetByArchetype.get(
-          `${candidate.modelName}:${candidate.npcParamId}:${candidate.thinkParamId}`,
-        ) ?? 0) - (slot.hitYOffset ?? 0),
-      ) <= Math.max(0.35, slot.hitHeight * 0.35);
-    const eventControlled = slot.eventModelLocked === true;
-    const differentModelCandidates = pool.filter(
-      (candidate) =>
-        !eventControlled &&
-        candidate.modelName !== slot.modelName &&
-        fitsSpawn(candidate),
-    );
-    const sameModelCandidates = (archetypesByModel.get(slot.modelName) || []).filter(
-      (candidate) =>
-        candidate.charaInitId < 0 &&
-        fitsSpawn(candidate) &&
-        (eventControlled
-          ? candidate.npcParamId !== slot.npcParamId
-          : candidate.npcParamId !== slot.npcParamId ||
-            candidate.thinkParamId !== slot.thinkParamId),
-    );
-    const candidates =
-      differentModelCandidates.length > 0
-        ? differentModelCandidates
-        : sameModelCandidates;
-    const replacement =
-      candidates.length > 0 ? candidates[rng.int(candidates.length)] : null;
+    const replacement = assignment.get(slot.id) ?? slot;
+    const changed =
+      replacement.modelName !== slot.modelName ||
+      replacement.npcParamId !== slot.npcParamId ||
+      replacement.thinkParamId !== slot.thinkParamId;
+    const movable = assignment.has(slot.id);
     return {
       slot: slot.id,
+      sourceSlot: replacement.id,
+      sourceMap: replacement.mapId,
       map: slot.mapId,
       entityId: slot.entityId,
       from: `${slot.modelName} [NPC ${slot.npcParamId} / AI ${slot.thinkParamId}]`,
-      to: replacement
-        ? `${replacement.modelName} [NPC ${replacement.npcParamId} / AI ${replacement.thinkParamId}]`
-        : `${slot.modelName} [NPC ${slot.npcParamId} / AI ${slot.thinkParamId}]`,
+      to: `${replacement.modelName} [NPC ${replacement.npcParamId} / AI ${replacement.thinkParamId}]`,
       modelName: slot.modelName,
-      targetModelName: replacement?.modelName ?? slot.modelName,
+      targetModelName: replacement.modelName,
       sourceNpcParamId: slot.npcParamId,
       sourceThinkParamId: slot.thinkParamId,
-      targetNpcParamId: replacement?.npcParamId ?? slot.npcParamId,
-      targetThinkParamId:
-        eventControlled
-          ? slot.thinkParamId
-          : replacement?.thinkParamId ?? slot.thinkParamId,
-      targetBattleGoalId:
-        eventControlled
-          ? slot.battleGoalId
-          : replacement?.battleGoalId ?? slot.battleGoalId,
+      targetNpcParamId: replacement.npcParamId,
+      targetThinkParamId: replacement.thinkParamId,
+      targetBattleGoalId: replacement.battleGoalId,
       scaledNpcParamId:
-        config.enemyScaling === "vanilla" || !replacement
+        config.enemyScaling === "vanilla" || !changed
           ? null
           : 9_100_000 + index,
-      changed: Boolean(replacement),
-      compatibility:
-        replacement?.modelName !== slot.modelName
-          ? "movement-size-ai-and-difficulty-compatible"
-          : replacement
-            ? eventControlled
-              ? "event-model-locked-source-ai"
-              : "same-model-compatible-fallback"
-            : "vanilla-preserved-no-compatible-replacement",
+      changed,
+      compatibility: changed
+        ? replacement.modelName !== slot.modelName
+          ? "count-preserving-compatible-permutation"
+          : "count-preserving-same-model-permutation"
+        : movable
+          ? "count-preserving-compatible-fixed-point"
+          : "vanilla-preserved-unsafe-source",
       scaling: config.enemyScaling,
     };
   });
@@ -781,7 +777,7 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
       finalBossReachable: config.randomizeKeyItems ? config.progressionLogic : true,
       notes: extractedData
         ? [
-            "Ordinary event-linked enemies use tighter compatible cross-model replacements; model-specific boss events receive dedicated handling.",
+            "Regular enemies are redistributed as count-preserving compatible swaps; unsafe event-linked and invisible helper characters stay vanilla.",
             "Area scaling inherits destination combat stats and replaces hidden level multipliers from the selected enemy.",
             "Bosses use portable size-compatible pools; the first Undead Asylum boss uses a safe floor-spawn event path.",
             config.progressionLogic
