@@ -15,16 +15,18 @@ The scanner never invents missing IDs and the generator never writes directly to
 the source installation. A catalog is a local snapshot of the selected game
 files; source hashes prevent applying it to a different installation state.
 
-## Implemented in 0.5.16
+## Implemented in 0.5.17
 
 - Real catalog schema 12 with 18 maps, event and Lua AI sources, English item
   and boss names, and 2,192 enemy parts
 - English FMG names for gifts, drops, shops, and starting equipment prevent
   Japanese internal parameter labels from leaking into seed reports
-- Area and progressive replacement pools reject late-game archetypes whose
-  original HP or soul reward is incompatible with a weaker destination slot
-- Regular enemies use reciprocal, count-preserving compatible swaps instead
-  of independently sampling archetypes with replacement
+- Regular enemies use an unrestricted, count-preserving global permutation
+  instead of sampling with replacement or requiring reciprocal pairs
+- Size, height, movement, navigation, AI type, and original difficulty are not
+  placement constraints
+- Area and progressive modes inherit destination combat stats; vanilla mode
+  deliberately keeps the source enemy's original stats
 - Invisible helper-only character resources are excluded from cross-map pools
 - World items, gifts, enemy drops, and shops preserve their source multisets
   through deterministic permutations
@@ -47,11 +49,11 @@ files; source hashes prevent applying it to a different installation state.
 - Preset definitions and preset CLI/config handling have been removed
 - 1,600+ hostile regular-enemy slots, including event-linked visible enemies
 - `NpcParam` team classification that excludes friendly and neutral characters
-- Movement type, dimensions, pathing, and detection-aware replacement pools
+- Unrestricted cross-map placement pools for eligible regular enemies
 - Cross-model animation reset that prevents frozen bind poses and inactive AI
 - Round-trip assertions that preserve every spawn transform and all unselected NPCs
 - Ordinary event enable/disable references do not block cross-model enemies
-- Tighter height, radius, and vertical-offset checks for regular-enemy spawns
+- Deterministic multi-enemy permutation cycles with no eligible source reused
 - Area scaling copies every combat-scaling `SpEffect` from the destination
 - Auxiliary/unnamed boss variants are excluded from the replacement pool
 - First Asylum boss rooftop animation is replaced by a safe floor spawn
@@ -78,10 +80,11 @@ files; source hashes prevent applying it to a different installation state.
 
 Regular enemies may keep event entity IDs, but parts with friendly/neutral team
 types, human-NPC models, talk IDs, character-init bindings, move points, or
-other known high-risk metadata remain excluded. Replacement pools require
-compatible movement, size, vertical offset, pathing, and combat-detection
-metadata. An entity ID by itself is not treated as a model-specific event
-dependency; ordinary character enable/disable events work with replacements.
+other known high-risk metadata remain excluded. Eligible regular enemies do not
+require compatible movement, dimensions, vertical offset, pathing, AI type, or
+difficulty at their destination. An entity ID by itself is not treated as a
+model-specific event dependency; ordinary character enable/disable events work
+with replacements.
 Bosses use only portable
 primary NPC/AI rows; roaming variants, clones, unnamed variants, and auxiliary
 fight parts are excluded from the source pool.

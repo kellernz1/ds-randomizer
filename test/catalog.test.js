@@ -69,12 +69,28 @@ test("real catalog produces deterministic enemies with visibly different models"
     .map((placement) => placement.scaledNpcParamId)
     .filter((id) => id !== null);
   assert.equal(new Set(scaled).size, scaled.length);
+  assert.equal(
+    scaled.length,
+    first.placements.enemies.filter((placement) => placement.changed).length,
+  );
+  const vanillaScaling = generate(
+    { ...config, enemyScaling: "vanilla" },
+    { gameCatalog },
+  );
+  assert.ok(
+    vanillaScaling.placements.enemies.every(
+      (placement) => placement.scaledNpcParamId === null,
+    ),
+  );
+  assert.deepEqual(
+    vanillaScaling.placements.enemies.map((placement) => placement.sourceSlot),
+    first.placements.enemies.map((placement) => placement.sourceSlot),
+  );
   assert.ok(
     first.placements.enemies.every((placement) =>
       [
-        "count-preserving-compatible-permutation",
-        "count-preserving-same-model-permutation",
-        "count-preserving-compatible-fixed-point",
+        "count-preserving-unrestricted-permutation",
+        "count-preserving-identical-source-permutation",
         "vanilla-preserved-unsafe-source",
       ].includes(placement.compatibility),
     ),
@@ -88,38 +104,27 @@ test("real catalog produces deterministic enemies with visibly different models"
   const placementsBySlot = new Map(
     first.placements.enemies.map((placement) => [placement.slot, placement]),
   );
-  assert.ok(
-    first.placements.enemies.every(
-      (placement) =>
-        placementsBySlot.get(placement.sourceSlot).sourceSlot === placement.slot,
-    ),
-  );
-  const archetypes = new Map(
-    gameCatalog.enemyArchetypes.map((entry) => [
-      `${entry.modelName}:${entry.npcParamId}:${entry.thinkParamId}`,
-      entry,
-    ]),
-  );
-  const hitYOffsetByArchetype = new Map(
-    gameCatalog.enemySlots.map((slot) => [
-      `${slot.modelName}:${slot.npcParamId}:${slot.thinkParamId}`,
-      slot.hitYOffset,
-    ]),
-  );
+  let longestCycle = 0;
+  for (const placement of first.placements.enemies) {
+    const visited = new Set();
+    let current = placement.slot;
+    while (!visited.has(current)) {
+      visited.add(current);
+      current = placementsBySlot.get(current).sourceSlot;
+    }
+    if (current === placement.slot) {
+      longestCycle = Math.max(longestCycle, visited.size);
+    }
+  }
+  assert.ok(longestCycle > 2);
+  let ignoresMovementCompatibility = false;
+  let ignoresSizeCompatibility = false;
+  let ignoresDifficultyCompatibility = false;
   for (const placement of first.placements.enemies.filter(
     (entry) => entry.changed,
   )) {
     const slot = slots.get(placement.slot);
     const source = slots.get(placement.sourceSlot);
-    const target =
-      archetypes.get(
-        `${placement.targetModelName}:${placement.targetNpcParamId}:${placement.targetThinkParamId}`,
-      ) ||
-      gameCatalog.enemyArchetypes.find(
-        (entry) =>
-          entry.modelName === placement.targetModelName &&
-          entry.npcParamId === placement.targetNpcParamId,
-      );
     assert.equal(slot.teamType, 0);
     assert.notEqual(slot.modelName, "c0000");
     assert.ok(source.safeCandidate);
@@ -127,37 +132,28 @@ test("real catalog produces deterministic enemies with visibly different models"
     assert.equal(placement.targetModelName, source.modelName);
     assert.equal(placement.targetNpcParamId, source.npcParamId);
     assert.equal(placement.targetThinkParamId, source.thinkParamId);
-    assert.equal(target.teamType, 0);
-    assert.equal(target.npcType, slot.npcType);
-    assert.equal(target.moveType, slot.moveType);
-    assert.equal(target.disablePathMove, slot.disablePathMove);
-    assert.ok(
-      target.baseHp <= Math.max(slot.baseHp * 2, slot.baseHp + 100),
+    ignoresMovementCompatibility ||= (
+      source.npcType !== slot.npcType ||
+      source.moveType !== slot.moveType ||
+      source.disablePathMove !== slot.disablePathMove
     );
-    if (slot.soulReward > 0 && target.soulReward > 0) {
-      assert.ok(
-        target.soulReward <=
-          Math.max(slot.soulReward * 3, slot.soulReward + 200),
-      );
-    }
-    assert.ok(
-      target.hitRadius <= Math.max(slot.hitRadius * 1.35, slot.hitRadius + 0.15),
+    ignoresSizeCompatibility ||= (
+      source.hitRadius >
+        Math.max(slot.hitRadius * 1.35, slot.hitRadius + 0.15) ||
+      source.hitHeight >
+        Math.max(slot.hitHeight * 1.35, slot.hitHeight + 0.4)
     );
-    assert.ok(
-      target.hitHeight <= Math.max(slot.hitHeight * 1.35, slot.hitHeight + 0.4),
+    ignoresDifficultyCompatibility ||= (
+      source.baseHp > Math.max(slot.baseHp * 2, slot.baseHp + 100) ||
+      (slot.soulReward > 0 &&
+        source.soulReward >
+          Math.max(slot.soulReward * 3, slot.soulReward + 200))
     );
-    assert.ok(
-      Math.abs(
-        hitYOffsetByArchetype.get(
-          `${target.modelName}:${target.npcParamId}:${target.thinkParamId}`,
-        ) - slot.hitYOffset,
-      ) <= Math.max(0.35, slot.hitHeight * 0.35),
-    );
-    assert.ok(target.battleStartDistance > 0);
-    assert.ok(target.eyeDistance > 0 || target.earDistance > 0);
-    assert.ok(gameCatalog.aiGoalIds.includes(target.battleGoalId));
     assert.equal(slot.eventModelLocked, false);
   }
+  assert.ok(ignoresMovementCompatibility);
+  assert.ok(ignoresSizeCompatibility);
+  assert.ok(ignoresDifficultyCompatibility);
   assert.ok(
     first.placements.enemies.every(
       (placement) =>

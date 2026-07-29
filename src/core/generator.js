@@ -90,75 +90,14 @@ function randomizeExtractedEnemies(config, catalog) {
       !bossModels.has(slot.modelName),
   );
 
-  const fitsSpawn = (target, source) => {
-    const fitsDifficulty = () => {
-      if (config.enemyScaling === "vanilla") return true;
-      const targetHp = Math.max(1, Number(target.baseHp) || 1);
-      const hpLimit = Math.max(targetHp * 2, targetHp + 100);
-      if (source.baseHp > hpLimit) return false;
-      const targetSouls = Math.max(0, Number(target.soulReward) || 0);
-      if (targetSouls === 0 || source.soulReward <= 0) return true;
-      const soulLimit = Math.max(targetSouls * 3, targetSouls + 200);
-      return source.soulReward <= soulLimit;
-    };
-    return (
-      fitsDifficulty() &&
-      source.npcType === target.npcType &&
-      source.moveType === target.moveType &&
-      source.disablePathMove === target.disablePathMove &&
-      source.hitRadius > 0 &&
-      source.hitHeight > 0 &&
-      source.hitRadius <=
-        Math.max(target.hitRadius * 1.35, target.hitRadius + 0.15) &&
-      source.hitHeight <=
-        Math.max(target.hitHeight * 1.35, target.hitHeight + 0.4) &&
-      Math.abs((source.hitYOffset ?? 0) - (target.hitYOffset ?? 0)) <=
-        Math.max(0.35, target.hitHeight * 0.35)
-    );
-  };
-
-  // Assign every movable source spawn exactly once. This is a constrained
-  // permutation, not independent random sampling: the global population and
-  // every NPC/AI tuple count are preserved while unsafe slots stay vanilla.
-  const assignment = new Map();
-  const remaining = new Set(movableSlots.map((slot) => slot.id));
-  for (const target of rng.shuffle(movableSlots)) {
-    if (!remaining.has(target.id)) continue;
-    const compatible = movableSlots.filter(
-      (source) =>
-        source.id !== target.id &&
-        remaining.has(source.id) &&
-        fitsSpawn(target, source) &&
-        fitsSpawn(source, target),
-    );
-    if (compatible.length === 0) {
-      assignment.set(target.id, target);
-      remaining.delete(target.id);
-      continue;
-    }
-    const bestTier = Math.min(
-      ...compatible.map((source) =>
-        source.modelName !== target.modelName
-          ? source.mapId !== target.mapId
-            ? 0
-            : 1
-          : 2,
-      ),
-    );
-    const preferred = compatible.filter(
-      (source) =>
-        (source.modelName !== target.modelName
-          ? source.mapId !== target.mapId
-            ? 0
-            : 1
-          : 2) === bestTier,
-    );
-    const source = preferred[rng.int(preferred.length)];
-    assignment.set(target.id, source);
-    assignment.set(source.id, target);
-    remaining.delete(target.id);
-    remaining.delete(source.id);
-  }
+  // Every movable source is used exactly once in an unrestricted global
+  // permutation. Geometry, movement, navigation, AI type, and original
+  // difficulty do not constrain the destination. Unsafe helpers and
+  // event-controlled characters remain vanilla.
+  const shuffledSources = shuffledWithoutFixedPoints(rng, movableSlots);
+  const assignment = new Map(
+    movableSlots.map((target, index) => [target.id, shuffledSources[index]]),
+  );
 
   return slots.map((slot, index) => {
     const replacement = assignment.get(slot.id) ?? slot;
@@ -166,7 +105,7 @@ function randomizeExtractedEnemies(config, catalog) {
       replacement.modelName !== slot.modelName ||
       replacement.npcParamId !== slot.npcParamId ||
       replacement.thinkParamId !== slot.thinkParamId;
-    const movable = assignment.has(slot.id);
+    const relocated = replacement.id !== slot.id;
     return {
       slot: slot.id,
       sourceSlot: replacement.id,
@@ -188,11 +127,9 @@ function randomizeExtractedEnemies(config, catalog) {
           : 9_100_000 + index,
       changed,
       compatibility: changed
-        ? replacement.modelName !== slot.modelName
-          ? "count-preserving-compatible-permutation"
-          : "count-preserving-same-model-permutation"
-        : movable
-          ? "count-preserving-compatible-fixed-point"
+        ? "count-preserving-unrestricted-permutation"
+        : relocated
+          ? "count-preserving-identical-source-permutation"
           : "vanilla-preserved-unsafe-source",
       scaling: config.enemyScaling,
     };
@@ -777,7 +714,7 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
       finalBossReachable: config.randomizeKeyItems ? config.progressionLogic : true,
       notes: extractedData
         ? [
-            "Regular enemies are redistributed as count-preserving compatible swaps; unsafe event-linked and invisible helper characters stay vanilla.",
+            "Regular enemies use an unrestricted count-preserving global permutation; unsafe event-linked and invisible helper characters stay vanilla.",
             "Area scaling inherits destination combat stats and replaces hidden level multipliers from the selected enemy.",
             "Bosses use portable size-compatible pools; the first Undead Asylum boss uses a safe floor-spawn event path.",
             config.progressionLogic

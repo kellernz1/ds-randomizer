@@ -10,19 +10,20 @@ package before touching the game.
 ## Features
 
 - 1,600+ hostile regular-enemy slots across all 18 gameplay maps
-- Movement-, size-, and AI-compatible enemy replacements
-- Count-preserving enemy swaps: every eligible original spawn is used exactly
-  once, without repeatedly sampling a small set of archetypes
+- Unrestricted global enemy permutation: size, height, movement, navigation,
+  AI type, and original difficulty do not restrict destinations
+- Every eligible original spawn is used exactly once, including permutation
+  cycles involving any number of enemies
 - Invisible helper characters and unsafe event-controlled spawns remain in
   their native locations
-- Area and progressive pools also match the source slot's original difficulty,
-  preventing late-game attack sets from leaking into weak early encounters
+- Area and progressive scaling adapt combat stats to the destination slot;
+  original-stat scaling deliberately retains the source enemy's strength
 - Replacement NPC/AI rows require working combat detection and available battle
   goals; model-specific event-controlled spawns stay protected
 - Only the required cross-map Lua battle/logic scripts are merged into each
   destination map, keeping AI bundles small and isolated
 - Regular enemies with ordinary enable/disable event references remain eligible
-  for compatible cross-model replacements
+  for cross-model replacements
 - Friendly NPCs, merchants, quest characters, and their spawns are protected
 - Primary boss encounters shuffled through portable, size-compatible pools
 - The first Undead Asylum boss uses a safe floor-spawn event path when replaced
@@ -45,7 +46,7 @@ package before touching the game.
 - Full spoiler reports use English FMG names for gifts, drops, shops, and
   starting equipment instead of internal Japanese parameter labels
 - Enemy spoiler entries include the original source map and spawn slot for
-  every reciprocal swap
+  every permutation assignment
 - Portable seed files with version and clean-catalog compatibility checks
 - One explicit custom configuration model with no hidden preset system
 - Hash-checked activation, per-seed backups, atomic replacement, and safe restore
