@@ -684,6 +684,7 @@ function randomizeStartingClasses(config, catalog) {
           weapon.faith <= Number(stats.baseFai) &&
           !vanillaStartingWeaponIds.has(weapon.id) &&
           weapon.id < 2_000_000 &&
+          weapon.id % 1_000 === 0 &&
           !(weapon.id >= 1_200_000 && weapon.id < 1_300_000),
       );
       const roles = specialIds.has(target.id)

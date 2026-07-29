@@ -496,6 +496,7 @@ test("every class receives a primary weapon as its first pickup", async () => {
         : []),
     ]);
     assert.equal(new Set(allWeapons).size, allWeapons.length);
+    assert.ok(allWeapons.every((id) => id % 1_000 === 0));
     assert.ok(allWeapons.every((id) => !vanilla.weapons.has(id)));
     for (const field of ["helm", "armor", "gauntlets", "legs"]) {
       const armorIds = result.placements.startingClasses.map(
