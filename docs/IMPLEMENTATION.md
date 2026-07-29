@@ -15,9 +15,9 @@ The scanner never invents missing IDs and the generator never writes directly to
 the source installation. A catalog is a local snapshot of the selected game
 files; source hashes prevent applying it to a different installation state.
 
-## Implemented in 0.5.19
+## Implemented in 0.5.20
 
-- Real catalog schema 13 with 18 maps, event and Lua AI sources, English item
+- Real catalog schema 14 with 18 maps, event and Lua AI sources, English item
   and boss names, and 2,192 enemy parts
 - English FMG names for gifts, drops, shops, and starting equipment prevent
   Japanese internal parameter labels from leaking into seed reports
@@ -83,7 +83,8 @@ files; source hashes prevent applying it to a different installation state.
 - Ten real starting classes from `CharaInitParam`
 - Unique, requirement-compatible weapon matching without replacement
 - Full named base-weapon and armor pools, per-slot armor randomization, and
-  vanilla starting-item exclusion
+  vanilla starting-item exclusion; character-creator and technical armor parts
+  are excluded from class previews and starting gear
 - Asylum floor pickups preserved separately from spawn equipment
 - 20 NPC gift lots, 64 renewable enemy-drop lots, and 392 shop rows
 - Isolated packages containing changed MSBs, AI/event bundles, `GameParam`,

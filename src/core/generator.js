@@ -659,12 +659,9 @@ function randomizeStartingClasses(config, catalog) {
       (item) => !vanillaStartingArmorIds.has(item.id),
     ),
   };
-  const usedArmorIds = {
-    helm: new Set(),
-    armor: new Set(),
-    gauntlets: new Set(),
-    legs: new Set(),
-  };
+  // One shared set makes the no-duplicate rule explicit across every class
+  // and every armor slot, even if future game data contains overlapping IDs.
+  const usedArmorIds = new Set();
   const pickUnique = (pool, used, label) => {
     const available = pool.filter((item) => !used.has(item.id));
     if (available.length === 0) {
@@ -759,14 +756,14 @@ function randomizeStartingClasses(config, catalog) {
         pickupSpecial: specialIds.has(target.id)
           ? weaponAssignments.get(`${target.id}:special`)
           : null,
-        helm: pickUnique(randomArmorPools.helms, usedArmorIds.helm, "helm"),
-        armor: pickUnique(randomArmorPools.armors, usedArmorIds.armor, "chest armor"),
+        helm: pickUnique(randomArmorPools.helms, usedArmorIds, "helm"),
+        armor: pickUnique(randomArmorPools.armors, usedArmorIds, "chest armor"),
         gauntlets: pickUnique(
           randomArmorPools.gauntlets,
-          usedArmorIds.gauntlets,
+          usedArmorIds,
           "gauntlets",
         ),
-        legs: pickUnique(randomArmorPools.legs, usedArmorIds.legs, "leg armor"),
+        legs: pickUnique(randomArmorPools.legs, usedArmorIds, "leg armor"),
       };
     }
     return {
@@ -969,7 +966,7 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
   if (errors.length > 0) {
     throw new Error(errors.join("\n"));
   }
-  if (gameCatalog && gameCatalog.schemaVersion !== 13) {
+  if (gameCatalog && gameCatalog.schemaVersion !== 14) {
     throw new Error(
       `Catalog schema ${gameCatalog.schemaVersion} is obsolete. ` +
         "Verify the clean game and import its data again.",

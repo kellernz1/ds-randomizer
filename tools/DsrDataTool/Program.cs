@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using SoulsFormats;
 
-const int SchemaVersion = 13;
+const int SchemaVersion = 14;
 Console.OutputEncoding = new UTF8Encoding(false);
 Console.InputEncoding = new UTF8Encoding(false);
 
@@ -564,7 +564,11 @@ static RandomizerParamData ReadRandomizerParamData(
         // The English item table filters unused/unnamed parameter rows while
         // retaining every legitimate armor piece, including equipment that is
         // never sold or placed as ordinary loot.
-        .Where(row => row.ID >= 0)
+        // IDs below 10,000 are character-creator hair/body entries. The
+        // 900,000+ range holds invisible, no-travel, and transformation parts
+        // rather than player armor. Neither range is safe for class previews
+        // or equipped starting gear.
+        .Where(row => row.ID is >= 10_000 and < 900_000)
         .Where(row => itemNames.Armor.ContainsKey(row.ID))
         .Where(row => (row.ID / 1000) % 10 is >= 0 and <= 3)
         .Select(row => new

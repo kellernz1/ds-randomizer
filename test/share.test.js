@@ -11,7 +11,7 @@ import {
 
 async function catalog() {
   const data = JSON.parse(await readFile("data/dsr-catalog.json", "utf8"));
-  return { ...data, schemaVersion: 13 };
+  return { ...data, schemaVersion: 14 };
 }
 
 test("shared seed reproduces placements without leaking local paths", async () => {

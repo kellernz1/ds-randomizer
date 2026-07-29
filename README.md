@@ -48,7 +48,8 @@ package before touching the game.
 - Unique, stat-compatible starting weapons collected in the Undead Asylum
 - Randomized class armor shown on the creation screen and equipped at spawn
 - Starting equipment draws from every named base weapon and armor piece in the
-  game data, including equipment that is not sold or placed in ordinary loot
+  game data, including equipment that is not sold or placed in ordinary loot;
+  character-creator, invisible, no-travel, and transformation parts are excluded
 - NPC gifts, renewable enemy drops, and shops
 - World items, NPC gifts, enemy-drop lots, and shops are true permutations:
   existing contents trade locations without duplication or deletion
