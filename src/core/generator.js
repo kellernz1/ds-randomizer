@@ -92,6 +92,7 @@ function randomizeExtractedEnemies(config, catalog) {
       archetype.charaInitId < 0 &&
       archetype.teamType === 0 &&
       archetype.safeSlotCount > 0 &&
+      archetype.baseHp > 0 &&
       archetype.battleStartDistance > 0 &&
       (archetype.eyeDistance > 0 || archetype.earDistance > 0) &&
       aiGoalIds.has(archetype.battleGoalId) &&
@@ -116,8 +117,19 @@ function randomizeExtractedEnemies(config, catalog) {
   }
 
   return slots.map((slot, index) => {
+    const fitsDifficulty = (candidate) => {
+      if (config.enemyScaling === "vanilla") return true;
+      const sourceHp = Math.max(1, Number(slot.baseHp) || 1);
+      const hpLimit = Math.max(sourceHp * 2, sourceHp + 100);
+      if (candidate.baseHp > hpLimit) return false;
+      const sourceSouls = Math.max(0, Number(slot.soulReward) || 0);
+      if (sourceSouls === 0 || candidate.soulReward <= 0) return true;
+      const soulLimit = Math.max(sourceSouls * 3, sourceSouls + 200);
+      return candidate.soulReward <= soulLimit;
+    };
     const fitsSpawn = (candidate) =>
       candidate.teamType === 0 &&
+      fitsDifficulty(candidate) &&
       candidate.npcType === slot.npcType &&
       candidate.moveType === slot.moveType &&
       candidate.disablePathMove === slot.disablePathMove &&
@@ -180,7 +192,7 @@ function randomizeExtractedEnemies(config, catalog) {
       changed: Boolean(replacement),
       compatibility:
         replacement?.modelName !== slot.modelName
-          ? "movement-size-and-ai-compatible"
+          ? "movement-size-ai-and-difficulty-compatible"
           : replacement
             ? eventControlled
               ? "event-model-locked-source-ai"
@@ -726,7 +738,7 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
   if (errors.length > 0) {
     throw new Error(errors.join("\n"));
   }
-  if (gameCatalog && gameCatalog.schemaVersion !== 11) {
+  if (gameCatalog && gameCatalog.schemaVersion !== 12) {
     throw new Error(
       `Catalog schema ${gameCatalog.schemaVersion} is obsolete. ` +
         "Verify the clean game and import its data again.",

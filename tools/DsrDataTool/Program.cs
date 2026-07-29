@@ -5,7 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using SoulsFormats;
 
-const int SchemaVersion = 11;
+const int SchemaVersion = 12;
 Console.OutputEncoding = new UTF8Encoding(false);
 Console.InputEncoding = new UTF8Encoding(false);
 
@@ -284,6 +284,8 @@ static GameCatalog ScanGame(string gameDirectory)
             slot.MoveType,
             slot.HitHeight,
             slot.HitRadius,
+            slot.BaseHp,
+            slot.SoulReward,
             slot.BattleStartDistance,
             slot.EyeDistance,
             slot.EarDistance,
@@ -301,6 +303,8 @@ static GameCatalog ScanGame(string gameDirectory)
             group.Key.MoveType,
             group.Key.HitHeight,
             group.Key.HitRadius,
+            group.Key.BaseHp,
+            group.Key.SoulReward,
             group.Key.BattleStartDistance,
             group.Key.EyeDistance,
             group.Key.EarDistance,
@@ -407,6 +411,26 @@ static RandomizerParamData ReadRandomizerParamData(
     }
 
     var itemLotParam = ReadParam("ItemLotParam.param");
+    string DescribeItemLot(PARAM.Row row)
+    {
+        var names = Enumerable.Range(1, 8)
+            .Select(slot =>
+            {
+                var suffix = slot.ToString("00");
+                var itemId = GetCellInt(row, $"lotItemId{suffix}");
+                if (itemId <= 0)
+                    return null;
+                var category = GetCellInt(row, $"lotItemCategory{suffix}");
+                var quantity = GetCellInt(row, $"lotItemNum{suffix}", 1);
+                var name = itemNames.GetName(category, itemId);
+                return quantity > 1 ? $"{name} x{quantity}" : name;
+            })
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .ToList();
+        return names.Count > 0
+            ? string.Join(" + ", names)
+            : $"Item lot {row.ID}";
+    }
     var giftIds = new HashSet<int>
     {
         1010, 1040, 1050, 1060, 1090, 1100, 1110, 1140, 1150, 1190,
@@ -419,7 +443,7 @@ static RandomizerParamData ReadRandomizerParamData(
             Convert.ToInt32(cell.Value) > 0))
         .Select(row => new ParamRowRecord(
             row.ID,
-            string.IsNullOrWhiteSpace(row.Name) ? $"NPC gift {row.ID}" : row.Name))
+            DescribeItemLot(row)))
         .OrderBy(row => row.RowId)
         .ToList();
 
@@ -440,7 +464,7 @@ static RandomizerParamData ReadRandomizerParamData(
             Convert.ToInt32(cell.Value) > 0))
         .Select(row => new ParamRowRecord(
             row.ID,
-            string.IsNullOrWhiteSpace(row.Name) ? $"Drop lot {row.ID}" : row.Name))
+            DescribeItemLot(row)))
         .OrderBy(row => row.RowId)
         .ToList();
 
@@ -498,12 +522,17 @@ static RandomizerParamData ReadRandomizerParamData(
 
     var shopParam = ReadParam("ShopLineupParam.param");
     var shopEntries = shopParam.Rows
-        .Select(row => new ShopEntryRecord(
-            row.ID,
-            string.IsNullOrWhiteSpace(row.Name) ? $"Shop {row.ID}" : row.Name,
-            GetCellInt(row, "equipId"),
-            GetCellInt(row, "equipType"),
-            GetCellInt(row, "eventFlag", -1)))
+        .Select(row =>
+        {
+            var equipId = GetCellInt(row, "equipId");
+            var equipType = GetCellInt(row, "equipType");
+            return new ShopEntryRecord(
+                row.ID,
+                itemNames.GetShopName(equipType, equipId),
+                equipId,
+                equipType,
+                GetCellInt(row, "eventFlag", -1));
+        })
         .Where(row => row.EquipId >= 0 && row.EquipType is >= 0 and <= 4)
         .OrderBy(row => row.RowId)
         .ToList();
@@ -551,10 +580,9 @@ static RandomizerParamData ReadRandomizerParamData(
     var weaponParam = ReadParam("EquipParamWeapon.param");
     var weapons = weaponParam.Rows
         .Where(row => usedWeaponIds.Contains(row.ID))
-        .Where(row => !string.IsNullOrWhiteSpace(row.Name))
         .Select(row => new ItemCandidate(
             row.ID,
-            row.Name,
+            itemNames.Weapons.GetValueOrDefault(row.ID) ?? $"Weapon {row.ID}",
             Math.Max(0, GetCellInt(row, "properStrength", 0)),
             Math.Max(0, GetCellInt(row, "properAgility", 0)),
             Math.Max(0, GetCellInt(row, "properMagic", 0)),
@@ -565,12 +593,13 @@ static RandomizerParamData ReadRandomizerParamData(
     var protectorParam = ReadParam("EquipParamProtector.param");
     var armorBySlot = protectorParam.Rows
         .Where(row => usedProtectorIds.Contains(row.ID))
-        .Where(row => !string.IsNullOrWhiteSpace(row.Name))
         .Where(row => (row.ID / 1000) % 10 is >= 0 and <= 3)
         .Select(row => new
         {
             Slot = (row.ID / 1000) % 10,
-            Item = new ItemCandidate(row.ID, row.Name),
+            Item = new ItemCandidate(
+                row.ID,
+                itemNames.Armor.GetValueOrDefault(row.ID) ?? $"Armor {row.ID}"),
         })
         .GroupBy(row => row.Slot)
         .ToDictionary(group => group.Key, group => group.Select(row => row.Item).ToList());
@@ -609,7 +638,8 @@ static ItemNameLookup ReadEnglishItemNames(string itemMessagePath)
         ReadTable("Item_name_.fmg"),
         ReadTable("Weapon_name_.fmg"),
         ReadTable("Armor_name_.fmg"),
-        ReadTable("Accessory_name_.fmg"));
+        ReadTable("Accessory_name_.fmg"),
+        ReadTable("Magic_name_.fmg"));
 }
 
 static Dictionary<string, string> ReadEnglishBossNames(
@@ -667,7 +697,9 @@ static EnemyMetadataLookup ReadEnemyMetadata(
             GetCellInt(row, "moveType"),
             GetCellFloat(row, "hitHeight"),
             GetCellFloat(row, "hitRadius"),
-            GetCellFloat(row, "hitYOffset")));
+            GetCellFloat(row, "hitYOffset"),
+            GetCellInt(row, "hp"),
+            GetCellInt(row, "getSoul")));
     var thinkRows = ReadParam("NpcThinkParam.param").Rows.ToDictionary(
         row => row.ID,
         row => new ThinkMetadata(
@@ -2543,6 +2575,8 @@ static EnemySlotRecord ToSlot(
         npc?.HitHeight ?? -1,
         npc?.HitRadius ?? -1,
         npc?.HitYOffset ?? 0,
+        npc?.BaseHp ?? -1,
+        npc?.SoulReward ?? -1,
         think?.BattleStartDistance ?? -1,
         think?.EyeDistance ?? -1,
         think?.EarDistance ?? -1,
@@ -2651,6 +2685,8 @@ record EnemySlotRecord(
     float HitHeight,
     float HitRadius,
     float HitYOffset,
+    int BaseHp,
+    int SoulReward,
     float BattleStartDistance,
     float EyeDistance,
     float EarDistance,
@@ -2668,6 +2704,8 @@ record EnemyArchetypeRecord(
     int MoveType,
     float HitHeight,
     float HitRadius,
+    int BaseHp,
+    int SoulReward,
     float BattleStartDistance,
     float EyeDistance,
     float EarDistance,
@@ -2682,7 +2720,9 @@ record NpcMetadata(
     int MoveType,
     float HitHeight,
     float HitRadius,
-    float HitYOffset);
+    float HitYOffset,
+    int BaseHp,
+    int SoulReward);
 record ThinkMetadata(
     float BattleStartDistance,
     float EyeDistance,
@@ -2737,7 +2777,8 @@ record ItemNameLookup(
     Dictionary<int, string> Goods,
     Dictionary<int, string> Weapons,
     Dictionary<int, string> Armor,
-    Dictionary<int, string> Accessories)
+    Dictionary<int, string> Accessories,
+    Dictionary<int, string> Magic)
 {
     public string GetName(int category, int itemId)
     {
@@ -2751,6 +2792,21 @@ record ItemNameLookup(
         };
         return names?.GetValueOrDefault(itemId)
             ?? $"Unknown item (category {category}, ID {itemId})";
+    }
+
+    public string GetShopName(int equipType, int itemId)
+    {
+        var names = equipType switch
+        {
+            0 => Weapons,
+            1 => Armor,
+            2 => Accessories,
+            3 => Goods,
+            4 => Magic,
+            _ => null,
+        };
+        return names?.GetValueOrDefault(itemId)
+            ?? $"Shop item (type {equipType}, ID {itemId})";
     }
 }
 record WorldItemLotRecord(

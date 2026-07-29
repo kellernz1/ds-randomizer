@@ -11,6 +11,8 @@ package before touching the game.
 
 - 1,600+ hostile regular-enemy slots across all 18 gameplay maps
 - Movement-, size-, and AI-compatible enemy replacements
+- Area and progressive pools also match the source slot's original difficulty,
+  preventing late-game attack sets from leaking into weak early encounters
 - Autonomous regular-enemy target archetypes that do not depend on spawn events
 - Only the required cross-map Lua battle/logic scripts are merged into each
   destination map, keeping AI bundles small and isolated
@@ -33,6 +35,8 @@ package before touching the game.
 - Progression-item protection, spoiler logs, and reproducible placement hashes
 - A `cheat-locations.txt` report with English item and boss names, original and
   randomized item areas, exact Item Lot IDs, and each encounter's assigned boss
+- Full spoiler reports use English FMG names for gifts, drops, shops, and
+  starting equipment instead of internal Japanese parameter labels
 - Portable seed files with version and clean-catalog compatibility checks
 - One explicit custom configuration model with no hidden preset system
 - Hash-checked activation, per-seed backups, atomic replacement, and safe restore

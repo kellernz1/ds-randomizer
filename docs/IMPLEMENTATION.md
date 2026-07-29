@@ -15,10 +15,14 @@ The scanner never invents missing IDs and the generator never writes directly to
 the source installation. A catalog is a local snapshot of the selected game
 files; source hashes prevent applying it to a different installation state.
 
-## Implemented in 0.5.14
+## Implemented in 0.5.15
 
-- Real catalog schema 11 with 18 maps, event and Lua AI sources, English item
+- Real catalog schema 12 with 18 maps, event and Lua AI sources, English item
   and boss names, and 2,192 enemy parts
+- English FMG names for gifts, drops, shops, and starting equipment prevent
+  Japanese internal parameter labels from leaking into seed reports
+- Area and progressive replacement pools reject late-game archetypes whose
+  original HP or soul reward is incompatible with a weaker destination slot
 - Per-seed `cheat-locations.txt` showing every randomized world item's original
   and randomized area and Item Lot ID, plus the boss assigned to every
   randomized encounter

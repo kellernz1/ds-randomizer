@@ -72,7 +72,7 @@ test("real catalog produces deterministic enemies with visibly different models"
   assert.ok(
     first.placements.enemies.every((placement) =>
       [
-        "movement-size-and-ai-compatible",
+        "movement-size-ai-and-difficulty-compatible",
         "event-model-locked-source-ai",
         "same-model-compatible-fallback",
         "vanilla-preserved-no-compatible-replacement",
@@ -129,6 +129,15 @@ test("real catalog produces deterministic enemies with visibly different models"
     assert.equal(target.moveType, slot.moveType);
     assert.equal(target.disablePathMove, slot.disablePathMove);
     assert.ok(
+      target.baseHp <= Math.max(slot.baseHp * 2, slot.baseHp + 100),
+    );
+    if (slot.soulReward > 0 && target.soulReward > 0) {
+      assert.ok(
+        target.soulReward <=
+          Math.max(slot.soulReward * 3, slot.soulReward + 200),
+      );
+    }
+    assert.ok(
       target.hitRadius <= Math.max(slot.hitRadius * 1.35, slot.hitRadius + 0.15),
     );
     assert.ok(
@@ -164,7 +173,7 @@ test("real catalog produces deterministic enemies with visibly different models"
 
 test("friendly NPC and human-character slots are never randomized", async () => {
   const gameCatalog = await catalog();
-  assert.equal(gameCatalog.schemaVersion, 11);
+  assert.equal(gameCatalog.schemaVersion, 12);
   const protectedSlots = gameCatalog.enemySlots.filter(
     (slot) => slot.teamType >= 2 || slot.modelName === "c0000",
   );
@@ -178,6 +187,26 @@ test("friendly NPC and human-character slots are never randomized", async () => 
     result.placements.enemies.map((placement) => placement.slot),
   );
   assert.ok(protectedSlots.every((slot) => !randomizedIds.has(slot.id)));
+});
+
+test("all report-facing item names come from English message tables", async () => {
+  const gameCatalog = await catalog();
+  const reportEntries = [
+    ...gameCatalog.gifts,
+    ...gameCatalog.enemyDropLots,
+    ...gameCatalog.shopEntries,
+    ...Object.values(gameCatalog.startingEquipmentPools).flat(),
+  ];
+  const japaneseText = /[\u3040-\u30ff\u3400-\u9fff\uff00-\uffef]/u;
+  assert.ok(reportEntries.length > 500);
+  assert.ok(
+    reportEntries.every(
+      (entry) =>
+        typeof entry.name === "string" &&
+        entry.name.length > 0 &&
+        !japaneseText.test(entry.name),
+    ),
+  );
 });
 
 test("obsolete catalogs require a fresh import", async () => {
