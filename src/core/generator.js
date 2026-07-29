@@ -441,11 +441,17 @@ function buildDragonPlan(config, catalog) {
 function randomizeExtractedEnemies(config, catalog, dragonPlan) {
   if (!config.randomizeEnemies) return dragonPlan.enemies;
   const rng = createStream(config.seed, "enemies", config.version);
+  const asylumPassiveSlots = new Set([
+    "m18_01_00_00:c2500_0000",
+    "m18_01_00_00:c2500_0001",
+    "m18_01_00_00:c2500_0002",
+  ]);
   const bossSlotIds = new Set(effectiveBossSlots(catalog).map((slot) => slot.id));
   const slots = catalog.enemySlots.filter(
     (slot) =>
       /^m1[0-8]_/u.test(slot.mapId) &&
       !bossSlotIds.has(slot.id) &&
+      !asylumPassiveSlots.has(slot.id) &&
       !dragonPlan.reservedSlotIds.has(slot.id) &&
       (slot.teamType === 0 || slot.modelName === "c3501") &&
       slot.modelName !== "c0000" &&
@@ -463,7 +469,7 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan) {
     slots.map((target, index) => [target.id, shuffledSources[index]]),
   );
 
-  return slots.map((slot, index) => {
+  const randomized = slots.map((slot, index) => {
     const replacement = assignment.get(slot.id) ?? slot;
     const changed =
       replacement.modelName !== slot.modelName ||
@@ -476,7 +482,13 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan) {
           ? "count-preserving-identical-source-permutation"
           : "count-preserving-fixed-point",
     });
-  }).concat(dragonPlan.enemies);
+  });
+  const passiveAsylumEnemies = catalog.enemySlots
+    .filter((slot) => asylumPassiveSlots.has(slot.id))
+    .map((slot) => enemyPlacement(config, slot, slot, null, {
+      compatibility: "vanilla-passive-asylum-intro",
+    }));
+  return randomized.concat(passiveAsylumEnemies, dragonPlan.enemies);
 }
 
 const canonicalBossModel = new Map([
@@ -685,6 +697,7 @@ function randomizeStartingClasses(config, catalog) {
           !vanillaStartingWeaponIds.has(weapon.id) &&
           weapon.id < 2_000_000 &&
           weapon.id % 1_000 === 0 &&
+          weapon.name !== "Fists" &&
           !(weapon.id >= 1_200_000 && weapon.id < 1_300_000),
       );
       const roles = specialIds.has(target.id)

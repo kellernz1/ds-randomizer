@@ -95,6 +95,7 @@ test("real catalog produces deterministic enemies with visibly different models"
         "count-preserving-unrestricted-permutation",
         "count-preserving-identical-source-permutation",
         "count-preserving-fixed-point",
+        "vanilla-passive-asylum-intro",
         "dragon-only-group-permutation",
         "linked-dragon-part-permutation",
         "linked-hydra-group-permutation",
@@ -485,6 +486,7 @@ test("every class receives a primary weapon as its first pickup", async () => {
       result.placements.startingClasses.every(
         (entry) =>
           entry.equipment.pickupWeapon.isPrimaryWeapon === true &&
+          entry.equipment.pickupWeapon.name !== "Fists" &&
           entry.equipment.pickupWeapon.id < 1_200_000,
       ),
     );

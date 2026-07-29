@@ -559,7 +559,11 @@ static RandomizerParamData ReadRandomizerParamData(
             Math.Max(0, GetCellInt(row, "properAgility", 0)),
             Math.Max(0, GetCellInt(row, "properMagic", 0)),
             Math.Max(0, GetCellInt(row, "properFaith", 0)),
-            row.ID < 1_200_000))
+            row.ID < 1_200_000 &&
+                !string.Equals(
+                    itemNames.Weapons.GetValueOrDefault(row.ID),
+                    "Fists",
+                    StringComparison.OrdinalIgnoreCase)))
         .OrderBy(row => row.Id)
         .ToList();
     var protectorParam = ReadParam("EquipParamProtector.param");
