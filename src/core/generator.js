@@ -470,20 +470,23 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan) {
 
   const randomized = slots.map((slot, index) => {
     const replacement = assignment.get(slot.id) ?? slot;
-    const effectiveReplacement = asylumPassiveSlots.has(slot.id)
-      ? {
-          ...replacement,
-          thinkParamId: slot.thinkParamId,
-          battleGoalId: slot.battleGoalId,
-        }
-      : replacement;
+    const passiveUntilAttacked = asylumPassiveSlots.has(slot.id);
     const changed =
-      effectiveReplacement.modelName !== slot.modelName ||
-      effectiveReplacement.npcParamId !== slot.npcParamId ||
-      effectiveReplacement.thinkParamId !== slot.thinkParamId;
-    return enemyPlacement(config, slot, effectiveReplacement, 9_100_000 + index, {
-      compatibility: changed
-        ? "count-preserving-unrestricted-permutation"
+      replacement.modelName !== slot.modelName ||
+      replacement.npcParamId !== slot.npcParamId ||
+      replacement.thinkParamId !== slot.thinkParamId;
+    return enemyPlacement(config, slot, replacement, 9_100_000 + index, {
+      ...(passiveUntilAttacked
+        ? {
+            baseThinkParamId: replacement.thinkParamId,
+            targetThinkParamId: 9_600_000 + index,
+            passiveUntilAttacked: true,
+          }
+        : {}),
+      compatibility: passiveUntilAttacked
+        ? "passive-asylum-source-ai-permutation"
+        : changed
+          ? "count-preserving-unrestricted-permutation"
         : replacement.id !== slot.id
           ? "count-preserving-identical-source-permutation"
           : "count-preserving-fixed-point",

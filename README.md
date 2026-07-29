@@ -24,6 +24,8 @@ package before touching the game.
   into the package's common SFX bundle, so cross-map projectiles and elemental
   attacks (including Demonic Statue fire) remain visible
 - Event-controlled and dummy hostile slots participate in the same permutation
+- The first three Asylum enemies remain randomized but stay passive until
+  attacked, then use the replacement enemy's own movement and battle AI
 - Friendly NPCs, merchants, quest characters, and their spawns are protected
 - Boss encounters use an unrestricted permutation and replacements are placed
   at the destination encounter's terrain height

@@ -920,6 +920,12 @@ static PatchReport PatchEnemies(
                     groundY.ValueKind == JsonValueKind.Number
                         ? groundY.GetSingle()
                         : null,
+                element.TryGetProperty("baseThinkParamId", out var baseThinkParam) &&
+                    baseThinkParam.ValueKind == JsonValueKind.Number
+                        ? baseThinkParam.GetInt32()
+                        : null,
+                element.TryGetProperty("passiveUntilAttacked", out var passive) &&
+                    passive.ValueKind == JsonValueKind.True,
                 element.TryGetProperty("linkedDragonGroup", out var dragonGroup) &&
                     dragonGroup.ValueKind == JsonValueKind.String ||
                 element.TryGetProperty("linkedEnemyGroup", out var enemyGroup) &&
@@ -939,7 +945,10 @@ static PatchReport PatchEnemies(
             slot.ModelName == "c0000" ||
             slot.NpcParamId != placement.SourceNpcParamId ||
             placement.TargetNpcParamId < 0 ||
-            placement.TargetThinkParamId < 0)
+            placement.TargetThinkParamId < 0 ||
+            (placement.PassiveUntilAttacked &&
+             (!placement.BaseThinkParamId.HasValue ||
+              placement.BaseThinkParamId.Value < 0)))
         {
             throw new InvalidDataException(
                 $"Protected or obsolete regular-enemy placement: {placement.SlotId}. " +
@@ -1198,6 +1207,7 @@ static PatchReport PatchEnemies(
 
     var patchedGameParam =
         allEnemyPlacements.Any(placement => placement.ScaledNpcParamId.HasValue) ||
+        allEnemyPlacements.Any(placement => placement.PassiveUntilAttacked) ||
         startingPlacements.Count > 0 ||
         giftPlacements.Count > 0 ||
         enemyDropPlacements.Count > 0 ||
@@ -1870,6 +1880,7 @@ static PatchedFile? PatchGameParam(
     List<RowPlacement> shopPlacements)
 {
     if (!enemyPlacements.Any(placement => placement.ScaledNpcParamId.HasValue) &&
+        !enemyPlacements.Any(placement => placement.PassiveUntilAttacked) &&
         !placements.Any(placement =>
             placement.RandomizeStats || placement.RandomizeEquipment) &&
         giftPlacements.Count == 0 &&
@@ -1899,18 +1910,25 @@ static PatchedFile? PatchGameParam(
         file.Name.EndsWith("ShopLineupParam.param", StringComparison.OrdinalIgnoreCase));
     var npcFile = binder.Files.Single(file =>
         file.Name.EndsWith("NpcParam.param", StringComparison.OrdinalIgnoreCase));
+    var thinkFile = binder.Files.Single(file =>
+        file.Name.EndsWith("NpcThinkParam.param", StringComparison.OrdinalIgnoreCase));
     var charaParam = PARAM.Read(charaFile.Bytes);
     var itemLotParam = PARAM.Read(itemLotFile.Bytes);
     var shopParam = PARAM.Read(shopFile.Bytes);
     var npcParam = PARAM.Read(npcFile.Bytes);
+    var thinkParam = PARAM.Read(thinkFile.Bytes);
     ApplyCompatibleParamdef(charaParam, paramdefs);
     ApplyCompatibleParamdef(itemLotParam, paramdefs);
     ApplyCompatibleParamdef(shopParam, paramdefs);
     ApplyCompatibleParamdef(npcParam, paramdefs);
+    ApplyCompatibleParamdef(thinkParam, paramdefs);
 
     AddScaledNpcRows(
         npcParam,
         enemyPlacements.Where(placement => placement.ScaledNpcParamId.HasValue).ToList());
+    AddPassiveThinkRows(
+        thinkParam,
+        enemyPlacements.Where(placement => placement.PassiveUntilAttacked).ToList());
 
     var classes = catalog.StartingClasses.ToDictionary(entry => entry.Id);
     var classRows = classes.ToDictionary(
@@ -2152,6 +2170,7 @@ static PatchedFile? PatchGameParam(
     itemLotFile.Bytes = itemLotParam.Write();
     shopFile.Bytes = shopParam.Write();
     npcFile.Bytes = npcParam.Write();
+    thinkFile.Bytes = thinkParam.Write();
     var outputRelative = "mod/param/GameParam/GameParam.parambnd.dcx";
     var outputPath = Path.Combine(
         outputDirectory, outputRelative.Replace('/', Path.DirectorySeparatorChar));
@@ -2168,19 +2187,25 @@ static PatchedFile? PatchGameParam(
         file.Name.EndsWith("ShopLineupParam.param", StringComparison.OrdinalIgnoreCase));
     var verifiedNpcFile = verification.Files.Single(file =>
         file.Name.EndsWith("NpcParam.param", StringComparison.OrdinalIgnoreCase));
+    var verifiedThinkFile = verification.Files.Single(file =>
+        file.Name.EndsWith("NpcThinkParam.param", StringComparison.OrdinalIgnoreCase));
     var verifiedChara = PARAM.Read(verifiedCharaFile.Bytes);
     var verifiedLots = PARAM.Read(verifiedLotFile.Bytes);
     var verifiedShops = PARAM.Read(verifiedShopFile.Bytes);
     var verifiedNpcs = PARAM.Read(verifiedNpcFile.Bytes);
+    var verifiedThinks = PARAM.Read(verifiedThinkFile.Bytes);
     ApplyCompatibleParamdef(verifiedNpcs, paramdefs);
+    ApplyCompatibleParamdef(verifiedThinks, paramdefs);
     if (verifiedChara.Rows.Count != charaParam.Rows.Count ||
         verifiedLots.Rows.Count != itemLotParam.Rows.Count ||
         verifiedShops.Rows.Count != shopParam.Rows.Count ||
         verifiedNpcs.Rows.Count != npcParam.Rows.Count ||
+        verifiedThinks.Rows.Count != thinkParam.Rows.Count ||
         !verifiedCharaFile.Bytes.SequenceEqual(charaFile.Bytes) ||
         !verifiedLotFile.Bytes.SequenceEqual(itemLotFile.Bytes) ||
         !verifiedShopFile.Bytes.SequenceEqual(shopFile.Bytes) ||
-        !verifiedNpcFile.Bytes.SequenceEqual(npcFile.Bytes))
+        !verifiedNpcFile.Bytes.SequenceEqual(npcFile.Bytes) ||
+        !verifiedThinkFile.Bytes.SequenceEqual(thinkFile.Bytes))
         throw new InvalidDataException("Invalid GameParam round-trip.");
     foreach (var placement in enemyPlacements.Where(value => value.ScaledNpcParamId.HasValue))
     {
@@ -2198,6 +2223,19 @@ static PatchedFile? PatchGameParam(
                 GetCellInt(source, cell.Def.InternalName));
         }
         AssertCell(scaled, "nameId", GetCellInt(target, "nameId"));
+    }
+    foreach (var placement in enemyPlacements.Where(value => value.PassiveUntilAttacked))
+    {
+        var passive = verifiedThinks.Rows.Single(row =>
+            row.ID == placement.TargetThinkParamId);
+        var source = verifiedThinks.Rows.Single(row =>
+            row.ID == placement.BaseThinkParamId);
+        AssertCell(
+            passive,
+            "battleGoalID",
+            GetCellInt(source, "battleGoalID"));
+        foreach (var field in PassiveDetectionFields())
+            AssertCell(passive, field, 0);
     }
     AssertHash(sourcePath, sourceRecord.Sha256, "Source GameParam changed");
 
@@ -2257,6 +2295,55 @@ static void AddScaledNpcRows(PARAM npcParam, List<PatchPlacement> placements)
         npcParam.Rows.Add(scaled);
     }
     npcParam.Rows.Sort((left, right) => left.ID.CompareTo(right.ID));
+}
+
+static string[] PassiveDetectionFields() =>
+[
+    "eye_dist",
+    "ear_dist",
+    "ear_soundcut_dist",
+    "nose_dist",
+    "BattleStartDist",
+    "callHelp_MyPeerId",
+    "callHelp_CallPeerId",
+    "callHelp_ReplyBehaviorType",
+];
+
+static void AddPassiveThinkRows(PARAM thinkParam, List<PatchPlacement> placements)
+{
+    if (placements.Count == 0)
+        return;
+    var existingIds = thinkParam.Rows.Select(row => row.ID).ToHashSet();
+    var originalRows = thinkParam.Rows.ToDictionary(row => row.ID);
+    foreach (var placement in placements)
+    {
+        var newId = placement.TargetThinkParamId;
+        if (!existingIds.Add(newId))
+            throw new InvalidDataException(
+                $"Duplicate passive NpcThinkParam ID: {newId}.");
+        if (!placement.BaseThinkParamId.HasValue ||
+            !originalRows.TryGetValue(placement.BaseThinkParamId.Value, out var source))
+        {
+            throw new InvalidDataException(
+                $"Source NpcThinkParam row not found: {placement.BaseThinkParamId}.");
+        }
+
+        var passive = new PARAM.Row(
+            newId,
+            $"DSR Randomizer passive {placement.MapId} {placement.SlotId}",
+            thinkParam.AppliedParamdef);
+        CopyCells(RowCells(source), passive, _ => true);
+        foreach (var field in PassiveDetectionFields())
+            SetCell(passive, field, 0);
+        AssertCell(
+            passive,
+            "battleGoalID",
+            GetCellInt(source, "battleGoalID"));
+        foreach (var field in PassiveDetectionFields())
+            AssertCell(passive, field, 0);
+        thinkParam.Rows.Add(passive);
+    }
+    thinkParam.Rows.Sort((left, right) => left.ID.CompareTo(right.ID));
 }
 
 static void SetCell(PARAM.Row row, string name, int value)
@@ -3011,6 +3098,8 @@ record PatchPlacement(
     int? ScaledNpcParamId,
     int EntityId,
     float? GroundY,
+    int? BaseThinkParamId,
+    bool PassiveUntilAttacked,
     bool LinkedEnemyGroup)
 {
     public int EffectiveNpcParamId => ScaledNpcParamId ?? TargetNpcParamId;

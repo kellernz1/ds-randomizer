@@ -71,6 +71,10 @@ files; source hashes prevent applying it to a different installation state.
   and never leak into the regular-enemy permutation
 - First Asylum boss rooftop animation is replaced by a floor spawn
 - Adapted Asylum intro explicitly enables replacement AI after arena entry
+- The first three regular Asylum slots receive cloned replacement
+  `NpcThinkParam` rows with automatic detection disabled. They remain passive
+  until damaged, then use the replacement enemy's native battle goal,
+  navigation, and animations.
 - Portable seed files contain deterministic options, version, catalog fingerprint, and verified placement hash
 - English-only launcher status, dependency, and failure messages
 - Cross-map enemy model declarations and validated MSB round trips

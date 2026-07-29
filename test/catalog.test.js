@@ -95,7 +95,7 @@ test("real catalog produces deterministic enemies with visibly different models"
         "count-preserving-unrestricted-permutation",
         "count-preserving-identical-source-permutation",
         "count-preserving-fixed-point",
-        "vanilla-passive-asylum-intro",
+        "passive-asylum-source-ai-permutation",
         "dragon-only-group-permutation",
         "linked-dragon-part-permutation",
         "linked-hydra-group-permutation",
@@ -119,6 +119,21 @@ test("real catalog produces deterministic enemies with visibly different models"
   const placementsBySlot = new Map(
     ordinaryPlacements.map((placement) => [placement.slot, placement]),
   );
+  for (const slotId of [
+    "m18_01_00_00:c2500_0000",
+    "m18_01_00_00:c2500_0001",
+    "m18_01_00_00:c2500_0002",
+  ]) {
+    const placement = placementsBySlot.get(slotId);
+    const source = slots.get(placement.sourceSlot);
+    assert.equal(placement.baseThinkParamId, source.thinkParamId);
+    assert.ok(placement.targetThinkParamId >= 9_600_000);
+    assert.equal(placement.passiveUntilAttacked, true);
+    assert.equal(
+      placement.compatibility,
+      "passive-asylum-source-ai-permutation",
+    );
+  }
   let longestCycle = 0;
   for (const placement of ordinaryPlacements) {
     const visited = new Set();
@@ -151,9 +166,16 @@ test("real catalog produces deterministic enemies with visibly different models"
         "m18_01_00_00:c2500_0002",
       ].includes(placement.slot)
     ) {
-      assert.equal(placement.targetThinkParamId, slot.thinkParamId);
+      assert.equal(placement.baseThinkParamId, source.thinkParamId);
+      assert.ok(placement.targetThinkParamId >= 9_600_000);
+      assert.equal(placement.passiveUntilAttacked, true);
+      assert.equal(
+        placement.compatibility,
+        "passive-asylum-source-ai-permutation",
+      );
     } else {
       assert.equal(placement.targetThinkParamId, source.thinkParamId);
+      assert.equal(placement.passiveUntilAttacked, undefined);
     }
     ignoresMovementCompatibility ||= (
       source.npcType !== slot.npcType ||
