@@ -20,6 +20,9 @@ package before touching the game.
   original-stat scaling deliberately retains the source enemy's strength
 - Only the required cross-map Lua battle/logic scripts are merged into each
   destination map, keeping AI bundles small and isolated
+- Transferable enemy visual effects, textures, and effect models are merged
+  into the package's common SFX bundle, so cross-map projectiles and elemental
+  attacks (including Demonic Statue fire) remain visible
 - Event-controlled and dummy hostile slots participate in the same permutation
 - Friendly NPCs, merchants, quest characters, and their spawns are protected
 - Boss encounters use an unrestricted permutation and replacements are placed
@@ -97,6 +100,10 @@ In the configurator:
 The generated seed folder includes `cheat-locations.txt` when world items or
 bosses are randomized. This report is created even when the full spoiler log
 option is disabled.
+
+Enemy randomization packages also include a patched common SFX bundle. It is
+installed and restored with the same hash checks and per-seed backup as the
+map, AI, event, and parameter files.
 
 Use **Export** beside the seed to create a small JSON file containing the seed
 and every option that affects placements. Another player can use **Import seed**

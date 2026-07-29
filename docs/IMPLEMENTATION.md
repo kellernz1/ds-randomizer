@@ -44,6 +44,9 @@ files; source hashes prevent applying it to a different installation state.
   alternate-map copies of one encounter share the same replacement and name
 - Only required cross-map Lua battle/logic scripts, matching goal records, and
   referenced globals are merged into each destination map's `luabnd`
+- Transferable enemy FFX effects, textures, and effect models from map bundles
+  are merged into the package's `CommonEffects` bundle so cross-map attacks
+  remain visible, including Demonic Statue fire projectiles
 - EMEVD instruction edits preserve parameter indices, and the adapted Asylum
   AI activation runs before the intro event terminates
 - Preset definitions and preset CLI/config handling have been removed
@@ -82,7 +85,8 @@ files; source hashes prevent applying it to a different installation state.
 - Per-slot armor randomization and vanilla starting-item exclusion
 - Asylum floor pickups preserved separately from spawn equipment
 - 20 NPC gift lots, 64 renewable enemy-drop lots, and 392 shop rows
-- Isolated packages containing changed MSBs and/or `GameParam.parambnd.dcx`
+- Isolated packages containing changed MSBs, AI/event bundles, `GameParam`,
+  and the hash-guarded common enemy-effect bundle when enemies are randomized
 - Source and output hashes, round-trip validation, atomic install, backup,
   rollback, and guarded restore
 

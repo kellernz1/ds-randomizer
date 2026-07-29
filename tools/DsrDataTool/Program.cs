@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using SoulsFormats;
 
 const int SchemaVersion = 12;
@@ -56,6 +57,7 @@ try
             jsonOptions);
         Console.WriteLine($"Changed maps: {report.PatchedMaps.Count}");
         Console.WriteLine($"Changed AI bundles: {report.LuaBundles.Count}");
+        Console.WriteLine($"Changed effect bundles: {(report.FfxBundle == null ? 0 : 1)}");
         Console.WriteLine($"Changed slots: {report.ChangedSlots}");
         Console.WriteLine($"Output: {report.OutputDirectory}");
     }
@@ -1204,6 +1206,14 @@ static PatchReport PatchEnemies(
     var patchedEvents = PatchBossNames(
         gameDirectory, outputDirectory, catalog, bossPlacements);
 
+    // Enemy effects are normally spread across map-local SFX bundles. An enemy
+    // moved to another map can otherwise attack correctly while its projectile
+    // or elemental effect is invisible (for example, the Demonic Statue fire).
+    // Make the transferable enemy effects globally available to this package.
+    var patchedFfxBundle = allEnemyPlacements.Count > 0
+        ? PatchEnemyEffects(gameDirectory, outputDirectory)
+        : null;
+
     var patchedGameParam =
         allEnemyPlacements.Any(placement => placement.ScaledNpcParamId.HasValue) ||
         startingPlacements.Count > 0 ||
@@ -1231,11 +1241,105 @@ static PatchReport PatchEnemies(
         patchedMaps,
         patchedLuaBundles,
         patchedEvents,
+        patchedFfxBundle,
         patchedGameParam);
     File.WriteAllText(
         Path.Combine(outputDirectory, "patch-manifest.json"),
         JsonSerializer.Serialize(report, jsonOptions) + Environment.NewLine);
     return report;
+}
+
+static PatchedFile PatchEnemyEffects(string gameDirectory, string outputDirectory)
+{
+    const string commonRelative = "sfx/FRPG_SfxBnd_CommonEffects.ffxbnd.dcx";
+    var mapBundles = new[]
+    {
+        "m10", "m10_00", "m10_01", "m10_02", "m11", "m12", "m12_00",
+        "m12_01", "m13", "m13_00", "m13_01", "m13_02", "m14", "m14_00",
+        "m14_01", "m15", "m15_00", "m15_01", "m16", "m17", "m18",
+        "m18_00", "m18_01",
+    };
+    var effectName = new Regex(@"f00([1-9][0-9]{4})\.ffx$", RegexOptions.IgnoreCase);
+    var resourceName = new Regex(@"s([1-9][0-9]{4})\.(flver|tpf)$", RegexOptions.IgnoreCase);
+
+    static BinderFile CopyFile(BinderFile file, int id) => new(
+        file.Flags,
+        id,
+        file.Name,
+        file.Bytes.ToArray())
+    {
+        CompressionType = file.CompressionType,
+    };
+
+    bool IsEnemyEffect(BinderFile file)
+    {
+        var name = Path.GetFileName(file.Name);
+        var effectMatch = effectName.Match(name);
+        if (effectMatch.Success)
+            return int.Parse(effectMatch.Groups[1].Value) < 20_001;
+        var resourceMatch = resourceName.Match(name);
+        return resourceMatch.Success &&
+            int.Parse(resourceMatch.Groups[1].Value) < 20_001;
+    }
+
+    var sourcePath = ResolveGamePath(gameDirectory, commonRelative);
+    if (!File.Exists(sourcePath))
+        throw new FileNotFoundException("Common enemy-effect bundle was not found.", sourcePath);
+    var sourceHash = HashFile(sourcePath);
+    var binder = BND3.Read(sourcePath);
+    var existingNames = binder.Files
+        .Select(file => file.Name)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    var nextIds = new Dictionary<int, int>
+    {
+        [0] = binder.Files.Where(file => file.ID < 100_000)
+            .Select(file => file.ID).DefaultIfEmpty(0).Max(),
+        [1] = binder.Files.Where(file => file.ID is >= 100_000 and < 200_000)
+            .Select(file => file.ID).DefaultIfEmpty(100_000).Max(),
+        [2] = binder.Files.Where(file => file.ID >= 200_000)
+            .Select(file => file.ID).DefaultIfEmpty(200_000).Max(),
+    };
+    var additions = new List<BinderFile>();
+    foreach (var mapId in mapBundles)
+    {
+        var relative = $"sfx/FRPG_SfxBnd_{mapId}.ffxbnd.dcx";
+        var mapPath = ResolveGamePath(gameDirectory, relative);
+        if (!File.Exists(mapPath))
+            throw new FileNotFoundException("Map enemy-effect bundle was not found.", mapPath);
+        var mapHash = HashFile(mapPath);
+        foreach (var file in BND3.Read(mapPath).Files.Where(IsEnemyEffect))
+        {
+            if (!existingNames.Add(file.Name))
+                continue;
+            var group = file.ID < 100_000 ? 0 : file.ID < 200_000 ? 1 : 2;
+            additions.Add(CopyFile(file, ++nextIds[group]));
+        }
+        if (!HashFile(mapPath).Equals(mapHash, StringComparison.OrdinalIgnoreCase))
+            throw new IOException($"Source effect bundle changed during patching: {relative}");
+    }
+
+    if (additions.Count == 0)
+        throw new InvalidDataException("No transferable enemy effects were found.");
+    // The engine expects effect, texture, and model entries grouped by ID range.
+    binder.Files.AddRange(additions.OrderBy(file => file.ID));
+    var outputRelative = $"mod/{commonRelative}";
+    var outputPath = ResolvePackagePath(outputDirectory, outputRelative);
+    Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+    binder.Write(outputPath);
+
+    var verification = BND3.Read(outputPath);
+    var verifiedNames = verification.Files
+        .Select(file => file.Name)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    if (!additions.Select(file => file.Name).All(verifiedNames.Contains))
+        throw new InvalidDataException("Enemy effects did not persist in CommonEffects.");
+    if (!HashFile(sourcePath).Equals(sourceHash, StringComparison.OrdinalIgnoreCase))
+        throw new IOException("Source CommonEffects bundle changed during patching.");
+    return new PatchedFile(
+        commonRelative,
+        outputRelative,
+        sourceHash,
+        HashFile(outputPath));
 }
 
 static List<PatchedFile> PatchLuaAiBundles(
@@ -1373,13 +1477,22 @@ static List<PatchedFile> PatchLuaAiBundles(
                     "This replacement is not safe.");
             }
             var scriptPrefix = $"{goalId:D6}_";
+            var goals = source.Info.Goals
+                .Where(goal => goal.ID == goalId)
+                .ToList();
+            var logicScriptNames = goals
+                .Select(goal => goal.LogicInterruptName)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Select(name => Path.GetFileName(name!))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
             var scripts = source.Binder.Files
                 .Where(file =>
                     file.ID != luaGnlId &&
                     file.ID != luaInfoId &&
-                    Path.GetFileName(file.Name).StartsWith(
-                        scriptPrefix,
-                        StringComparison.OrdinalIgnoreCase))
+                    (Path.GetFileName(file.Name).StartsWith(
+                         scriptPrefix,
+                         StringComparison.OrdinalIgnoreCase) ||
+                     logicScriptNames.Contains(Path.GetFileName(file.Name))))
                 .ToList();
             if (scripts.Count == 0)
             {
@@ -1387,9 +1500,6 @@ static List<PatchedFile> PatchLuaAiBundles(
                     $"No Lua AI script for goal {goalId} was found in " +
                     $"{source.Record.Path}.");
             }
-            var goals = source.Info.Goals
-                .Where(goal => goal.ID == goalId)
-                .ToList();
             var globals = source.Globals.Globals
                 .Where(value => scripts.Any(script =>
                     ContainsAscii(script.Bytes, value)))
@@ -2466,6 +2576,8 @@ static List<PatchedFile> GetPatchFiles(PatchReport report)
         map.Source, map.Output, map.SourceSha256, map.OutputSha256)).ToList();
     files.AddRange(report.LuaBundles ?? new List<PatchedFile>());
     files.AddRange(report.Events ?? new List<PatchedFile>());
+    if (report.FfxBundle != null)
+        files.Add(report.FfxBundle);
     if (report.GameParam != null)
         files.Add(report.GameParam);
     return files;
@@ -2954,6 +3066,7 @@ record PatchReport(
     List<PatchedMap> PatchedMaps,
     List<PatchedFile> LuaBundles,
     List<PatchedFile> Events,
+    PatchedFile? FfxBundle,
     PatchedFile? GameParam);
 record ActivationFile(
     string RelativePath,
