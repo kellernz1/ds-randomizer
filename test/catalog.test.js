@@ -144,7 +144,17 @@ test("real catalog produces deterministic enemies with visibly different models"
     assert.notEqual(slot.modelName, "c0000");
     assert.equal(placement.targetModelName, source.modelName);
     assert.equal(placement.targetNpcParamId, source.npcParamId);
-    assert.equal(placement.targetThinkParamId, source.thinkParamId);
+    if (
+      [
+        "m18_01_00_00:c2500_0000",
+        "m18_01_00_00:c2500_0001",
+        "m18_01_00_00:c2500_0002",
+      ].includes(placement.slot)
+    ) {
+      assert.equal(placement.targetThinkParamId, slot.thinkParamId);
+    } else {
+      assert.equal(placement.targetThinkParamId, source.thinkParamId);
+    }
     ignoresMovementCompatibility ||= (
       source.npcType !== slot.npcType ||
       source.moveType !== slot.moveType ||

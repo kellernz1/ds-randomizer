@@ -451,7 +451,6 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan) {
     (slot) =>
       /^m1[0-8]_/u.test(slot.mapId) &&
       !bossSlotIds.has(slot.id) &&
-      !asylumPassiveSlots.has(slot.id) &&
       !dragonPlan.reservedSlotIds.has(slot.id) &&
       (slot.teamType === 0 || slot.modelName === "c3501") &&
       slot.modelName !== "c0000" &&
@@ -471,11 +470,18 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan) {
 
   const randomized = slots.map((slot, index) => {
     const replacement = assignment.get(slot.id) ?? slot;
+    const effectiveReplacement = asylumPassiveSlots.has(slot.id)
+      ? {
+          ...replacement,
+          thinkParamId: slot.thinkParamId,
+          battleGoalId: slot.battleGoalId,
+        }
+      : replacement;
     const changed =
-      replacement.modelName !== slot.modelName ||
-      replacement.npcParamId !== slot.npcParamId ||
-      replacement.thinkParamId !== slot.thinkParamId;
-    return enemyPlacement(config, slot, replacement, 9_100_000 + index, {
+      effectiveReplacement.modelName !== slot.modelName ||
+      effectiveReplacement.npcParamId !== slot.npcParamId ||
+      effectiveReplacement.thinkParamId !== slot.thinkParamId;
+    return enemyPlacement(config, slot, effectiveReplacement, 9_100_000 + index, {
       compatibility: changed
         ? "count-preserving-unrestricted-permutation"
         : replacement.id !== slot.id
@@ -483,12 +489,7 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan) {
           : "count-preserving-fixed-point",
     });
   });
-  const passiveAsylumEnemies = catalog.enemySlots
-    .filter((slot) => asylumPassiveSlots.has(slot.id))
-    .map((slot) => enemyPlacement(config, slot, slot, null, {
-      compatibility: "vanilla-passive-asylum-intro",
-    }));
-  return randomized.concat(passiveAsylumEnemies, dragonPlan.enemies);
+  return randomized.concat(dragonPlan.enemies);
 }
 
 const canonicalBossModel = new Map([
