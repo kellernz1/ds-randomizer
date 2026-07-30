@@ -65,10 +65,13 @@ files; source hashes prevent applying it to a different installation state.
 - A 30-model per-map budget for ordinary enemies prevents asynchronous
   character-resource loading from exceeding stable Remastered map diversity
 - Area scaling copies every combat-scaling `SpEffect` from the destination
-- Bosses use an unrestricted permutation and every destination receives a
-  terrain-level Y coordinate
-- Dragons are isolated into dragon-only permutation groups; detachable parts
-  and alternate encounter bodies follow their parent group
+- Bosses use a strict boss-only permutation; ordinary Anor Londo gargoyles
+  cannot enter boss encounters
+- Every boss destination receives a complete terrain-safe X/Y/Z position.
+  Event-staged Taurus, Bell Gargoyle, Moonlight Butterfly, Ceaseless Discharge,
+  and Asylum slots use explicit playable-arena points
+- Dragons are isolated into boss-dragon and regular-dragon permutation groups;
+  detachable parts and alternate encounter bodies follow their parent group
 - Hydras use linked hydra-only body/head groups, and Moonlight Butterfly,
   Ceaseless Discharge, and Gwyndolin are included as boss encounters
 - All 45 Humanity enemy slots participate in the regular permutation
@@ -79,9 +82,12 @@ files; source hashes prevent applying it to a different installation state.
 - First Asylum boss rooftop animation is replaced by a floor spawn
 - Adapted Asylum intro explicitly enables replacement AI after arena entry
 - The first three regular Asylum slots receive cloned replacement
-  `NpcThinkParam` rows with automatic detection disabled plus restarting EMEVD
-  guards that disable battle AI until the player damages each entity. They then
-  use the replacement enemy's native battle goal, navigation, and animations.
+  `NpcThinkParam` rows plus restarting EMEVD guards that assign friendly-enemy
+  allegiance until the player damages each entity. They keep native idle
+  movement, switch to enemy allegiance on damage, replan immediately, and stay
+  hostile until death before the guard prepares the next respawn.
+- Male Ghost, Female Ghost, and Pisaca replacements use their canonical active
+  combat brains instead of area-dependent ambush/defensive AI variants.
 - The rooftop Asylum boss uses the lower arena spawn's complete X/Y/Z position.
   A Moonlight Butterfly replacement has AI held while landing animation 3020
   completes, then resumes its native battle AI.

@@ -108,6 +108,11 @@ test("real catalog produces deterministic enemies with visibly different models"
   );
 
   const slots = new Map(gameCatalog.enemySlots.map((slot) => [slot.id, slot]));
+  const activeReplacementThinkParams = new Map([
+    ["c2670", 267000],
+    ["c2680", 268000],
+    ["c3330", 333000],
+  ]);
   const ordinaryPlacements = first.placements.enemies.filter(
     (placement) =>
       !placement.linkedDragonGroup && !placement.linkedEnemyGroup,
@@ -150,7 +155,10 @@ test("real catalog produces deterministic enemies with visibly different models"
   ]) {
     const placement = placementsBySlot.get(slotId);
     const source = slots.get(placement.sourceSlot);
-    assert.equal(placement.baseThinkParamId, source.thinkParamId);
+    assert.equal(
+      placement.baseThinkParamId,
+      activeReplacementThinkParams.get(source.modelName) ?? source.thinkParamId,
+    );
     assert.ok(placement.targetThinkParamId >= 9_600_000);
     assert.equal(placement.passiveUntilAttacked, true);
     assert.equal(
@@ -190,7 +198,10 @@ test("real catalog produces deterministic enemies with visibly different models"
         "m18_01_00_00:c2500_0002",
       ].includes(placement.slot)
     ) {
-      assert.equal(placement.baseThinkParamId, source.thinkParamId);
+      assert.equal(
+        placement.baseThinkParamId,
+        activeReplacementThinkParams.get(source.modelName) ?? source.thinkParamId,
+      );
       assert.ok(placement.targetThinkParamId >= 9_600_000);
       assert.equal(placement.passiveUntilAttacked, true);
       assert.equal(
@@ -198,7 +209,10 @@ test("real catalog produces deterministic enemies with visibly different models"
         "passive-asylum-source-ai-permutation",
       );
     } else {
-      assert.equal(placement.targetThinkParamId, source.thinkParamId);
+      assert.equal(
+        placement.targetThinkParamId,
+        activeReplacementThinkParams.get(source.modelName) ?? source.thinkParamId,
+      );
       assert.equal(placement.passiveUntilAttacked, undefined);
     }
     ignoresMovementCompatibility ||= (
@@ -360,7 +374,14 @@ test("real catalog produces real boss and world-item placements", async () => {
         entry.linkedEnemyGroup === "bed-of-chaos",
     ),
   );
-  assert.ok(result.placements.bosses.every((entry) => Number.isFinite(entry.groundY)));
+  assert.ok(
+    result.placements.bosses.every(
+      (entry) =>
+        Number.isFinite(entry.groundX) &&
+        Number.isFinite(entry.groundY) &&
+        Number.isFinite(entry.groundZ),
+    ),
+  );
   for (const modelName of ["c3230", "c5250", "c5320"]) {
     assert.ok(
       result.placements.bosses.some((entry) => entry.modelName === modelName),
@@ -402,6 +423,56 @@ test("real catalog produces real boss and world-item placements", async () => {
       .filter((placement) => placement.linkedDragonGroup)
       .every((placement) => dragonModels.has(placement.targetModelName)),
   );
+  const trueBossModels = new Set(
+    gameCatalog.bossSlots
+      .filter((slot) => slot.mapId !== "m15_01_00_00" || slot.modelName !== "c5351")
+      .map((slot) => slot.modelName),
+  );
+  assert.ok(
+    result.placements.bosses.every(
+      (placement) =>
+        placement.linkedEnemyGroup === "bed-of-chaos" ||
+        trueBossModels.has(placement.targetModelName),
+    ),
+    "boss encounters must only receive boss replacements",
+  );
+  assert.ok(
+    result.placements.bosses.every(
+      (placement) => placement.targetModelName !== "c5351",
+    ),
+    "ordinary Anor Londo gargoyles must not enter the boss pool",
+  );
+  const taurus = result.placements.bosses.find(
+    (entry) => entry.slot === "m10_01_00_00:c2250_0000",
+  );
+  assert.deepEqual(
+    [taurus.groundX, taurus.groundY, taurus.groundZ],
+    [1.16, 15.82, -114.34],
+  );
+  for (const [slot, expected] of new Map([
+    ["m12_00_00_00:c3230_0000", [196.12, 8.09, 62.25]],
+    ["m12_00_00_01:c3230_0000", [196.12, 8.09, 62.25]],
+    ["m14_01_00_00:c5250_0000", [396.14, -278.14, 74.56]],
+    ["m10_01_00_00:c5350_0002", [6.14, 48.92, 124.35]],
+  ])) {
+    const placement = result.placements.bosses.find((entry) => entry.slot === slot);
+    assert.deepEqual(
+      [placement.groundX, placement.groundY, placement.groundZ],
+      expected,
+      `${slot} must use its playable-arena spawn`,
+    );
+  }
+  const stagedGargoyle = result.placements.enemies.find(
+    (entry) => entry.slot === "m10_01_00_00:c5350_0001",
+  );
+  assert.deepEqual(
+    [
+      stagedGargoyle.groundX,
+      stagedGargoyle.groundY,
+      stagedGargoyle.groundZ,
+    ],
+    [10.69, 48.92, 124.35],
+  );
   for (const [primary, linked] of [["c5270", "c5271"]]) {
     assert.equal(
       assignmentsByVanillaModel.get(linked).targetModelName,
@@ -411,7 +482,6 @@ test("real catalog produces real boss and world-item placements", async () => {
   const linkedBossFamilies = new Map([
     ["sanctuary-guardian", new Set(["c3471", "c3472"])],
     ["bell-gargoyles", new Set(["c5350", "c5352"])],
-    ["anor-londo-gargoyles", new Set(["c5351", "c5353"])],
     ["centipede-demon", new Set(["c5200", "c5201", "c5202"])],
   ]);
   for (const [group, targetFamily] of linkedBossFamilies) {

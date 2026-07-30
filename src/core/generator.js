@@ -56,15 +56,44 @@ const additionalBossNames = new Map([
   ["c5320", "Dark Sun Gwyndolin"],
 ]);
 const additionalBossModels = new Set(additionalBossNames.keys());
+const nonBossEncounterSlots = new Set([
+  // The Anor Londo gargoyles reuse a boss model/parameter family but are
+  // ordinary enemies without an encounter health bar.
+  "m15_01_00_00:c5351_0000",
+  "m15_01_00_00:c5351_0001",
+]);
+const activeReplacementThinkParams = new Map([
+  // Ambush/defensive variants depend on their vanilla area setup. Use each
+  // model's ordinary combat brain when it is moved to an unrelated spawn.
+  ["c2670", 267000], // Male Ghost
+  ["c2680", 268000], // Female Ghost
+  ["c3330", 333000], // Pisaca
+]);
+const safeBossSpawnPositions = new Map([
+  // Taurus starts inside the tower and normally jumps to the bridge through
+  // a model-specific event. Replacements must begin directly on the bridge.
+  ["m10_01_00_00:c2250_0000", { x: 1.16, y: 15.82, z: -114.34 }],
+  // The second Bell Gargoyle has a rooftop staging position.
+  ["m10_01_00_00:c5350_0001", { x: 10.69, y: 48.92, z: 124.35 }],
+  ["m10_01_00_00:c5350_0002", { x: 6.14, y: 48.92, z: 124.35 }],
+  // The Butterfly and Ceaseless encounters also enter from event-controlled
+  // off-arena positions in vanilla.
+  ["m12_00_00_00:c3230_0000", { x: 196.12, y: 8.09, z: 62.25 }],
+  ["m12_00_00_01:c3230_0000", { x: 196.12, y: 8.09, z: 62.25 }],
+  ["m14_01_00_00:c5250_0000", { x: 396.14, y: -278.14, z: 74.56 }],
+]);
 
 function effectiveBossSlots(catalog) {
   const result = new Map(
-    (catalog.bossSlots || []).map((slot) => [slot.id, slot]),
+    (catalog.bossSlots || [])
+      .filter((slot) => !nonBossEncounterSlots.has(slot.id))
+      .map((slot) => [slot.id, slot]),
   );
   for (const slot of catalog.enemySlots) {
     const modelId = Number(slot.modelName.slice(1));
     if (
       additionalBossModels.has(slot.modelName) &&
+      !nonBossEncounterSlots.has(slot.id) &&
       !slot.dummy &&
       slot.npcParamId === modelId * 100 &&
       slot.thinkParamId > 1000
@@ -101,25 +130,6 @@ function randomizePrototypeEnemies(config) {
   });
 }
 
-function groundYForBoss(slot, catalog) {
-  if (slot.mapId === "m18_01_00_00" && slot.modelName === "c2232") {
-    return catalog.enemySlots.find(
-      (candidate) =>
-        candidate.mapId === slot.mapId && candidate.modelName === "c2230",
-    )?.position.y ?? slot.position.y;
-  }
-  return Math.min(
-    ...catalog.enemySlots
-      .filter(
-        (candidate) =>
-          candidate.mapId === slot.mapId &&
-          candidate.modelName === slot.modelName &&
-          !candidate.dummy,
-      )
-      .map((candidate) => candidate.position.y),
-  );
-}
-
 function bossGrounding(slot, catalog) {
   if (slot.mapId === "m18_01_00_00" && slot.modelName === "c2232") {
     const arenaFloor = catalog.enemySlots.find(
@@ -134,7 +144,12 @@ function bossGrounding(slot, catalog) {
       };
     }
   }
-  return { groundY: groundYForBoss(slot, catalog) };
+  const safePosition = safeBossSpawnPositions.get(slot.id) || slot.position;
+  return {
+    groundX: safePosition.x,
+    groundY: safePosition.y,
+    groundZ: safePosition.z,
+  };
 }
 
 function enemyPlacement(config, target, source, scaledNpcParamId, extra = {}) {
@@ -226,8 +241,17 @@ function buildDragonPlan(config, catalog) {
   });
   const assignments = new Map();
   const rng = createStream(config.seed, "dragons", config.version);
-  for (const partCount of new Set(enabled.map((entry) => entry.parts.length))) {
-    const targets = enabled.filter((entry) => entry.parts.length === partCount);
+  const isBossUnit = (entry) =>
+    entry.bodies.some((body) => bossSlotIds.has(body.id));
+  const poolKeys = new Set(enabled.map(
+    (entry) => `${isBossUnit(entry) ? "boss" : "regular"}:${entry.parts.length}`,
+  ));
+  for (const poolKey of poolKeys) {
+    const targets = enabled.filter(
+      (entry) =>
+        `${isBossUnit(entry) ? "boss" : "regular"}:${entry.parts.length}` ===
+        poolKey,
+    );
     const sources = shuffledWithoutFixedPoints(rng, targets);
     targets.forEach((target, index) => assignments.set(target.id, sources[index]));
   }
@@ -352,11 +376,6 @@ function buildDragonPlan(config, catalog) {
         "bell-gargoyles",
         byModel("c5350", "m10_01_00_00"),
         byModel("c5352", "m10_01_00_00"),
-      ),
-      unit(
-        "anor-londo-gargoyles",
-        byModel("c5351", "m15_01_00_00"),
-        byModel("c5353", "m15_01_00_00"),
       ),
       unit(
         "centipede-demon",
@@ -493,14 +512,18 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan) {
   const randomized = slots.map((slot, index) => {
     const replacement = assignment.get(slot.id) ?? slot;
     const passiveUntilAttacked = asylumPassiveSlots.has(slot.id);
+    const replacementThinkParamId =
+      activeReplacementThinkParams.get(replacement.modelName) ??
+      replacement.thinkParamId;
     const changed =
       replacement.modelName !== slot.modelName ||
       replacement.npcParamId !== slot.npcParamId ||
-      replacement.thinkParamId !== slot.thinkParamId;
+      replacementThinkParamId !== slot.thinkParamId;
     return enemyPlacement(config, slot, replacement, 9_100_000 + index, {
+      targetThinkParamId: replacementThinkParamId,
       ...(passiveUntilAttacked
         ? {
-            baseThinkParamId: replacement.thinkParamId,
+            baseThinkParamId: replacementThinkParamId,
             targetThinkParamId: 9_600_000 + index,
             passiveUntilAttacked: true,
           }

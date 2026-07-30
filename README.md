@@ -30,12 +30,15 @@ package before touching the game.
 - Cross-model event slots keep their enable/disable lifecycle while
   model-specific animation, warp, and body-part actions from the replaced
   enemy are removed to prevent frozen enemies and resource-loader crashes
-- The first three Asylum enemies remain randomized but stay passive until
-  attacked; an explicit map event then enables the replacement enemy's own
-  movement and battle AI
+- The first three Asylum enemies remain randomized and keep their replacement
+  model's idle movement, but a persistent friendly-enemy allegiance prevents
+  all three from attacking until the player damages them
 - Friendly NPCs, merchants, quest characters, and their spawns are protected
-- Boss encounters use an unrestricted permutation and replacements are placed
-  at the destination encounter's terrain height
+- Boss encounters exchange only with true boss encounters; ordinary Anor Londo
+  gargoyles and non-boss dragons cannot enter the boss pool
+- Boss replacements use complete terrain-safe X/Y/Z points. Event-staged Taurus
+  Demon, Bell Gargoyle, Moonlight Butterfly, Ceaseless Discharge, and Asylum
+  encounters begin directly inside their playable arenas
 - Dragons only exchange locations with other dragons; detachable tails, wings,
   legs, and encounter variants move as linked groups
 - Hydra bodies and all seven heads also move as linked hydra-only groups
@@ -163,7 +166,7 @@ activation.
 Progression protection keeps recognized keys, embers, progression rings, and
 event-bound shop goods in their original locations. Boss replacement preserves
 the original map entity IDs so map events continue to target the encounter and
-places the replacement at a known terrain-level Y coordinate.
+places the replacement at a known terrain-safe X/Y/Z coordinate.
 Area scaling creates a dedicated NPC parameter row for every replacement and
 inherits HP, stamina, defenses, resistances, and souls from the original enemy
 in that slot. Every combat-scaling `SpEffect` also comes from the destination,

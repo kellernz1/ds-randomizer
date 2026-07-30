@@ -1692,6 +1692,17 @@ static EMEVD.Instruction IfAttackedInstruction(
     return new EMEVD.Instruction(4, 1, args);
 }
 
+static EMEVD.Instruction IfDeadInstruction(
+    int conditionGroup,
+    int entityId)
+{
+    var args = new byte[12];
+    args[0] = unchecked((byte)(sbyte)conditionGroup);
+    BitConverter.GetBytes(entityId).CopyTo(args, 4);
+    args[8] = 1;
+    return new EMEVD.Instruction(4, 0, args);
+}
+
 static EMEVD.Instruction ForceAnimationInstruction(
     int entityId,
     int animationId,
@@ -1884,18 +1895,35 @@ static List<PatchedFile> PatchBossNames(
                 var passiveEvent = new EMEVD.Event(
                     eventId,
                     EMEVD.Event.RestBehaviorType.Restart);
+                // Friendly-enemy allegiance is persistent even if another
+                // vanilla event enables AI after this event starts. This lets
+                // the randomized character keep its native idle movement but
+                // prevents it from acquiring the player before being hit.
+                passiveEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    2,
+                    new object[] { placement.EntityId, 12 }));
                 passiveEvent.Instructions.Add(new EMEVD.Instruction(
                     2004,
                     1,
-                    new object[] { placement.EntityId, 0 }));
+                    new object[] { placement.EntityId, 1 }));
                 passiveEvent.Instructions.Add(IfAttackedInstruction(
                     0,
                     placement.EntityId,
                     10_000));
                 passiveEvent.Instructions.Add(new EMEVD.Instruction(
                     2004,
-                    1,
-                    new object[] { placement.EntityId, 1 }));
+                    2,
+                    new object[] { placement.EntityId, 6 }));
+                passiveEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    20,
+                    new object[] { placement.EntityId }));
+                // Keep the hostile allegiance until this life ends; only then
+                // may the restart behavior prepare a passive respawn.
+                passiveEvent.Instructions.Add(IfDeadInstruction(
+                    0,
+                    placement.EntityId));
                 emevd.Events.Add(passiveEvent);
                 constructor.Instructions.Add(new EMEVD.Instruction(
                     2000,
@@ -2028,30 +2056,51 @@ static List<PatchedFile> PatchBossNames(
                     entry.ID == eventId);
                 if (passiveEvent.RestBehavior !=
                         EMEVD.Event.RestBehaviorType.Restart ||
-                    passiveEvent.Instructions.Count != 3 ||
+                    passiveEvent.Instructions.Count != 6 ||
                     passiveEvent.Instructions[0].Bank != 2004 ||
-                    passiveEvent.Instructions[0].ID != 1 ||
+                    passiveEvent.Instructions[0].ID != 2 ||
                     BitConverter.ToInt32(
                         passiveEvent.Instructions[0].ArgData, 0) !=
                         placement.EntityId ||
                     BitConverter.ToInt32(
-                        passiveEvent.Instructions[0].ArgData, 4) != 0 ||
-                    passiveEvent.Instructions[1].Bank != 4 ||
+                        passiveEvent.Instructions[0].ArgData, 4) != 12 ||
+                    passiveEvent.Instructions[1].Bank != 2004 ||
                     passiveEvent.Instructions[1].ID != 1 ||
-                    passiveEvent.Instructions[1].ArgData.Length != 12 ||
-                    passiveEvent.Instructions[1].ArgData[0] != 0 ||
+                    BitConverter.ToInt32(
+                        passiveEvent.Instructions[1].ArgData, 0) !=
+                        placement.EntityId ||
                     BitConverter.ToInt32(
                         passiveEvent.Instructions[1].ArgData, 4) !=
-                        placement.EntityId ||
-                    BitConverter.ToInt32(
-                        passiveEvent.Instructions[1].ArgData, 8) != 10_000 ||
-                    passiveEvent.Instructions[2].Bank != 2004 ||
+                        1 ||
+                    passiveEvent.Instructions[2].Bank != 4 ||
                     passiveEvent.Instructions[2].ID != 1 ||
+                    passiveEvent.Instructions[2].ArgData.Length != 12 ||
+                    passiveEvent.Instructions[2].ArgData[0] != 0 ||
                     BitConverter.ToInt32(
-                        passiveEvent.Instructions[2].ArgData, 0) !=
+                        passiveEvent.Instructions[2].ArgData, 4) !=
                         placement.EntityId ||
                     BitConverter.ToInt32(
-                        passiveEvent.Instructions[2].ArgData, 4) != 1 ||
+                        passiveEvent.Instructions[2].ArgData, 8) != 10_000 ||
+                    passiveEvent.Instructions[3].Bank != 2004 ||
+                    passiveEvent.Instructions[3].ID != 2 ||
+                    BitConverter.ToInt32(
+                        passiveEvent.Instructions[3].ArgData, 0) !=
+                        placement.EntityId ||
+                    BitConverter.ToInt32(
+                        passiveEvent.Instructions[3].ArgData, 4) != 6 ||
+                    passiveEvent.Instructions[4].Bank != 2004 ||
+                    passiveEvent.Instructions[4].ID != 20 ||
+                    BitConverter.ToInt32(
+                        passiveEvent.Instructions[4].ArgData, 0) !=
+                        placement.EntityId ||
+                    passiveEvent.Instructions[5].Bank != 4 ||
+                    passiveEvent.Instructions[5].ID != 0 ||
+                    passiveEvent.Instructions[5].ArgData.Length != 12 ||
+                    passiveEvent.Instructions[5].ArgData[0] != 0 ||
+                    BitConverter.ToInt32(
+                        passiveEvent.Instructions[5].ArgData, 4) !=
+                        placement.EntityId ||
+                    passiveEvent.Instructions[5].ArgData[8] != 1 ||
                     !constructor.Instructions.Any(instruction =>
                         instruction.Bank == 2000 &&
                         instruction.ID == 0 &&
@@ -2072,7 +2121,13 @@ static List<PatchedFile> PatchBossNames(
                 if (IsModelSpecificEnemyInstruction(instruction) &&
                     instruction.ArgData.Length >= 4 &&
                     generallyPatchedEntityIds.Contains(
-                        BitConverter.ToInt32(instruction.ArgData, 0)))
+                        BitConverter.ToInt32(instruction.ArgData, 0)) &&
+                    !(instruction.Bank == 2003 &&
+                      instruction.ID == 18 &&
+                      instruction.ArgData.Length >= 8 &&
+                      butterflyEntityIds.Contains(
+                          BitConverter.ToInt32(instruction.ArgData, 0)) &&
+                      BitConverter.ToInt32(instruction.ArgData, 4) == 3020))
                 {
                     throw new InvalidDataException(
                         $"Model-specific event action remained for randomized " +
@@ -2527,8 +2582,6 @@ static PatchedFile? PatchGameParam(
             passive,
             "battleGoalID",
             GetCellInt(source, "battleGoalID"));
-        foreach (var field in PassiveDetectionFields())
-            AssertCell(passive, field, 0);
     }
     AssertHash(sourcePath, sourceRecord.Sha256, "Source GameParam changed");
 
@@ -2590,18 +2643,6 @@ static void AddScaledNpcRows(PARAM npcParam, List<PatchPlacement> placements)
     npcParam.Rows.Sort((left, right) => left.ID.CompareTo(right.ID));
 }
 
-static string[] PassiveDetectionFields() =>
-[
-    "eye_dist",
-    "ear_dist",
-    "ear_soundcut_dist",
-    "nose_dist",
-    "BattleStartDist",
-    "callHelp_MyPeerId",
-    "callHelp_CallPeerId",
-    "callHelp_ReplyBehaviorType",
-];
-
 static void AddPassiveThinkRows(PARAM thinkParam, List<PatchPlacement> placements)
 {
     if (placements.Count == 0)
@@ -2626,14 +2667,10 @@ static void AddPassiveThinkRows(PARAM thinkParam, List<PatchPlacement> placement
             $"DSR Randomizer passive {placement.MapId} {placement.SlotId}",
             thinkParam.AppliedParamdef);
         CopyCells(RowCells(source), passive, _ => true);
-        foreach (var field in PassiveDetectionFields())
-            SetCell(passive, field, 0);
         AssertCell(
             passive,
             "battleGoalID",
             GetCellInt(source, "battleGoalID"));
-        foreach (var field in PassiveDetectionFields())
-            AssertCell(passive, field, 0);
         thinkParam.Rows.Add(passive);
     }
     thinkParam.Rows.Sort((left, right) => left.ID.CompareTo(right.ID));
