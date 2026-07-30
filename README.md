@@ -24,6 +24,9 @@ package before touching the game.
   into the package's common SFX bundle, so cross-map projectiles and elemental
   attacks (including Demonic Statue fire) remain visible
 - Event-controlled and dummy hostile slots participate in the same permutation
+- Cross-model event slots keep their enable/disable lifecycle while
+  model-specific animation, warp, and body-part actions from the replaced
+  enemy are removed to prevent frozen enemies and resource-loader crashes
 - The first three Asylum enemies remain randomized but stay passive until
   attacked; an explicit map event then enables the replacement enemy's own
   movement and battle AI

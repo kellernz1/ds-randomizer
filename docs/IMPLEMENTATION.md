@@ -49,6 +49,9 @@ files; source hashes prevent applying it to a different installation state.
   remain visible, including Demonic Statue fire projectiles
 - EMEVD instruction edits preserve parameter indices, and the adapted Asylum
   AI activation runs before the intro event terminates
+- Cross-model event slots retain generic lifecycle commands, while animation,
+  warp, and body-part actions tied to the original model are removed together
+  with only their attached event-argument mappings
 - Preset definitions and preset CLI/config handling have been removed
 - 1,800+ hostile regular-enemy slots, including dummy and event-linked enemies
 - `NpcParam` team classification that excludes friendly and neutral characters
@@ -107,8 +110,10 @@ Friendly/neutral teams, human-NPC models, and invisible technical helper
 characters are not randomized. Hostile regular enemies do not require
 compatible movement, dimensions, vertical offset, pathing, AI type, original
 difficulty, dummy status, or event linkage at their destination. Entity IDs are
-preserved so enable/disable and encounter events continue to target the slot.
-Dragon bodies and detachable parts use linked dragon-only groups.
+preserved so generic enable/disable and encounter events continue to target the
+slot. Actions that reference animations, warps, or body parts belonging to the
+replaced model are removed. Dragon bodies and detachable parts use linked
+dragon-only groups.
 
 World-item payload fields are copied while each destination keeps its
 acquisition flag. Progression protection recognizes key goods, embers, the

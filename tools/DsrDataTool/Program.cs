@@ -1659,14 +1659,21 @@ static void InsertEventInstruction(
     entry.Instructions.Insert(index, instruction);
 }
 
-static void RemoveEventInstruction(EMEVD.Event entry, int index)
+static void RemoveEventInstruction(
+    EMEVD.Event entry,
+    int index,
+    bool removeInstructionParameters = false)
 {
-    if (entry.Parameters.Any(parameter =>
-            parameter.InstructionIndex == index))
+    var attachedParameters = entry.Parameters
+        .Where(parameter => parameter.InstructionIndex == index)
+        .ToList();
+    if (attachedParameters.Count > 0 && !removeInstructionParameters)
     {
         throw new InvalidDataException(
             $"Cannot remove parameterized instruction {index} from event {entry.ID}.");
     }
+    foreach (var parameter in attachedParameters)
+        entry.Parameters.Remove(parameter);
     foreach (var parameter in entry.Parameters.Where(parameter =>
                  parameter.InstructionIndex > index))
         parameter.InstructionIndex--;
@@ -1699,6 +1706,13 @@ static EMEVD.Instruction ForceAnimationInstruction(
     return new EMEVD.Instruction(2003, 18, args);
 }
 
+static bool IsModelSpecificEnemyInstruction(EMEVD.Instruction instruction)
+{
+    return
+        (instruction.Bank == 2003 && instruction.ID == 18) ||
+        (instruction.Bank == 2004 && instruction.ID is 8 or 9 or 17 or 21 or 41);
+}
+
 static List<PatchedFile> PatchBossNames(
     string gameDirectory,
     string outputDirectory,
@@ -1717,9 +1731,21 @@ static List<PatchedFile> PatchBossNames(
             placement.PassiveUntilAttacked &&
             placement.EntityId >= 0)
         .ToList();
+    var slotsById = catalog.EnemySlots
+        .Concat(catalog.BossSlots)
+        .DistinctBy(slot => slot.Id)
+        .ToDictionary(slot => slot.Id);
+    var modelSpecificPlacements = allEnemyPlacements
+        .Where(placement =>
+            placement.EntityId >= 0 &&
+            slotsById.TryGetValue(placement.SlotId, out var slot) &&
+            slot.EventModelLocked &&
+            slot.ModelName != placement.TargetModelName)
+        .ToList();
     var eventMapIds = namedBossPlacements
         .Select(placement => placement.MapId)
         .Concat(passivePlacements.Select(placement => placement.MapId))
+        .Concat(modelSpecificPlacements.Select(placement => placement.MapId))
         .Distinct(StringComparer.Ordinal)
         .Order(StringComparer.Ordinal);
     foreach (var mapId in eventMapIds)
@@ -1730,6 +1756,10 @@ static List<PatchedFile> PatchBossNames(
         var passiveMapPlacements = passivePlacements
             .Where(placement => placement.MapId == mapId)
             .ToList();
+        var modelSpecificEntityIds = modelSpecificPlacements
+            .Where(placement => placement.MapId == mapId)
+            .Select(placement => placement.EntityId)
+            .ToHashSet();
         var namesByEntity = mapGroup
             .GroupBy(placement => placement.EntityId)
             .ToDictionary(
@@ -1768,6 +1798,33 @@ static List<PatchedFile> PatchBossNames(
             mapGroup.Any(placement =>
                 placement.SlotId.EndsWith(":c2232_0000", StringComparison.Ordinal) &&
                 placement.TargetModelName != "c2232");
+        var generallyPatchedEntityIds = modelSpecificEntityIds.ToHashSet();
+        if (patchAsylumIntro)
+        {
+            // The first boss has a dedicated rewrite below that preserves its
+            // required arena warp while removing the rooftop sequence.
+            generallyPatchedEntityIds.Remove(1810800);
+        }
+        if (generallyPatchedEntityIds.Count > 0)
+        {
+            foreach (var entry in emevd.Events)
+            {
+                for (var index = entry.Instructions.Count - 1; index >= 0; index--)
+                {
+                    var instruction = entry.Instructions[index];
+                    if (!IsModelSpecificEnemyInstruction(instruction) ||
+                        instruction.ArgData.Length < 4 ||
+                        !generallyPatchedEntityIds.Contains(
+                            BitConverter.ToInt32(instruction.ArgData, 0)))
+                        continue;
+                    RemoveEventInstruction(
+                        entry,
+                        index,
+                        removeInstructionParameters: true);
+                    changed++;
+                }
+            }
+        }
         if (patchAsylumIntro)
         {
             var intro = emevd.Events.Single(entry => entry.ID == 11810310);
@@ -2004,6 +2061,23 @@ static List<PatchedFile> PatchBossNames(
                     throw new InvalidDataException(
                         $"Passive-until-attacked event did not persist for " +
                         $"{placement.SlotId}.");
+                }
+            }
+        }
+        if (generallyPatchedEntityIds.Count > 0)
+        {
+            foreach (var instruction in verification.Events
+                         .SelectMany(entry => entry.Instructions))
+            {
+                if (IsModelSpecificEnemyInstruction(instruction) &&
+                    instruction.ArgData.Length >= 4 &&
+                    generallyPatchedEntityIds.Contains(
+                        BitConverter.ToInt32(instruction.ArgData, 0)))
+                {
+                    throw new InvalidDataException(
+                        $"Model-specific event action remained for randomized " +
+                        $"entity {BitConverter.ToInt32(instruction.ArgData, 0)} " +
+                        $"in {mapId}.");
                 }
             }
         }
