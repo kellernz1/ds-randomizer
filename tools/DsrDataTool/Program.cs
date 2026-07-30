@@ -937,7 +937,13 @@ static PatchReport PatchEnemies(
                 element.TryGetProperty("linkedDragonGroup", out var dragonGroup) &&
                     dragonGroup.ValueKind == JsonValueKind.String ||
                 element.TryGetProperty("linkedEnemyGroup", out var enemyGroup) &&
-                    enemyGroup.ValueKind == JsonValueKind.String))
+                    enemyGroup.ValueKind == JsonValueKind.String,
+                element.TryGetProperty("makeTangible", out var tangible) &&
+                    tangible.ValueKind == JsonValueKind.True,
+                element.TryGetProperty("scaling", out var scaling) &&
+                    scaling.ValueKind == JsonValueKind.String
+                        ? scaling.GetString() ?? "vanilla"
+                        : "vanilla"))
             .Where(placement =>
                 placement.TargetNpcParamId >= 0 && placement.TargetThinkParamId >= 0);
     }
@@ -1846,22 +1852,13 @@ static List<PatchedFile> PatchBossNames(
                 if (instruction.ArgData.Length < 4 ||
                     BitConverter.ToInt32(instruction.ArgData, 0) != 1810800 ||
                     !((instruction.Bank == 2004 &&
-                       instruction.ID is 8 or 9 or 21) ||
+                       instruction.ID is 8 or 9 or 21 or 41) ||
                       (instruction.Bank == 2003 && instruction.ID == 18)))
                     continue;
                 RemoveEventInstruction(intro, index);
                 removed++;
             }
             changed += removed;
-
-            var highWarp = intro.Instructions.Single(instruction =>
-                instruction.Bank == 2004 &&
-                instruction.ID == 41 &&
-                instruction.ArgData.Length >= 12 &&
-                BitConverter.ToInt32(instruction.ArgData, 0) == 1810800 &&
-                BitConverter.ToInt32(instruction.ArgData, 8) == 1812305);
-            BitConverter.GetBytes(1812300).CopyTo(highWarp.ArgData, 8);
-            changed++;
 
             // The vanilla drop sequence disables AI before playing model-specific
             // animations. Re-enable it before the event terminates; instructions
@@ -2027,14 +2024,8 @@ static List<PatchedFile> PatchBossNames(
                     instruction.ArgData.Length >= 4 &&
                     BitConverter.ToInt32(instruction.ArgData, 0) == 1810800 &&
                     ((instruction.Bank == 2004 &&
-                      instruction.ID is 8 or 9 or 21) ||
+                      instruction.ID is 8 or 9 or 21 or 41) ||
                      (instruction.Bank == 2003 && instruction.ID == 18))) ||
-                !intro.Instructions.Any(instruction =>
-                    instruction.Bank == 2004 &&
-                    instruction.ID == 41 &&
-                    instruction.ArgData.Length >= 12 &&
-                    BitConverter.ToInt32(instruction.ArgData, 0) == 1810800 &&
-                    BitConverter.ToInt32(instruction.ArgData, 8) == 1812300) ||
                 enableIndex < 0 ||
                 terminalIndex < 0 ||
                 enableIndex >= terminalIndex)
@@ -2560,17 +2551,22 @@ static PatchedFile? PatchGameParam(
         var scaled = verifiedNpcs.Rows.Single(row => row.ID == placement.ScaledNpcParamId);
         var source = verifiedNpcs.Rows.Single(row => row.ID == placement.SourceNpcParamId);
         var target = verifiedNpcs.Rows.Single(row => row.ID == placement.TargetNpcParamId);
-        AssertCell(scaled, "hp", GetCellInt(source, "hp"));
-        foreach (var cell in scaled.Cells.Where(cell =>
-                     cell.Def.InternalName.StartsWith(
-                         "spEffectID", StringComparison.Ordinal)))
+        if (!placement.Scaling.Equals("vanilla", StringComparison.Ordinal))
         {
-            AssertCell(
-                scaled,
-                cell.Def.InternalName,
-                GetCellInt(source, cell.Def.InternalName));
+            AssertCell(scaled, "hp", GetCellInt(source, "hp"));
+            foreach (var cell in scaled.Cells.Where(cell =>
+                         cell.Def.InternalName.StartsWith(
+                             "spEffectID", StringComparison.Ordinal)))
+            {
+                AssertCell(
+                    scaled,
+                    cell.Def.InternalName,
+                    GetCellInt(source, cell.Def.InternalName));
+            }
         }
         AssertCell(scaled, "nameId", GetCellInt(target, "nameId"));
+        if (placement.MakeTangible)
+            AssertCell(scaled, "isGhost", 0);
     }
     foreach (var placement in enemyPlacements.Where(value => value.PassiveUntilAttacked))
     {
@@ -2635,9 +2631,21 @@ static void AddScaledNpcRows(PARAM npcParam, List<PatchPlacement> placements)
             $"DSR Randomizer {placement.MapId} {placement.SlotId}",
             npcParam.AppliedParamdef);
         CopyCells(RowCells(target), scaled, _ => true);
-        CopyCells(RowCells(source), scaled, name => combatFields.Contains(name));
-        AssertCells(RowCells(target), scaled, name => !combatFields.Contains(name));
-        AssertCells(RowCells(source), scaled, name => combatFields.Contains(name));
+        if (!placement.Scaling.Equals("vanilla", StringComparison.Ordinal))
+        {
+            CopyCells(RowCells(source), scaled, name => combatFields.Contains(name));
+            AssertCells(RowCells(source), scaled, name => combatFields.Contains(name));
+        }
+        if (placement.MakeTangible)
+            SetCell(scaled, "isGhost", 0);
+        AssertCells(
+            RowCells(target),
+            scaled,
+            name =>
+                !combatFields.Contains(name) &&
+                !(placement.MakeTangible && name == "isGhost"));
+        if (placement.MakeTangible)
+            AssertCell(scaled, "isGhost", 0);
         npcParam.Rows.Add(scaled);
     }
     npcParam.Rows.Sort((left, right) => left.ID.CompareTo(right.ID));
@@ -3434,7 +3442,9 @@ record PatchPlacement(
     float? GroundZ,
     int? BaseThinkParamId,
     bool PassiveUntilAttacked,
-    bool LinkedEnemyGroup)
+    bool LinkedEnemyGroup,
+    bool MakeTangible,
+    string Scaling)
 {
     public int EffectiveNpcParamId => ScaledNpcParamId ?? TargetNpcParamId;
 }

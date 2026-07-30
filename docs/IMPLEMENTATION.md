@@ -88,8 +88,16 @@ files; source hashes prevent applying it to a different installation state.
   hostile until death before the guard prepares the next respawn.
 - Male Ghost, Female Ghost, and Pisaca replacements use their canonical active
   combat brains instead of area-dependent ambush/defensive AI variants.
-- The rooftop Asylum boss uses the lower arena spawn's complete X/Y/Z position.
-  A Moonlight Butterfly replacement has AI held while landing animation 3020
+- Male and Female Ghosts moved outside New Londo receive per-placement
+  `NpcParam` clones with `isGhost` disabled, making them vulnerable without a
+  Transient Curse while retaining their model and combat AI.
+- New Londo's two Masses of Souls and their twelve overlapping Wisp entities
+  are treated as two inseparable groups and exchange only with each other.
+  Arbitrary full-sized enemies can no longer occupy the low item tunnel, and
+  Wisps can no longer turn into twelve stacked unrelated enemies.
+- The first Asylum boss starts directly on its actual encounter floor and its
+  vanilla rooftop warp is removed, preventing pre-fight fall damage. A
+  Moonlight Butterfly replacement has AI held while landing animation 3020
   completes, then resumes its native battle AI.
 - Portable seed files contain deterministic options, version, catalog fingerprint, and verified placement hash
 - English-only launcher status, dependency, and failure messages

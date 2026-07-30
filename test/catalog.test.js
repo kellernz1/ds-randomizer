@@ -82,8 +82,15 @@ test("real catalog produces deterministic enemies with visibly different models"
   );
   assert.ok(
     vanillaScaling.placements.enemies.every(
-      (placement) => placement.scaledNpcParamId === null,
+      (placement) =>
+        placement.scaledNpcParamId === null ||
+        placement.makeTangible === true,
     ),
+  );
+  assert.ok(
+    vanillaScaling.placements.enemies
+      .filter((placement) => placement.makeTangible === true)
+      .every((placement) => placement.scaledNpcParamId !== null),
   );
   assert.deepEqual(
     vanillaScaling.placements.enemies.map((placement) => placement.sourceSlot),
@@ -100,6 +107,7 @@ test("real catalog produces deterministic enemies with visibly different models"
         "linked-dragon-part-permutation",
         "linked-hydra-group-permutation",
         "linked-hydra-part-permutation",
+        "linked-mass-of-souls-group-permutation",
         "grounded-linked-boss-auxiliary",
         "linked-boss-part-permutation",
         "vanilla-preserved-linked-bed-of-chaos-part",
@@ -147,6 +155,42 @@ test("real catalog produces deterministic enemies with visibly different models"
   }
   const placementsBySlot = new Map(
     ordinaryPlacements.map((placement) => [placement.slot, placement]),
+  );
+  const massPlacements = first.placements.enemies.filter(
+    (placement) => placement.linkedEnemyGroup?.startsWith("mass-of-souls-"),
+  );
+  assert.equal(massPlacements.length, 14);
+  assert.equal(
+    new Set(massPlacements.map((placement) => placement.sourceSlot)).size,
+    massPlacements.length,
+  );
+  assert.ok(
+    massPlacements.every(
+      (placement) =>
+        placement.compatibility ===
+          "linked-mass-of-souls-group-permutation" &&
+        placement.targetModelName === placement.modelName &&
+        placement.sourceSlot !== placement.slot,
+    ),
+  );
+  assert.equal(
+    massPlacements.find(
+      (placement) => placement.slot === "m16_00_00_00:c3500_0001",
+    )?.targetModelName,
+    "c3500",
+  );
+  assert.ok(
+    first.placements.enemies
+      .filter(
+        (placement) =>
+          ["c2670", "c2680"].includes(placement.targetModelName) &&
+          placement.map !== "m16_00_00_00",
+      )
+      .every(
+        (placement) =>
+          placement.makeTangible === true &&
+          placement.scaledNpcParamId !== null,
+      ),
   );
   for (const slotId of [
     "m18_01_00_00:c2500_0000",
@@ -393,9 +437,9 @@ test("real catalog produces real boss and world-item placements", async () => {
   );
   assert.ok(asylum);
   assert.notEqual(asylum.targetModelName, "c2232");
-  assert.equal(asylum.groundX, 3.31);
-  assert.equal(asylum.groundY, 182.11);
-  assert.equal(asylum.groundZ, -9.46);
+  assert.equal(asylum.groundX, 3.41);
+  assert.equal(asylum.groundY, 197.61);
+  assert.equal(asylum.groundZ, -23.1);
   const stray = result.placements.bosses.find(
     (entry) => entry.slot === "m18_01_00_00:c2230_0000",
   );

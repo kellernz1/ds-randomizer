@@ -69,7 +69,11 @@ const activeReplacementThinkParams = new Map([
   ["c2680", 268000], // Female Ghost
   ["c3330", 333000], // Pisaca
 ]);
+const tangibleGhostModels = new Set(["c2670", "c2680"]);
 const safeBossSpawnPositions = new Map([
+  // The Asylum Demon encounter floor. The vanilla entity begins above this
+  // point and enters through a model-specific drop event.
+  ["m18_01_00_00:c2232_0000", { x: 3.41, y: 197.61, z: -23.1 }],
   // Taurus starts inside the tower and normally jumps to the bridge through
   // a model-specific event. Replacements must begin directly on the bridge.
   ["m10_01_00_00:c2250_0000", { x: 1.16, y: 15.82, z: -114.34 }],
@@ -131,19 +135,6 @@ function randomizePrototypeEnemies(config) {
 }
 
 function bossGrounding(slot, catalog) {
-  if (slot.mapId === "m18_01_00_00" && slot.modelName === "c2232") {
-    const arenaFloor = catalog.enemySlots.find(
-      (candidate) =>
-        candidate.mapId === slot.mapId && candidate.modelName === "c2230",
-    );
-    if (arenaFloor) {
-      return {
-        groundX: arenaFloor.position.x,
-        groundY: arenaFloor.position.y,
-        groundZ: arenaFloor.position.z,
-      };
-    }
-  }
   const safePosition = safeBossSpawnPositions.get(slot.id) || slot.position;
   return {
     groundX: safePosition.x,
@@ -173,7 +164,8 @@ function enemyPlacement(config, target, source, scaledNpcParamId, extra = {}) {
     targetThinkParamId: source.thinkParamId,
     targetBattleGoalId: source.battleGoalId,
     scaledNpcParamId:
-      config.enemyScaling === "vanilla" || !changed
+      (config.enemyScaling === "vanilla" || !changed) &&
+      extra.makeTangible !== true
         ? null
         : scaledNpcParamId,
     changed,
@@ -475,9 +467,50 @@ function buildDragonPlan(config, catalog) {
   return result;
 }
 
+function buildMassOfSoulsPlan(config, catalog) {
+  if (!config.randomizeEnemies) {
+    return { placements: [], reservedSlotIds: new Set() };
+  }
+  const slotsById = new Map(catalog.enemySlots.map((slot) => [slot.id, slot]));
+  const group = (index, wispStart) => {
+    const ids = [
+      `m16_00_00_00:c3500_000${index}`,
+      ...Array.from(
+        { length: 6 },
+        (_, offset) =>
+          `m16_00_00_00:c3501_${String(wispStart + offset).padStart(4, "0")}`,
+      ),
+    ];
+    return ids.map((id) => slotsById.get(id)).filter(Boolean);
+  };
+  const groups = [group(0, 0), group(1, 6)];
+  if (groups.some((entry) => entry.length !== 7)) {
+    return { placements: [], reservedSlotIds: new Set() };
+  }
+  const reservedSlotIds = new Set(groups.flat().map((slot) => slot.id));
+  const placements = [];
+  groups.forEach((targetGroup, groupIndex) => {
+    const sourceGroup = groups[1 - groupIndex];
+    targetGroup.forEach((target, index) => {
+      placements.push(enemyPlacement(
+        config,
+        target,
+        sourceGroup[index],
+        null,
+        {
+          compatibility: "linked-mass-of-souls-group-permutation",
+          linkedEnemyGroup: `mass-of-souls-${groupIndex}`,
+        },
+      ));
+    });
+  });
+  return { placements, reservedSlotIds };
+}
+
 function randomizeExtractedEnemies(config, catalog, dragonPlan) {
   if (!config.randomizeEnemies) return dragonPlan.enemies;
   const rng = createStream(config.seed, "enemies", config.version);
+  const massOfSoulsPlan = buildMassOfSoulsPlan(config, catalog);
   const asylumPassiveSlots = new Set([
     "m18_01_00_00:c2500_0000",
     "m18_01_00_00:c2500_0001",
@@ -489,6 +522,7 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan) {
       /^m1[0-8]_/u.test(slot.mapId) &&
       !bossSlotIds.has(slot.id) &&
       !dragonPlan.reservedSlotIds.has(slot.id) &&
+      !massOfSoulsPlan.reservedSlotIds.has(slot.id) &&
       (slot.teamType === 0 || slot.modelName === "c3501") &&
       slot.modelName !== "c0000" &&
       slot.modelName.startsWith("c") &&
@@ -519,8 +553,12 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan) {
       replacement.modelName !== slot.modelName ||
       replacement.npcParamId !== slot.npcParamId ||
       replacementThinkParamId !== slot.thinkParamId;
+    const makeTangible =
+      tangibleGhostModels.has(replacement.modelName) &&
+      slot.mapId !== "m16_00_00_00";
     return enemyPlacement(config, slot, replacement, 9_100_000 + index, {
       targetThinkParamId: replacementThinkParamId,
+      ...(makeTangible ? { makeTangible: true } : {}),
       ...(passiveUntilAttacked
         ? {
             baseThinkParamId: replacementThinkParamId,
@@ -537,7 +575,9 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan) {
           : "count-preserving-fixed-point",
     });
   });
-  return randomized.concat(dragonPlan.enemies);
+  return randomized
+    .concat(massOfSoulsPlan.placements)
+    .concat(dragonPlan.enemies);
 }
 
 const canonicalBossModel = new Map([
