@@ -70,6 +70,22 @@ const activeReplacementThinkParams = new Map([
   ["c3330", 333000], // Pisaca
 ]);
 const tangibleGhostModels = new Set(["c2670", "c2680"]);
+const asylumPassiveSlots = new Set([
+  "m18_01_00_00:c2500_0000",
+  "m18_01_00_00:c2500_0001",
+  "m18_01_00_00:c2500_0002",
+]);
+const newLondoPassiveSlots = new Set(
+  Array.from(
+    { length: 15 },
+    (_, index) =>
+      `m16_00_00_00:c2500_${String(index).padStart(4, "0")}`,
+  ),
+);
+const deferredBossActivationEvents = new Map([
+  ["m10_01_00_00:c2250_0000", 11015382],
+  ["m18_01_00_00:c2230_0000", 11815382],
+]);
 const safeBossSpawnPositions = new Map([
   // The Asylum Demon encounter floor. The vanilla entity begins above this
   // point and enters through a model-specific drop event.
@@ -184,6 +200,26 @@ function buildDragonPlan(config, catalog) {
         (!mapId || slot.mapId === mapId),
     );
   const unit = (id, bodies, parts = []) => ({ id, bodies, parts });
+  const hellkiteBodies = byModel("c3430", "m10_01_00_00");
+  const hellkitePrimary = hellkiteBodies.find(
+    (body) => body.id === "m10_01_00_00:c3430_0000",
+  );
+  const hellkiteAuxiliary = hellkiteBodies.filter(
+    (body) => body !== hellkitePrimary,
+  );
+  const hellkiteParts = byModel("c3431", "m10_01_00_00");
+  const simpleRegularDragons = [
+    ...(hellkitePrimary
+      ? [unit("hellkite-bridge", [hellkitePrimary])]
+      : []),
+    unit(
+      "valley-undead-dragon",
+      byModel("c3420", "m16_00_00_00"),
+    ),
+    ...byModel("c3520").map((body) => unit(`drake-${body.id}`, [body])),
+  ].filter((entry) => entry.bodies.length > 0);
+  const boundingDragons = byModel("c3421", "m14_01_00_00").map((body) =>
+    unit(`bounding-${body.id}`, [body]));
   const units = [
     unit(
       "priscilla",
@@ -197,15 +233,6 @@ function buildDragonPlan(config, catalog) {
         ...byModel("c3421", "m11_00_00_00"),
         ...byModel("c3422", "m11_00_00_00"),
       ],
-    ),
-    unit(
-      "valley-undead-dragon",
-      byModel("c3420", "m16_00_00_00"),
-    ),
-    unit(
-      "hellkite",
-      byModel("c3430", "m10_01_00_00"),
-      byModel("c3431", "m10_01_00_00"),
     ),
     unit(
       "kalameet",
@@ -222,9 +249,6 @@ function buildDragonPlan(config, catalog) {
       byModel("c5290", "m17_00_00_00"),
       byModel("c5291", "m17_00_00_00"),
     ),
-    ...byModel("c3421", "m14_01_00_00").map((body) =>
-      unit(`bounding-${body.id}`, [body])),
-    ...byModel("c3520").map((body) => unit(`drake-${body.id}`, [body])),
   ].filter((entry) => entry.bodies.length > 0);
 
   const enabled = units.filter((entry) => {
@@ -255,6 +279,69 @@ function buildDragonPlan(config, catalog) {
   const result = { enemies: [], bosses: [], reservedSlotIds: new Set() };
   let enemyIndex = 0;
   let bossIndex = 0;
+  if (config.randomizeEnemies && simpleRegularDragons.length > 1) {
+    const simpleSources = shuffledWithoutFixedPoints(rng, simpleRegularDragons);
+    simpleRegularDragons.forEach((target, index) => {
+      const source = simpleSources[index];
+      const targetBody = target.bodies[0];
+      const sourceBody = source.bodies[0];
+      result.reservedSlotIds.add(targetBody.id);
+      result.enemies.push(enemyPlacement(
+        config,
+        targetBody,
+        sourceBody,
+        9_150_000 + enemyIndex++,
+        target.id === "hellkite-bridge"
+          ? {
+              compatibility: "static-bridge-dragon-permutation",
+              linkedDragonGroup: target.id,
+              staticBridgeDragon: true,
+              groundX: targetBody.position.x,
+              groundY: targetBody.position.y,
+              groundZ: targetBody.position.z,
+              ...(config.randomizeEnemyDrops
+                ? { awardItemLotId: 34_310_000 }
+                : {}),
+            }
+          : {
+              compatibility: "dragon-only-group-permutation",
+              linkedDragonGroup: target.id,
+            },
+      ));
+    });
+    for (const auxiliary of [...hellkiteAuxiliary, ...hellkiteParts]) {
+      result.reservedSlotIds.add(auxiliary.id);
+      result.enemies.push(enemyPlacement(
+        config,
+        auxiliary,
+        auxiliary,
+        null,
+        {
+          compatibility: "disabled-hellkite-flight-auxiliary",
+          linkedDragonGroup: "hellkite-bridge",
+          disableEntity: true,
+        },
+      ));
+    }
+  }
+  if (config.randomizeEnemies && boundingDragons.length > 1) {
+    const boundingSources = shuffledWithoutFixedPoints(rng, boundingDragons);
+    boundingDragons.forEach((target, index) => {
+      const targetBody = target.bodies[0];
+      const sourceBody = boundingSources[index].bodies[0];
+      result.reservedSlotIds.add(targetBody.id);
+      result.enemies.push(enemyPlacement(
+        config,
+        targetBody,
+        sourceBody,
+        9_150_000 + enemyIndex++,
+        {
+          compatibility: "dragon-only-group-permutation",
+          linkedDragonGroup: target.id,
+        },
+      ));
+    });
+  }
   for (const target of enabled) {
     const source = assignments.get(target.id);
     [...target.bodies, ...target.parts].forEach((slot) =>
@@ -511,12 +598,13 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan) {
   if (!config.randomizeEnemies) return dragonPlan.enemies;
   const rng = createStream(config.seed, "enemies", config.version);
   const massOfSoulsPlan = buildMassOfSoulsPlan(config, catalog);
-  const asylumPassiveSlots = new Set([
-    "m18_01_00_00:c2500_0000",
-    "m18_01_00_00:c2500_0001",
-    "m18_01_00_00:c2500_0002",
-  ]);
   const bossSlotIds = new Set(effectiveBossSlots(catalog).map((slot) => slot.id));
+  const bossFamilyModels = new Set(
+    effectiveBossSlots(catalog).flatMap((slot) => [
+      slot.modelName,
+      canonicalBossModel.get(slot.modelName) || slot.modelName,
+    ]),
+  );
   const slots = catalog.enemySlots.filter(
     (slot) =>
       /^m1[0-8]_/u.test(slot.mapId) &&
@@ -529,6 +617,8 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan) {
       slot.npcParamId >= 0 &&
       slot.thinkParamId >= 0 &&
       slot.baseHp > 0 &&
+      (!bossFamilyModels.has(slot.modelName) ||
+        nonBossEncounterSlots.has(slot.id)) &&
       !dragonBodyModels.has(slot.modelName) &&
       !linkedPartModels.has(slot.modelName) &&
       !internalHelperModels.has(slot.modelName),
@@ -545,7 +635,9 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan) {
 
   const randomized = slots.map((slot, index) => {
     const replacement = assignment.get(slot.id) ?? slot;
-    const passiveUntilAttacked = asylumPassiveSlots.has(slot.id);
+    const passiveUntilAttacked =
+      asylumPassiveSlots.has(slot.id) ||
+      newLondoPassiveSlots.has(slot.id);
     const replacementThinkParamId =
       activeReplacementThinkParams.get(replacement.modelName) ??
       replacement.thinkParamId;
@@ -553,21 +645,34 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan) {
       replacement.modelName !== slot.modelName ||
       replacement.npcParamId !== slot.npcParamId ||
       replacementThinkParamId !== slot.thinkParamId;
-    const makeTangible =
-      tangibleGhostModels.has(replacement.modelName) &&
-      slot.mapId !== "m16_00_00_00";
+    const makeTangible = tangibleGhostModels.has(replacement.modelName);
+    const cloneThinkParam = changed || passiveUntilAttacked;
+    const assignedEntityId =
+      passiveUntilAttacked && slot.entityId < 0
+        ? 16_099_000 + index
+        : slot.entityId;
     return enemyPlacement(config, slot, replacement, 9_100_000 + index, {
-      targetThinkParamId: replacementThinkParamId,
+      entityId: assignedEntityId,
+      ...(cloneThinkParam
+        ? {
+            baseThinkParamId: replacementThinkParamId,
+            destinationThinkParamId: slot.thinkParamId,
+            targetThinkParamId: 9_600_000 + index,
+            preserveDestinationPerception: true,
+          }
+        : {
+            targetThinkParamId: replacementThinkParamId,
+          }),
       ...(makeTangible ? { makeTangible: true } : {}),
       ...(passiveUntilAttacked
         ? {
-            baseThinkParamId: replacementThinkParamId,
-            targetThinkParamId: 9_600_000 + index,
             passiveUntilAttacked: true,
           }
         : {}),
       compatibility: passiveUntilAttacked
-        ? "passive-asylum-source-ai-permutation"
+        ? asylumPassiveSlots.has(slot.id)
+          ? "passive-asylum-source-ai-permutation"
+          : "passive-new-londo-entrance-permutation"
         : changed
           ? "count-preserving-unrestricted-permutation"
         : replacement.id !== slot.id
@@ -643,6 +748,9 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
       compatibility: canonicalBossModel.has(slot.modelName)
         ? "linked-boss-form"
         : "grounded-unrestricted-boss-permutation",
+      ...(deferredBossActivationEvents.has(slot.id)
+        ? { activationEventId: deferredBossActivationEvents.get(slot.id) }
+        : {}),
       ...bossGrounding(slot, catalog),
     });
   });
@@ -1184,7 +1292,7 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
   if (errors.length > 0) {
     throw new Error(errors.join("\n"));
   }
-  if (gameCatalog && gameCatalog.schemaVersion !== 14) {
+  if (gameCatalog && gameCatalog.schemaVersion !== 15) {
     throw new Error(
       `Catalog schema ${gameCatalog.schemaVersion} is obsolete. ` +
         "Verify the clean game and import its data again.",

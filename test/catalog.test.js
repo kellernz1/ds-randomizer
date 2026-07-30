@@ -8,7 +8,7 @@ async function catalog() {
   const data = JSON.parse(await readFile("data/dsr-catalog.json", "utf8"));
   // The locally ignored fixture may have been extracted by an older tool;
   // generator tests exercise the current catalog contract.
-  return { ...data, schemaVersion: 14 };
+  return { ...data, schemaVersion: 15 };
 }
 
 function vanillaStartingIds(gameCatalog) {
@@ -103,7 +103,10 @@ test("real catalog produces deterministic enemies with visibly different models"
         "count-preserving-identical-source-permutation",
         "count-preserving-fixed-point",
         "passive-asylum-source-ai-permutation",
+        "passive-new-londo-entrance-permutation",
         "dragon-only-group-permutation",
+        "static-bridge-dragon-permutation",
+        "disabled-hellkite-flight-auxiliary",
         "linked-dragon-part-permutation",
         "linked-hydra-group-permutation",
         "linked-hydra-part-permutation",
@@ -183,14 +186,26 @@ test("real catalog produces deterministic enemies with visibly different models"
     first.placements.enemies
       .filter(
         (placement) =>
-          ["c2670", "c2680"].includes(placement.targetModelName) &&
-          placement.map !== "m16_00_00_00",
+          ["c2670", "c2680"].includes(placement.targetModelName),
       )
       .every(
         (placement) =>
           placement.makeTangible === true &&
           placement.scaledNpcParamId !== null,
       ),
+  );
+  const hellkiteBridge = first.placements.enemies.find(
+    (placement) => placement.slot === "m10_01_00_00:c3430_0000",
+  );
+  assert.ok(hellkiteBridge);
+  assert.notEqual(hellkiteBridge.targetModelName, "c3430");
+  assert.ok(["c3420", "c3520"].includes(hellkiteBridge.targetModelName));
+  assert.equal(hellkiteBridge.staticBridgeDragon, true);
+  assert.equal(
+    first.placements.enemies.find(
+      (placement) => placement.slot === "m10_01_00_00:c3430_0001",
+    )?.disableEntity,
+    true,
   );
   for (const slotId of [
     "m18_01_00_00:c2500_0000",
@@ -210,6 +225,19 @@ test("real catalog produces deterministic enemies with visibly different models"
       "passive-asylum-source-ai-permutation",
     );
   }
+  const newLondoPassive = ordinaryPlacements.filter((placement) =>
+    placement.slot.startsWith("m16_00_00_00:c2500_"),
+  );
+  assert.equal(newLondoPassive.length, 15);
+  assert.ok(
+    newLondoPassive.every(
+      (placement) =>
+        placement.passiveUntilAttacked === true &&
+        placement.entityId >= 16_099_000 &&
+        placement.compatibility ===
+          "passive-new-londo-entrance-permutation",
+    ),
+  );
   let longestCycle = 0;
   for (const placement of ordinaryPlacements) {
     const visited = new Set();
@@ -235,28 +263,22 @@ test("real catalog produces deterministic enemies with visibly different models"
     assert.notEqual(slot.modelName, "c0000");
     assert.equal(placement.targetModelName, source.modelName);
     assert.equal(placement.targetNpcParamId, source.npcParamId);
-    if (
-      [
-        "m18_01_00_00:c2500_0000",
-        "m18_01_00_00:c2500_0001",
-        "m18_01_00_00:c2500_0002",
-      ].includes(placement.slot)
-    ) {
-      assert.equal(
-        placement.baseThinkParamId,
-        activeReplacementThinkParams.get(source.modelName) ?? source.thinkParamId,
-      );
-      assert.ok(placement.targetThinkParamId >= 9_600_000);
+    assert.equal(
+      placement.baseThinkParamId,
+      activeReplacementThinkParams.get(source.modelName) ?? source.thinkParamId,
+    );
+    assert.equal(placement.destinationThinkParamId, slot.thinkParamId);
+    assert.equal(placement.preserveDestinationPerception, true);
+    assert.ok(placement.targetThinkParamId >= 9_600_000);
+    if (placement.passiveUntilAttacked) {
       assert.equal(placement.passiveUntilAttacked, true);
-      assert.equal(
-        placement.compatibility,
-        "passive-asylum-source-ai-permutation",
+      assert.ok(
+        [
+          "passive-asylum-source-ai-permutation",
+          "passive-new-londo-entrance-permutation",
+        ].includes(placement.compatibility),
       );
     } else {
-      assert.equal(
-        placement.targetThinkParamId,
-        activeReplacementThinkParams.get(source.modelName) ?? source.thinkParamId,
-      );
       assert.equal(placement.passiveUntilAttacked, undefined);
     }
     ignoresMovementCompatibility ||= (
@@ -310,6 +332,14 @@ test("real catalog produces deterministic enemies with visibly different models"
           dragonModels.has(placement.targetModelName),
       ),
   );
+  assert.ok(
+    ordinaryPlacements.every(
+      (placement) =>
+        placement.sourceSlot !== "m15_01_00_00:c2360_0001" &&
+        placement.targetModelName !== "c2360",
+    ),
+    "Super Smough must never enter the regular-enemy pool",
+  );
   const hydraPlacements = first.placements.enemies.filter(
     (placement) => placement.linkedEnemyGroup?.startsWith("hydra-"),
   );
@@ -340,7 +370,7 @@ test("real catalog produces deterministic enemies with visibly different models"
 
 test("friendly NPC and human-character slots are never randomized", async () => {
   const gameCatalog = await catalog();
-  assert.equal(gameCatalog.schemaVersion, 14);
+  assert.equal(gameCatalog.schemaVersion, 15);
   const protectedSlots = gameCatalog.enemySlots.filter(
     (slot) =>
       (slot.teamType >= 2 && slot.modelName !== "c5291") ||
@@ -445,6 +475,7 @@ test("real catalog produces real boss and world-item placements", async () => {
   );
   assert.ok(stray);
   assert.notEqual(stray.targetModelName, "c2230");
+  assert.equal(stray.activationEventId, 11815382);
   const assignmentsByVanillaModel = new Map();
   for (const entry of result.placements.bosses.filter(
     (placement) =>
@@ -489,6 +520,7 @@ test("real catalog produces real boss and world-item placements", async () => {
   const taurus = result.placements.bosses.find(
     (entry) => entry.slot === "m10_01_00_00:c2250_0000",
   );
+  assert.equal(taurus.activationEventId, 11015382);
   assert.deepEqual(
     [taurus.groundX, taurus.groundY, taurus.groundZ],
     [1.16, 15.82, -114.34],
@@ -707,6 +739,22 @@ test("real gifts, drops, and shops are independent and deterministic", async () 
   assert.ok(first.placements.gifts.every((entry) => entry.rowId !== entry.sourceRowId));
   assert.ok(first.placements.enemyDrops.every((entry) => entry.rowId !== entry.sourceRowId));
   assert.ok(first.placements.shops.every((entry) => entry.rowId !== entry.sourceRowId));
+  for (const bossDropRowId of [33_006_000, 34_310_000, 53_520_000]) {
+    assert.ok(
+      first.placements.enemyDrops.some(
+        (entry) => entry.rowId === bossDropRowId,
+      ),
+    );
+  }
+  for (const protectedRowId of [1090, 2670, 26_900_100, 27_100_200]) {
+    assert.ok(
+      first.placements.enemyDrops.every(
+        (entry) =>
+          entry.rowId !== protectedRowId &&
+          entry.sourceRowId !== protectedRowId,
+      ),
+    );
+  }
   for (const placements of [
     first.placements.gifts,
     first.placements.enemyDrops,

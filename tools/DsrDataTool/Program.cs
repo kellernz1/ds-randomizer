@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using SoulsFormats;
 
-const int SchemaVersion = 14;
+const int SchemaVersion = 15;
 Console.OutputEncoding = new UTF8Encoding(false);
 Console.InputEncoding = new UTF8Encoding(false);
 
@@ -204,6 +204,7 @@ static GameCatalog ScanGame(string gameDirectory)
 
     var maps = new List<MapRecord>();
     var slots = new List<EnemySlotRecord>();
+    var eventAwardItemLotIds = new HashSet<int>();
     var ignoredFiles = new List<string>();
     var mapNames = CreateMapNames();
     foreach (var mapPath in Directory.EnumerateFiles(mapDirectory, "*.msb")
@@ -220,7 +221,11 @@ static GameCatalog ScanGame(string gameDirectory)
         var eventPath = Path.Combine(
             gameDirectory, "event", $"{mapId}.emevd.dcx");
         if (File.Exists(eventPath))
+        {
             sourceFiles.Add(DescribeSource(eventPath, gameDirectory));
+            eventAwardItemLotIds.UnionWith(
+                ReadEventAwardItemLots(eventPath));
+        }
         try
         {
             var map = MSB1.Read(mapPath);
@@ -349,9 +354,14 @@ static GameCatalog ScanGame(string gameDirectory)
                     binder,
                     paramdefPath,
                     itemNames,
-                    slots.Where(slot => slot.SafeCandidate)
+                    slots.Where(slot =>
+                            slot.NpcParamId >= 0 &&
+                            slot.TeamType is 0 or 1 &&
+                            slot.ModelName.StartsWith('c') &&
+                            slot.ModelName != "c0000")
                         .Select(slot => slot.NpcParamId)
-                        .ToHashSet());
+                        .ToHashSet(),
+                    eventAwardItemLotIds);
                 gifts = randomizerData.Gifts;
                 enemyDropLots = randomizerData.EnemyDropLots;
                 worldItemLots = randomizerData.WorldItemLots;
@@ -398,7 +408,8 @@ static RandomizerParamData ReadRandomizerParamData(
     BND3 gameParam,
     string paramdefPath,
     ItemNameLookup itemNames,
-    HashSet<int> safeNpcParamIds)
+    HashSet<int> safeNpcParamIds,
+    HashSet<int> eventAwardItemLotIds)
 {
     var paramdefs = BND3.Read(paramdefPath).Files
         .Select(file => PARAMDEF.Read(file.Bytes))
@@ -458,9 +469,29 @@ static RandomizerParamData ReadRandomizerParamData(
             .Select(cell => Convert.ToInt32(cell.Value)))
         .Where(id => id > 0)
         .ToHashSet();
+    dropLotIds.UnionWith(eventAwardItemLotIds);
+    bool ContainsProtectedProgression(PARAM.Row row)
+    {
+        const int accessoryCategory = 0x20000000;
+        const int goodsCategory = 0x40000000;
+        return Enumerable.Range(1, 8).Any(slot =>
+        {
+            var suffix = slot.ToString("00");
+            var itemId = GetCellInt(row, $"lotItemId{suffix}");
+            var category = GetCellInt(row, $"lotItemCategory{suffix}");
+            return
+                (category == goodsCategory &&
+                 (itemId is >= 800 and < 900 ||
+                  itemId is >= 2000 and < 3000 ||
+                  itemId == 384)) ||
+                (category == accessoryCategory &&
+                 itemId is 138 or 139 or 147 or 149);
+        });
+    }
     var enemyDropLots = itemLotParam.Rows
         .Where(row => dropLotIds.Contains(row.ID))
-        .Where(row => GetCellInt(row, "getItemFlagId", -1) <= 0)
+        .Where(row => !giftIds.Contains(row.ID))
+        .Where(row => !ContainsProtectedProgression(row))
         .Where(row => row.Cells.Any(cell =>
             cell.Def.InternalName.StartsWith("lotItemId", StringComparison.Ordinal) &&
             Convert.ToInt32(cell.Value) > 0))
@@ -502,7 +533,7 @@ static RandomizerParamData ReadRandomizerParamData(
                      entry.ItemId is >= 2000 and < 3000 ||
                      entry.ItemId == 384)) ||
                 (entry.Category == accessoryCategory &&
-                    entry.ItemId is 138 or 139 or 149));
+                    entry.ItemId is 138 or 139 or 147 or 149));
             var area = row.ID / 100_000 % 100;
             var block = row.ID / 10_000 % 10;
             var displayName = string.Join(" + ", entries.Select(entry =>
@@ -932,6 +963,14 @@ static PatchReport PatchEnemies(
                     baseThinkParam.ValueKind == JsonValueKind.Number
                         ? baseThinkParam.GetInt32()
                         : null,
+                element.TryGetProperty(
+                        "destinationThinkParamId", out var destinationThinkParam) &&
+                    destinationThinkParam.ValueKind == JsonValueKind.Number
+                        ? destinationThinkParam.GetInt32()
+                        : null,
+                element.TryGetProperty(
+                        "preserveDestinationPerception", out var perception) &&
+                    perception.ValueKind == JsonValueKind.True,
                 element.TryGetProperty("passiveUntilAttacked", out var passive) &&
                     passive.ValueKind == JsonValueKind.True,
                 element.TryGetProperty("linkedDragonGroup", out var dragonGroup) &&
@@ -943,7 +982,20 @@ static PatchReport PatchEnemies(
                 element.TryGetProperty("scaling", out var scaling) &&
                     scaling.ValueKind == JsonValueKind.String
                         ? scaling.GetString() ?? "vanilla"
-                        : "vanilla"))
+                        : "vanilla",
+                element.TryGetProperty("activationEventId", out var activation) &&
+                    activation.ValueKind == JsonValueKind.Number
+                        ? activation.GetInt32()
+                        : null,
+                element.TryGetProperty(
+                        "staticBridgeDragon", out var staticBridge) &&
+                    staticBridge.ValueKind == JsonValueKind.True,
+                element.TryGetProperty("disableEntity", out var disableEntity) &&
+                    disableEntity.ValueKind == JsonValueKind.True,
+                element.TryGetProperty("awardItemLotId", out var awardItemLot) &&
+                    awardItemLot.ValueKind == JsonValueKind.Number
+                        ? awardItemLot.GetInt32()
+                        : null))
             .Where(placement =>
                 placement.TargetNpcParamId >= 0 && placement.TargetThinkParamId >= 0);
     }
@@ -961,8 +1013,12 @@ static PatchReport PatchEnemies(
             placement.TargetNpcParamId < 0 ||
             placement.TargetThinkParamId < 0 ||
             (placement.PassiveUntilAttacked &&
+             (placement.EntityId < 0 ||
+              !placement.BaseThinkParamId.HasValue ||
+              placement.BaseThinkParamId.Value < 0)) ||
+            (placement.PreserveDestinationPerception &&
              (!placement.BaseThinkParamId.HasValue ||
-              placement.BaseThinkParamId.Value < 0)))
+              !placement.DestinationThinkParamId.HasValue)))
         {
             throw new InvalidDataException(
                 $"Protected or obsolete regular-enemy placement: {placement.SlotId}. " +
@@ -1086,7 +1142,11 @@ static PatchReport PatchEnemies(
                 : placement.TargetModelName;
             if (enemy.ModelName == targetModelName &&
                 enemy.NPCParamID == placement.EffectiveNpcParamId &&
-                enemy.ThinkParamID == placement.TargetThinkParamId)
+                enemy.ThinkParamID == placement.TargetThinkParamId &&
+                (placement.EntityId < 0 || enemy.EntityID == placement.EntityId) &&
+                !placement.GroundX.HasValue &&
+                !placement.GroundY.HasValue &&
+                !placement.GroundZ.HasValue)
                 continue;
             if (!msb.Models.Enemies.Any(model => model.Name == targetModelName))
             {
@@ -1100,6 +1160,13 @@ static PatchReport PatchEnemies(
             enemy.ModelName = targetModelName;
             enemy.NPCParamID = placement.EffectiveNpcParamId;
             enemy.ThinkParamID = placement.TargetThinkParamId;
+            if (placement.EntityId >= 0)
+            {
+                if (enemy.EntityID >= 0 && enemy.EntityID != placement.EntityId)
+                    throw new InvalidDataException(
+                        $"Cannot replace existing entity ID for {placement.SlotId}.");
+                enemy.EntityID = placement.EntityId;
+            }
             if (placement.GroundX.HasValue ||
                 placement.GroundY.HasValue ||
                 placement.GroundZ.HasValue)
@@ -1165,7 +1232,10 @@ static PatchReport PatchEnemies(
                 mapGroup.Key,
                 placement?.GroundX,
                 placement?.GroundY,
-                placement?.GroundZ);
+                placement?.GroundZ,
+                placement?.EntityId >= 0
+                    ? placement.EntityId
+                    : null);
             if (!placedNames.Contains(name) &&
                 SnapshotEnemy(verified) != original)
             {
@@ -1189,6 +1259,8 @@ static PatchReport PatchEnemies(
             if (verifiedEnemy.ModelName != expectedModel ||
                 verifiedEnemy.NPCParamID != placement.EffectiveNpcParamId ||
                 verifiedEnemy.ThinkParamID != placement.TargetThinkParamId ||
+                (placement.EntityId >= 0 &&
+                 verifiedEnemy.EntityID != placement.EntityId) ||
                 (placement.GroundX.HasValue &&
                  verifiedEnemy.Position.X != placement.GroundX.Value) ||
                 (placement.GroundY.HasValue &&
@@ -1238,7 +1310,7 @@ static PatchReport PatchEnemies(
 
     var patchedGameParam =
         allEnemyPlacements.Any(placement => placement.ScaledNpcParamId.HasValue) ||
-        allEnemyPlacements.Any(placement => placement.PassiveUntilAttacked) ||
+        allEnemyPlacements.Any(placement => placement.BaseThinkParamId.HasValue) ||
         startingPlacements.Count > 0 ||
         giftPlacements.Count > 0 ||
         enemyDropPlacements.Count > 0 ||
@@ -1709,6 +1781,18 @@ static EMEVD.Instruction IfDeadInstruction(
     return new EMEVD.Instruction(4, 0, args);
 }
 
+static EMEVD.Instruction IfEventFlagInstruction(
+    int conditionGroup,
+    int eventFlagId)
+{
+    var args = new byte[8];
+    args[0] = unchecked((byte)(sbyte)conditionGroup);
+    args[1] = 1;
+    args[2] = 0;
+    BitConverter.GetBytes(eventFlagId).CopyTo(args, 4);
+    return new EMEVD.Instruction(3, 0, args);
+}
+
 static EMEVD.Instruction ForceAnimationInstruction(
     int entityId,
     int animationId,
@@ -1730,6 +1814,15 @@ static bool IsModelSpecificEnemyInstruction(EMEVD.Instruction instruction)
         (instruction.Bank == 2004 && instruction.ID is 8 or 9 or 17 or 21 or 41);
 }
 
+static bool IsStaticEnemyLifecycleInstruction(EMEVD.Instruction instruction)
+{
+    return
+        (instruction.Bank == 2003 && instruction.ID == 18) ||
+        (instruction.Bank == 2004 &&
+         instruction.ID is 1 or 5 or 8 or 9 or 10 or 12 or 13 or 15 or 17 or
+             21 or 26 or 27 or 29 or 31 or 35 or 36 or 40 or 41 or 42);
+}
+
 static List<PatchedFile> PatchBossNames(
     string gameDirectory,
     string outputDirectory,
@@ -1748,6 +1841,21 @@ static List<PatchedFile> PatchBossNames(
             placement.PassiveUntilAttacked &&
             placement.EntityId >= 0)
         .ToList();
+    var deferredActivationPlacements = allEnemyPlacements
+        .Where(placement =>
+            placement.ActivationEventId.HasValue &&
+            placement.EntityId >= 0)
+        .ToList();
+    var staticBridgePlacements = allEnemyPlacements
+        .Where(placement =>
+            placement.StaticBridgeDragon &&
+            placement.EntityId >= 0)
+        .ToList();
+    var disabledPlacements = allEnemyPlacements
+        .Where(placement =>
+            placement.DisableEntity &&
+            placement.EntityId >= 0)
+        .ToList();
     var slotsById = catalog.EnemySlots
         .Concat(catalog.BossSlots)
         .DistinctBy(slot => slot.Id)
@@ -1762,6 +1870,9 @@ static List<PatchedFile> PatchBossNames(
     var eventMapIds = namedBossPlacements
         .Select(placement => placement.MapId)
         .Concat(passivePlacements.Select(placement => placement.MapId))
+        .Concat(deferredActivationPlacements.Select(placement => placement.MapId))
+        .Concat(staticBridgePlacements.Select(placement => placement.MapId))
+        .Concat(disabledPlacements.Select(placement => placement.MapId))
         .Concat(modelSpecificPlacements.Select(placement => placement.MapId))
         .Distinct(StringComparer.Ordinal)
         .Order(StringComparer.Ordinal);
@@ -1771,6 +1882,15 @@ static List<PatchedFile> PatchBossNames(
             .Where(placement => placement.MapId == mapId)
             .ToList();
         var passiveMapPlacements = passivePlacements
+            .Where(placement => placement.MapId == mapId)
+            .ToList();
+        var deferredMapPlacements = deferredActivationPlacements
+            .Where(placement => placement.MapId == mapId)
+            .ToList();
+        var staticBridgeMapPlacements = staticBridgePlacements
+            .Where(placement => placement.MapId == mapId)
+            .ToList();
+        var disabledMapPlacements = disabledPlacements
             .Where(placement => placement.MapId == mapId)
             .ToList();
         var modelSpecificEntityIds = modelSpecificPlacements
@@ -1816,11 +1936,36 @@ static List<PatchedFile> PatchBossNames(
                 placement.SlotId.EndsWith(":c2232_0000", StringComparison.Ordinal) &&
                 placement.TargetModelName != "c2232");
         var generallyPatchedEntityIds = modelSpecificEntityIds.ToHashSet();
+        var staticLifecycleEntityIds = staticBridgeMapPlacements
+            .Concat(disabledMapPlacements)
+            .Select(placement => placement.EntityId)
+            .ToHashSet();
+        generallyPatchedEntityIds.ExceptWith(staticLifecycleEntityIds);
         if (patchAsylumIntro)
         {
             // The first boss has a dedicated rewrite below that preserves its
             // required arena warp while removing the rooftop sequence.
             generallyPatchedEntityIds.Remove(1810800);
+        }
+        if (staticLifecycleEntityIds.Count > 0)
+        {
+            foreach (var entry in emevd.Events)
+            {
+                for (var index = entry.Instructions.Count - 1; index >= 0; index--)
+                {
+                    var instruction = entry.Instructions[index];
+                    if (!IsStaticEnemyLifecycleInstruction(instruction) ||
+                        instruction.ArgData.Length < 4 ||
+                        !staticLifecycleEntityIds.Contains(
+                            BitConverter.ToInt32(instruction.ArgData, 0)))
+                        continue;
+                    RemoveEventInstruction(
+                        entry,
+                        index,
+                        removeInstructionParameters: true);
+                    changed++;
+                }
+            }
         }
         if (generallyPatchedEntityIds.Count > 0)
         {
@@ -1877,29 +2022,52 @@ static List<PatchedFile> PatchBossNames(
                     new object[] { 1810800, 1 }));
             changed++;
         }
-        if (passiveMapPlacements.Count > 0)
+        if (passiveMapPlacements.Count > 0 ||
+            deferredMapPlacements.Count > 0 ||
+            staticBridgeMapPlacements.Count > 0 ||
+            disabledMapPlacements.Count > 0)
         {
             var constructor = emevd.Events.Single(entry => entry.ID == 0);
-            const int passiveEventBase = 11_819_990;
+            var mapNumber = int.Parse(mapId.Substring(1, 2));
+            var nextCustomEventId = 10_000_000 + mapNumber * 100_000 + 19_900;
+            void RegisterCustomEvent(EMEVD.Event customEvent)
+            {
+                if (emevd.Events.Any(entry => entry.ID == customEvent.ID))
+                    throw new InvalidDataException(
+                        $"Randomizer event ID is already used: {customEvent.ID}.");
+                emevd.Events.Add(customEvent);
+                constructor.Instructions.Add(new EMEVD.Instruction(
+                    2000,
+                    0,
+                    new object[] { 0, (int)customEvent.ID, 0 }));
+                changed++;
+            }
             foreach (var (placement, eventIndex) in passiveMapPlacements
                          .OrderBy(placement => placement.EntityId)
                          .Select((placement, index) => (placement, index)))
             {
-                var eventId = passiveEventBase + eventIndex;
-                if (emevd.Events.Any(entry => entry.ID == eventId))
-                    throw new InvalidDataException(
-                        $"Passive Asylum event ID is already used: {eventId}.");
+                var eventId = nextCustomEventId++;
                 var passiveEvent = new EMEVD.Event(
                     eventId,
                     EMEVD.Event.RestBehaviorType.Restart);
-                // Friendly-enemy allegiance is persistent even if another
-                // vanilla event enables AI after this event starts. This lets
-                // the randomized character keep its native idle movement but
-                // prevents it from acquiring the player before being hit.
+                // Disable AI before changing allegiance so a vanilla constructor
+                // cannot leave a target acquired during the first load frame.
+                passiveEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    1,
+                    new object[] { placement.EntityId, 0 }));
                 passiveEvent.Instructions.Add(new EMEVD.Instruction(
                     2004,
                     2,
                     new object[] { placement.EntityId, 12 }));
+                passiveEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    16,
+                    new object[] { placement.EntityId }));
+                passiveEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    20,
+                    new object[] { placement.EntityId }));
                 passiveEvent.Instructions.Add(new EMEVD.Instruction(
                     2004,
                     1,
@@ -1914,19 +2082,105 @@ static List<PatchedFile> PatchBossNames(
                     new object[] { placement.EntityId, 6 }));
                 passiveEvent.Instructions.Add(new EMEVD.Instruction(
                     2004,
+                    16,
+                    new object[] { placement.EntityId }));
+                passiveEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
                     20,
                     new object[] { placement.EntityId }));
-                // Keep the hostile allegiance until this life ends; only then
-                // may the restart behavior prepare a passive respawn.
                 passiveEvent.Instructions.Add(IfDeadInstruction(
                     0,
                     placement.EntityId));
-                emevd.Events.Add(passiveEvent);
-                constructor.Instructions.Add(new EMEVD.Instruction(
-                    2000,
+                RegisterCustomEvent(passiveEvent);
+            }
+            foreach (var placement in deferredMapPlacements
+                         .OrderBy(placement => placement.EntityId))
+            {
+                var activationEvent = new EMEVD.Event(
+                    nextCustomEventId++,
+                    EMEVD.Event.RestBehaviorType.End);
+                activationEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    5,
+                    new object[] { placement.EntityId, 0 }));
+                activationEvent.Instructions.Add(IfEventFlagInstruction(
                     0,
-                    new object[] { 0, eventId, 0 }));
-                changed += 4;
+                    placement.ActivationEventId!.Value));
+                activationEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    5,
+                    new object[] { placement.EntityId, 1 }));
+                activationEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    1,
+                    new object[] { placement.EntityId, 1 }));
+                RegisterCustomEvent(activationEvent);
+            }
+            foreach (var placement in staticBridgeMapPlacements
+                         .OrderBy(placement => placement.EntityId))
+            {
+                var staticEvent = new EMEVD.Event(
+                    nextCustomEventId++,
+                    EMEVD.Event.RestBehaviorType.End);
+                staticEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    5,
+                    new object[] { placement.EntityId, 1 }));
+                staticEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    10,
+                    new object[] { placement.EntityId, 1 }));
+                staticEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    31,
+                    new object[] { placement.EntityId, 0 }));
+                staticEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    12,
+                    new object[] { placement.EntityId, 0 }));
+                staticEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    15,
+                    new object[] { placement.EntityId, 0 }));
+                staticEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    1,
+                    new object[] { placement.EntityId, 1 }));
+                staticEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    16,
+                    new object[] { placement.EntityId }));
+                staticEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    20,
+                    new object[] { placement.EntityId }));
+                if (placement.AwardItemLotId.HasValue)
+                {
+                    staticEvent.Instructions.Add(IfDeadInstruction(
+                        0,
+                        placement.EntityId));
+                    staticEvent.Instructions.Add(new EMEVD.Instruction(
+                        2003,
+                        36,
+                        new object[] { placement.AwardItemLotId.Value }));
+                }
+                RegisterCustomEvent(staticEvent);
+            }
+            foreach (var placement in disabledMapPlacements
+                         .OrderBy(placement => placement.EntityId))
+            {
+                var disableEvent = new EMEVD.Event(
+                    nextCustomEventId++,
+                    EMEVD.Event.RestBehaviorType.End);
+                disableEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    5,
+                    new object[] { placement.EntityId, 0 }));
+                disableEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    1,
+                    new object[] { placement.EntityId, 0 }));
+                RegisterCustomEvent(disableEvent);
             }
         }
         foreach (var entry in emevd.Events)
@@ -2034,72 +2288,195 @@ static List<PatchedFile> PatchBossNames(
                     "Randomized Asylum boss intro did not persist safely.");
             }
         }
-        if (passiveMapPlacements.Count > 0)
+        if (mapId == "m18_01_00_00")
+        {
+            var secondVisitEntityIds = allEnemyPlacements
+                .Where(placement =>
+                    placement.MapId == mapId &&
+                    placement.EntityId is >= 1810200 and <= 1810213)
+                .Select(placement => placement.EntityId)
+                .ToHashSet();
+            if (secondVisitEntityIds.Count > 0)
+            {
+                var lifecycle = verification.Events.Single(entry =>
+                    entry.ID == 11810350);
+                foreach (var entityId in secondVisitEntityIds)
+                {
+                    bool HasState(int state) =>
+                        lifecycle.Instructions.Any(instruction =>
+                            instruction.Bank == 2004 &&
+                            instruction.ID == 5 &&
+                            instruction.ArgData.Length >= 8 &&
+                            BitConverter.ToInt32(
+                                instruction.ArgData, 0) == entityId &&
+                            BitConverter.ToInt32(
+                                instruction.ArgData, 4) == state);
+                    if (!HasState(0) || !HasState(1))
+                        throw new InvalidDataException(
+                            $"Second-visit Asylum lifecycle was lost for " +
+                            $"entity {entityId}.");
+                }
+            }
+        }
+        if (passiveMapPlacements.Count > 0 ||
+            deferredMapPlacements.Count > 0 ||
+            staticBridgeMapPlacements.Count > 0 ||
+            disabledMapPlacements.Count > 0)
         {
             var constructor = verification.Events.Single(entry => entry.ID == 0);
-            const int passiveEventBase = 11_819_990;
-            foreach (var (placement, eventIndex) in passiveMapPlacements
-                         .OrderBy(placement => placement.EntityId)
-                         .Select((placement, index) => (placement, index)))
+            var mapNumber = int.Parse(mapId.Substring(1, 2));
+            var nextCustomEventId = 10_000_000 + mapNumber * 100_000 + 19_900;
+            bool IsInitialized(int eventId) =>
+                constructor.Instructions.Any(instruction =>
+                    instruction.Bank == 2000 &&
+                    instruction.ID == 0 &&
+                    instruction.ArgData.Length >= 8 &&
+                    BitConverter.ToInt32(instruction.ArgData, 4) == eventId);
+            foreach (var placement in passiveMapPlacements
+                         .OrderBy(placement => placement.EntityId))
             {
-                var eventId = passiveEventBase + eventIndex;
+                var eventId = nextCustomEventId++;
                 var passiveEvent = verification.Events.Single(entry =>
                     entry.ID == eventId);
                 if (passiveEvent.RestBehavior !=
                         EMEVD.Event.RestBehaviorType.Restart ||
-                    passiveEvent.Instructions.Count != 6 ||
+                    passiveEvent.Instructions.Count != 10 ||
                     passiveEvent.Instructions[0].Bank != 2004 ||
-                    passiveEvent.Instructions[0].ID != 2 ||
+                    passiveEvent.Instructions[0].ID != 1 ||
+                    BitConverter.ToInt32(
+                        passiveEvent.Instructions[0].ArgData, 4) != 0 ||
                     BitConverter.ToInt32(
                         passiveEvent.Instructions[0].ArgData, 0) !=
                         placement.EntityId ||
-                    BitConverter.ToInt32(
-                        passiveEvent.Instructions[0].ArgData, 4) != 12 ||
                     passiveEvent.Instructions[1].Bank != 2004 ||
-                    passiveEvent.Instructions[1].ID != 1 ||
+                    passiveEvent.Instructions[1].ID != 2 ||
                     BitConverter.ToInt32(
                         passiveEvent.Instructions[1].ArgData, 0) !=
                         placement.EntityId ||
                     BitConverter.ToInt32(
                         passiveEvent.Instructions[1].ArgData, 4) !=
-                        1 ||
-                    passiveEvent.Instructions[2].Bank != 4 ||
-                    passiveEvent.Instructions[2].ID != 1 ||
-                    passiveEvent.Instructions[2].ArgData.Length != 12 ||
-                    passiveEvent.Instructions[2].ArgData[0] != 0 ||
+                        12 ||
+                    passiveEvent.Instructions[2].Bank != 2004 ||
+                    passiveEvent.Instructions[2].ID != 16 ||
                     BitConverter.ToInt32(
-                        passiveEvent.Instructions[2].ArgData, 4) !=
+                        passiveEvent.Instructions[2].ArgData, 0) !=
                         placement.EntityId ||
-                    BitConverter.ToInt32(
-                        passiveEvent.Instructions[2].ArgData, 8) != 10_000 ||
                     passiveEvent.Instructions[3].Bank != 2004 ||
-                    passiveEvent.Instructions[3].ID != 2 ||
+                    passiveEvent.Instructions[3].ID != 20 ||
                     BitConverter.ToInt32(
                         passiveEvent.Instructions[3].ArgData, 0) !=
                         placement.EntityId ||
-                    BitConverter.ToInt32(
-                        passiveEvent.Instructions[3].ArgData, 4) != 6 ||
                     passiveEvent.Instructions[4].Bank != 2004 ||
-                    passiveEvent.Instructions[4].ID != 20 ||
+                    passiveEvent.Instructions[4].ID != 1 ||
                     BitConverter.ToInt32(
                         passiveEvent.Instructions[4].ArgData, 0) !=
                         placement.EntityId ||
+                    BitConverter.ToInt32(
+                        passiveEvent.Instructions[4].ArgData, 4) != 1 ||
                     passiveEvent.Instructions[5].Bank != 4 ||
-                    passiveEvent.Instructions[5].ID != 0 ||
-                    passiveEvent.Instructions[5].ArgData.Length != 12 ||
-                    passiveEvent.Instructions[5].ArgData[0] != 0 ||
+                    passiveEvent.Instructions[5].ID != 1 ||
                     BitConverter.ToInt32(
                         passiveEvent.Instructions[5].ArgData, 4) !=
                         placement.EntityId ||
-                    passiveEvent.Instructions[5].ArgData[8] != 1 ||
-                    !constructor.Instructions.Any(instruction =>
-                        instruction.Bank == 2000 &&
-                        instruction.ID == 0 &&
-                        instruction.ArgData.Length >= 8 &&
-                        BitConverter.ToInt32(instruction.ArgData, 4) == eventId))
+                    BitConverter.ToInt32(
+                        passiveEvent.Instructions[5].ArgData, 8) != 10_000 ||
+                    passiveEvent.Instructions[6].Bank != 2004 ||
+                    passiveEvent.Instructions[6].ID != 2 ||
+                    BitConverter.ToInt32(
+                        passiveEvent.Instructions[6].ArgData, 0) !=
+                        placement.EntityId ||
+                    BitConverter.ToInt32(
+                        passiveEvent.Instructions[6].ArgData, 4) != 6 ||
+                    passiveEvent.Instructions[7].Bank != 2004 ||
+                    passiveEvent.Instructions[7].ID != 16 ||
+                    passiveEvent.Instructions[8].Bank != 2004 ||
+                    passiveEvent.Instructions[8].ID != 20 ||
+                    passiveEvent.Instructions[9].Bank != 4 ||
+                    passiveEvent.Instructions[9].ID != 0 ||
+                    BitConverter.ToInt32(
+                        passiveEvent.Instructions[9].ArgData, 4) !=
+                        placement.EntityId ||
+                    passiveEvent.Instructions[9].ArgData[8] != 1 ||
+                    !IsInitialized(eventId))
                 {
                     throw new InvalidDataException(
                         $"Passive-until-attacked event did not persist for " +
+                        $"{placement.SlotId}.");
+                }
+            }
+            foreach (var placement in deferredMapPlacements
+                         .OrderBy(placement => placement.EntityId))
+            {
+                var eventId = nextCustomEventId++;
+                var activation = verification.Events.Single(entry =>
+                    entry.ID == eventId);
+                if (activation.Instructions.Count != 4 ||
+                    activation.Instructions[0].Bank != 2004 ||
+                    activation.Instructions[0].ID != 5 ||
+                    BitConverter.ToInt32(
+                        activation.Instructions[0].ArgData, 4) != 0 ||
+                    activation.Instructions[1].Bank != 3 ||
+                    activation.Instructions[1].ID != 0 ||
+                    BitConverter.ToInt32(
+                        activation.Instructions[1].ArgData, 4) !=
+                        placement.ActivationEventId ||
+                    activation.Instructions[2].Bank != 2004 ||
+                    activation.Instructions[2].ID != 5 ||
+                    BitConverter.ToInt32(
+                        activation.Instructions[2].ArgData, 4) != 1 ||
+                    !IsInitialized(eventId))
+                {
+                    throw new InvalidDataException(
+                        $"Deferred boss activation did not persist for " +
+                        $"{placement.SlotId}.");
+                }
+            }
+            foreach (var placement in staticBridgeMapPlacements
+                         .OrderBy(placement => placement.EntityId))
+            {
+                var eventId = nextCustomEventId++;
+                var staticEvent = verification.Events.Single(entry =>
+                    entry.ID == eventId);
+                var expectedInstructionCount =
+                    placement.AwardItemLotId.HasValue ? 10 : 8;
+                if (staticEvent.Instructions.Count != expectedInstructionCount ||
+                    staticEvent.Instructions[0].Bank != 2004 ||
+                    staticEvent.Instructions[0].ID != 5 ||
+                    BitConverter.ToInt32(
+                        staticEvent.Instructions[0].ArgData, 4) != 1 ||
+                    staticEvent.Instructions[5].ID != 1 ||
+                    BitConverter.ToInt32(
+                        staticEvent.Instructions[5].ArgData, 4) != 1 ||
+                    (placement.AwardItemLotId.HasValue &&
+                     (staticEvent.Instructions[8].Bank != 4 ||
+                      staticEvent.Instructions[8].ID != 0 ||
+                      staticEvent.Instructions[9].Bank != 2003 ||
+                      staticEvent.Instructions[9].ID != 36 ||
+                      BitConverter.ToInt32(
+                          staticEvent.Instructions[9].ArgData, 0) !=
+                          placement.AwardItemLotId.Value)) ||
+                    !IsInitialized(eventId))
+                {
+                    throw new InvalidDataException(
+                        $"Static bridge dragon event did not persist for " +
+                        $"{placement.SlotId}.");
+                }
+            }
+            foreach (var placement in disabledMapPlacements
+                         .OrderBy(placement => placement.EntityId))
+            {
+                var eventId = nextCustomEventId++;
+                var disableEvent = verification.Events.Single(entry =>
+                    entry.ID == eventId);
+                if (disableEvent.Instructions.Count != 2 ||
+                    disableEvent.Instructions.Any(instruction =>
+                        instruction.Bank != 2004 ||
+                        instruction.ID is not (1 or 5) ||
+                        BitConverter.ToInt32(instruction.ArgData, 4) != 0) ||
+                    !IsInitialized(eventId))
+                {
+                    throw new InvalidDataException(
+                        $"Disabled auxiliary event did not persist for " +
                         $"{placement.SlotId}.");
                 }
             }
@@ -2219,7 +2596,7 @@ static PatchedFile? PatchGameParam(
     List<RowPlacement> shopPlacements)
 {
     if (!enemyPlacements.Any(placement => placement.ScaledNpcParamId.HasValue) &&
-        !enemyPlacements.Any(placement => placement.PassiveUntilAttacked) &&
+        !enemyPlacements.Any(placement => placement.BaseThinkParamId.HasValue) &&
         !placements.Any(placement =>
             placement.RandomizeStats || placement.RandomizeEquipment) &&
         giftPlacements.Count == 0 &&
@@ -2265,9 +2642,9 @@ static PatchedFile? PatchGameParam(
     AddScaledNpcRows(
         npcParam,
         enemyPlacements.Where(placement => placement.ScaledNpcParamId.HasValue).ToList());
-    AddPassiveThinkRows(
+    AddCustomThinkRows(
         thinkParam,
-        enemyPlacements.Where(placement => placement.PassiveUntilAttacked).ToList());
+        enemyPlacements.Where(placement => placement.BaseThinkParamId.HasValue).ToList());
 
     var classes = catalog.StartingClasses.ToDictionary(entry => entry.Id);
     var classRows = classes.ToDictionary(
@@ -2568,16 +2945,30 @@ static PatchedFile? PatchGameParam(
         if (placement.MakeTangible)
             AssertCell(scaled, "isGhost", 0);
     }
-    foreach (var placement in enemyPlacements.Where(value => value.PassiveUntilAttacked))
+    foreach (var placement in enemyPlacements.Where(value =>
+                 value.BaseThinkParamId.HasValue))
     {
-        var passive = verifiedThinks.Rows.Single(row =>
+        var customized = verifiedThinks.Rows.Single(row =>
             row.ID == placement.TargetThinkParamId);
         var source = verifiedThinks.Rows.Single(row =>
             row.ID == placement.BaseThinkParamId);
         AssertCell(
-            passive,
+            customized,
             "battleGoalID",
             GetCellInt(source, "battleGoalID"));
+        if (placement.PreserveDestinationPerception)
+        {
+            var destination = verifiedThinks.Rows.Single(row =>
+                row.ID == placement.DestinationThinkParamId);
+            var perceptionFields = new HashSet<string>(StringComparer.Ordinal)
+            {
+                "BattleStartDist", "eye_dist", "ear_dist",
+            };
+            AssertCells(
+                RowCells(destination),
+                customized,
+                name => perceptionFields.Contains(name));
+        }
     }
     AssertHash(sourcePath, sourceRecord.Sha256, "Source GameParam changed");
 
@@ -2651,7 +3042,7 @@ static void AddScaledNpcRows(PARAM npcParam, List<PatchPlacement> placements)
     npcParam.Rows.Sort((left, right) => left.ID.CompareTo(right.ID));
 }
 
-static void AddPassiveThinkRows(PARAM thinkParam, List<PatchPlacement> placements)
+static void AddCustomThinkRows(PARAM thinkParam, List<PatchPlacement> placements)
 {
     if (placements.Count == 0)
         return;
@@ -2662,7 +3053,7 @@ static void AddPassiveThinkRows(PARAM thinkParam, List<PatchPlacement> placement
         var newId = placement.TargetThinkParamId;
         if (!existingIds.Add(newId))
             throw new InvalidDataException(
-                $"Duplicate passive NpcThinkParam ID: {newId}.");
+                $"Duplicate custom NpcThinkParam ID: {newId}.");
         if (!placement.BaseThinkParamId.HasValue ||
             !originalRows.TryGetValue(placement.BaseThinkParamId.Value, out var source))
         {
@@ -2670,16 +3061,39 @@ static void AddPassiveThinkRows(PARAM thinkParam, List<PatchPlacement> placement
                 $"Source NpcThinkParam row not found: {placement.BaseThinkParamId}.");
         }
 
-        var passive = new PARAM.Row(
+        var customized = new PARAM.Row(
             newId,
-            $"DSR Randomizer passive {placement.MapId} {placement.SlotId}",
+            $"DSR Randomizer AI {placement.MapId} {placement.SlotId}",
             thinkParam.AppliedParamdef);
-        CopyCells(RowCells(source), passive, _ => true);
+        CopyCells(RowCells(source), customized, _ => true);
+        if (placement.PreserveDestinationPerception)
+        {
+            if (!placement.DestinationThinkParamId.HasValue ||
+                !originalRows.TryGetValue(
+                    placement.DestinationThinkParamId.Value, out var destination))
+            {
+                throw new InvalidDataException(
+                    $"Destination NpcThinkParam row not found: " +
+                    $"{placement.DestinationThinkParamId}.");
+            }
+            var perceptionFields = new HashSet<string>(StringComparer.Ordinal)
+            {
+                "BattleStartDist", "eye_dist", "ear_dist",
+            };
+            CopyCells(
+                RowCells(destination),
+                customized,
+                name => perceptionFields.Contains(name));
+            AssertCells(
+                RowCells(destination),
+                customized,
+                name => perceptionFields.Contains(name));
+        }
         AssertCell(
-            passive,
+            customized,
             "battleGoalID",
             GetCellInt(source, "battleGoalID"));
-        thinkParam.Rows.Add(passive);
+        thinkParam.Rows.Add(customized);
     }
     thinkParam.Rows.Sort((left, right) => left.ID.CompareTo(right.ID));
 }
@@ -3057,7 +3471,8 @@ static void AssertSpawnUnchanged(
     string mapId,
     float? expectedX = null,
     float? expectedY = null,
-    float? expectedZ = null)
+    float? expectedZ = null,
+    int? expectedEntityId = null)
 {
     if (verified.Position.X != (expectedX ?? original.PositionX) ||
         verified.Position.Y != (expectedY ?? original.PositionY) ||
@@ -3068,7 +3483,7 @@ static void AssertSpawnUnchanged(
         verified.Scale.X != original.ScaleX ||
         verified.Scale.Y != original.ScaleY ||
         verified.Scale.Z != original.ScaleZ ||
-        verified.EntityID != original.EntityId ||
+        verified.EntityID != (expectedEntityId ?? original.EntityId) ||
         verified.TalkID != original.TalkId ||
         verified.CharaInitID != original.CharaInitId ||
         verified.CollisionName != original.CollisionName ||
@@ -3095,6 +3510,24 @@ static HashSet<int> ReadEventModelLockedEntities(string eventPath)
         var entityId = BitConverter.ToInt32(instruction.ArgData, 0);
         if (entityId >= 0)
             result.Add(entityId);
+    }
+    return result;
+}
+
+static HashSet<int> ReadEventAwardItemLots(string eventPath)
+{
+    var result = new HashSet<int>();
+    var emevd = EMEVD.Read(eventPath);
+    foreach (var instruction in emevd.Events
+                 .SelectMany(entry => entry.Instructions)
+                 .Where(instruction =>
+                     instruction.Bank == 2003 &&
+                     instruction.ID == 36 &&
+                     instruction.ArgData.Length >= 4))
+    {
+        var itemLotId = BitConverter.ToInt32(instruction.ArgData, 0);
+        if (itemLotId > 0)
+            result.Add(itemLotId);
     }
     return result;
 }
@@ -3441,10 +3874,16 @@ record PatchPlacement(
     float? GroundY,
     float? GroundZ,
     int? BaseThinkParamId,
+    int? DestinationThinkParamId,
+    bool PreserveDestinationPerception,
     bool PassiveUntilAttacked,
     bool LinkedEnemyGroup,
     bool MakeTangible,
-    string Scaling)
+    string Scaling,
+    int? ActivationEventId,
+    bool StaticBridgeDragon,
+    bool DisableEntity,
+    int? AwardItemLotId)
 {
     public int EffectiveNpcParamId => ScaledNpcParamId ?? TargetNpcParamId;
 }

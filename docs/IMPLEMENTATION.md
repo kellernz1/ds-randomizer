@@ -17,7 +17,7 @@ files; source hashes prevent applying it to a different installation state.
 
 ## Implemented in 0.5.21
 
-- Real catalog schema 14 with 18 maps, event and Lua AI sources, English item
+- Real catalog schema 15 with 18 maps, event and Lua AI sources, English item
   and boss names, and 2,192 enemy parts
 - English FMG names for gifts, drops, shops, and starting equipment prevent
   Japanese internal parameter labels from leaking into seed reports
@@ -88,13 +88,27 @@ files; source hashes prevent applying it to a different installation state.
   hostile until death before the guard prepares the next respawn.
 - Male Ghost, Female Ghost, and Pisaca replacements use their canonical active
   combat brains instead of area-dependent ambush/defensive AI variants.
-- Male and Female Ghosts moved outside New Londo receive per-placement
-  `NpcParam` clones with `isGhost` disabled, making them vulnerable without a
-  Transient Curse while retaining their model and combat AI.
+- Male and Female Ghost replacements receive per-placement `NpcParam` clones
+  with `isGhost` disabled in every area, including New Londo, so they are
+  vulnerable without a Transient Curse.
+- Every changed regular enemy receives a per-placement `NpcThinkParam` clone:
+  its movement and battle goals come from the randomized enemy, while battle,
+  sight, and hearing distances come from the destination slot.
+- The first three Asylum slots and the fifteen passive Hollows at New Londo's
+  elevator entrance use race-free friendly-enemy events. AI is stopped and its
+  target cleared before the passive allegiance is applied, then restored to
+  hostile only after the player attacks.
+- Second-visit Asylum enemies retain event 11810350's disabled/enabled
+  lifecycle. The Stray Demon slot remains disabled until the floor-break battle
+  event, and the Taurus slot remains disabled until its bridge battle event.
 - New Londo's two Masses of Souls and their twelve overlapping Wisp entities
   are treated as two inseparable groups and exchange only with each other.
   Arbitrary full-sized enemies can no longer occupy the low item tunnel, and
   Wisps can no longer turn into twelve stacked unrelated enemies.
+- Internal boss forms such as Super Smough are excluded from regular-enemy
+  sources. The Hellkite bridge uses a full regular-dragon replacement at the
+  bridge position, removes the fly-in lifecycle and disables its obsolete
+  auxiliary body/tail entities.
 - The first Asylum boss starts directly on its actual encounter floor and its
   vanilla rooftop warp is removed, preventing pre-fight fall damage. A
   Moonlight Butterfly replacement has AI held while landing animation 3020
@@ -116,7 +130,8 @@ files; source hashes prevent applying it to a different installation state.
 - Reinforced and infusion weapon IDs are excluded from starting lots; only the
   base item is safe for the Undead Asylum pickup flow
 - Asylum floor pickups preserved separately from spawn equipment
-- 20 NPC gift lots, 64 renewable enemy-drop lots, and 392 shop rows
+- 20 NPC gift lots, hostile NPC drop lots, one-time drops, event-awarded
+  boss/tail lots, and 392 shop rows
 - Isolated packages containing changed MSBs, AI/event bundles, `GameParam`,
   and the hash-guarded common enemy-effect bundle when enemies are randomized
 - Source and output hashes, round-trip validation, atomic install, backup,
