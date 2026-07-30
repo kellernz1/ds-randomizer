@@ -21,7 +21,9 @@ files; source hashes prevent applying it to a different installation state.
   and boss names, and 2,192 enemy parts
 - English FMG names for gifts, drops, shops, and starting equipment prevent
   Japanese internal parameter labels from leaking into seed reports
-- Regular enemies use an unrestricted, count-preserving global permutation
+- Regular enemies use a count-preserving global permutation with no movement,
+  size, navigation, AI, or difficulty matching; deterministic cross-map swaps
+  cap each map at 30 unique regular models without creating or deleting sources
   instead of sampling with replacement or requiring reciprocal pairs
 - All hostile regular slots participate, including dummy and event-controlled
   parts; friendly NPCs and invisible engine helpers remain protected
@@ -60,6 +62,8 @@ files; source hashes prevent applying it to a different installation state.
 - Round-trip assertions that preserve every spawn transform and all unselected NPCs
 - Ordinary event enable/disable references do not block cross-model enemies
 - Deterministic multi-enemy permutation cycles with no eligible source reused
+- A 30-model per-map budget for ordinary enemies prevents asynchronous
+  character-resource loading from exceeding stable Remastered map diversity
 - Area scaling copies every combat-scaling `SpEffect` from the destination
 - Bosses use an unrestricted permutation and every destination receives a
   terrain-level Y coordinate

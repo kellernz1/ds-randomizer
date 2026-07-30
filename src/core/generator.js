@@ -38,6 +38,7 @@ const linkedPartModels = new Set([
 const internalHelperModels = new Set([
   "c3510", // Asylum transport crow
 ]);
+const MAX_UNIQUE_REGULAR_MODELS_PER_MAP = 30;
 const dragonNames = new Map([
   ["c2730", "Crossbreed Priscilla"],
   ["c3420", "Undead Dragon"],
@@ -480,7 +481,11 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan) {
       !internalHelperModels.has(slot.modelName),
   );
 
-  const shuffledSources = shuffledWithoutFixedPoints(rng, slots);
+  const shuffledSources = limitUniqueEnemyModelsByMap(
+    slots,
+    shuffledWithoutFixedPoints(rng, slots),
+    MAX_UNIQUE_REGULAR_MODELS_PER_MAP,
+  );
   const assignment = new Map(
     slots.map((target, index) => [target.id, shuffledSources[index]]),
   );
@@ -631,6 +636,121 @@ function shuffledWithoutFixedPoints(rng, values) {
     if (shuffled.every((value, index) => value !== values[index])) return shuffled;
   }
   return [...values.slice(1), values[0]];
+}
+
+function limitUniqueEnemyModelsByMap(targets, initialSources, maximumUnique) {
+  const sources = [...initialSources];
+  const indicesByMap = new Map();
+  targets.forEach((target, index) => {
+    if (!indicesByMap.has(target.mapId)) indicesByMap.set(target.mapId, []);
+    indicesByMap.get(target.mapId).push(index);
+  });
+
+  const modelCounts = () => {
+    const result = new Map();
+    for (const [mapId, indices] of indicesByMap) {
+      const counts = new Map();
+      for (const index of indices) {
+        const modelName = sources[index].modelName;
+        counts.set(modelName, (counts.get(modelName) || 0) + 1);
+      }
+      result.set(mapId, counts);
+    }
+    return result;
+  };
+
+  for (let pass = 0; pass < 200; pass += 1) {
+    let countsByMap = modelCounts();
+    const overBudget = [...countsByMap]
+      .filter(([, counts]) => counts.size > maximumUnique)
+      .sort((left, right) =>
+        right[1].size - left[1].size ||
+        left[0].localeCompare(right[0]));
+    if (overBudget.length === 0) return sources;
+
+    let madeProgress = false;
+    for (const [mapId, initialCounts] of overBudget) {
+      const mapIndices = indicesByMap.get(mapId);
+      const models = [...initialCounts]
+        .sort((left, right) =>
+          left[1] - right[1] ||
+          left[0].localeCompare(right[0]));
+      for (const [modelName] of models) {
+        const sourceIndices = mapIndices.filter(
+          (index) => sources[index].modelName === modelName,
+        );
+        const before = [...sources];
+        let completed = true;
+
+        for (const sourceIndex of sourceIndices) {
+          countsByMap = modelCounts();
+          const destinationCounts = countsByMap.get(mapId);
+          const candidates = [];
+          for (
+            let partnerIndex = 0;
+            partnerIndex < sources.length;
+            partnerIndex += 1
+          ) {
+            const partnerMap = targets[partnerIndex].mapId;
+            const partnerModel = sources[partnerIndex].modelName;
+            if (
+              partnerMap === mapId ||
+              partnerModel === modelName ||
+              !destinationCounts.has(partnerModel) ||
+              sources[sourceIndex].id === targets[partnerIndex].id ||
+              sources[partnerIndex].id === targets[sourceIndex].id
+            ) {
+              continue;
+            }
+
+            const partnerCounts = countsByMap.get(partnerMap);
+            const partnerUniqueAfter =
+              partnerCounts.size +
+              (partnerCounts.has(modelName) ? 0 : 1) -
+              (partnerCounts.get(partnerModel) === 1 ? 1 : 0);
+            if (partnerUniqueAfter > maximumUnique) continue;
+            candidates.push({
+              index: partnerIndex,
+              introducesModel: partnerCounts.has(modelName) ? 0 : 1,
+              uniqueAfter: partnerUniqueAfter,
+              currentUnique: partnerCounts.size,
+            });
+          }
+
+          candidates.sort((left, right) =>
+            left.introducesModel - right.introducesModel ||
+            left.uniqueAfter - right.uniqueAfter ||
+            left.currentUnique - right.currentUnique ||
+            left.index - right.index);
+          if (candidates.length === 0) {
+            completed = false;
+            break;
+          }
+          const partnerIndex = candidates[0].index;
+          [sources[sourceIndex], sources[partnerIndex]] =
+            [sources[partnerIndex], sources[sourceIndex]];
+        }
+
+        const uniqueAfter = modelCounts().get(mapId).size;
+        if (completed && uniqueAfter < initialCounts.size) {
+          madeProgress = true;
+          break;
+        }
+        sources.splice(0, sources.length, ...before);
+      }
+    }
+
+    if (!madeProgress) {
+      const unresolved = [...modelCounts()]
+        .filter(([, counts]) => counts.size > maximumUnique)
+        .map(([mapId, counts]) => `${mapId}=${counts.size}`)
+        .join(", ");
+      throw new Error(
+        `Could not satisfy the per-map enemy model budget: ${unresolved}`,
+      );
+    }
+  }
+  throw new Error("Enemy model-budget balancing did not converge.");
 }
 
 function randomizeStartingClasses(config, catalog) {
@@ -1047,7 +1167,7 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
       finalBossReachable: config.randomizeKeyItems ? config.progressionLogic : true,
       notes: extractedData
         ? [
-            "All hostile regular-enemy slots use an unrestricted count-preserving global permutation; friendly NPCs and invisible technical helpers stay vanilla.",
+            "All hostile regular-enemy slots use a count-preserving global permutation with a 30-model per-map resource budget; friendly NPCs and invisible technical helpers stay vanilla.",
             "Area scaling inherits destination combat stats and replaces hidden level multipliers from the selected enemy.",
             "Bosses use an unrestricted permutation and are grounded at their destination encounter; dragons only exchange complete linked dragon groups.",
             config.progressionLogic

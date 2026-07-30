@@ -24,6 +24,9 @@ package before touching the game.
   into the package's common SFX bundle, so cross-map projectiles and elemental
   attacks (including Demonic Statue fire) remain visible
 - Event-controlled and dummy hostile slots participate in the same permutation
+- Regular-enemy occurrences remain a global permutation, but are rebalanced to
+  at most 30 unique regular models per map to stay within the Remaster's
+  simultaneous character-resource budget
 - Cross-model event slots keep their enable/disable lifecycle while
   model-specific animation, warp, and body-part actions from the replaced
   enemy are removed to prevent frozen enemies and resource-loader crashes
