@@ -25,7 +25,8 @@ package before touching the game.
   attacks (including Demonic Statue fire) remain visible
 - Event-controlled and dummy hostile slots participate in the same permutation
 - The first three Asylum enemies remain randomized but stay passive until
-  attacked, then use the replacement enemy's own movement and battle AI
+  attacked; an explicit map event then enables the replacement enemy's own
+  movement and battle AI
 - Friendly NPCs, merchants, quest characters, and their spawns are protected
 - Boss encounters use an unrestricted permutation and replacements are placed
   at the destination encounter's terrain height
@@ -45,6 +46,8 @@ package before touching the game.
   native encounter except the script-bound Bed of Chaos; multi-part encounters
   share one linked body/part assignment
 - Randomized boss AI explicitly activated when the encounter health bar appears
+- The rooftop Asylum encounter is moved to the lower arena's full X/Y/Z
+  position; Moonlight Butterfly replacements begin with their landing animation
 - 500+ world pickup and chest item lots
 - Starting-class stats and equipment
 - Unique, stat-compatible starting weapons collected in the Undead Asylum

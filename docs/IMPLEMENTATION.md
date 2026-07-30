@@ -72,9 +72,12 @@ files; source hashes prevent applying it to a different installation state.
 - First Asylum boss rooftop animation is replaced by a floor spawn
 - Adapted Asylum intro explicitly enables replacement AI after arena entry
 - The first three regular Asylum slots receive cloned replacement
-  `NpcThinkParam` rows with automatic detection disabled. They remain passive
-  until damaged, then use the replacement enemy's native battle goal,
-  navigation, and animations.
+  `NpcThinkParam` rows with automatic detection disabled plus restarting EMEVD
+  guards that disable battle AI until the player damages each entity. They then
+  use the replacement enemy's native battle goal, navigation, and animations.
+- The rooftop Asylum boss uses the lower arena spawn's complete X/Y/Z position.
+  A Moonlight Butterfly replacement has AI held while landing animation 3020
+  completes, then resumes its native battle AI.
 - Portable seed files contain deterministic options, version, catalog fingerprint, and verified placement hash
 - English-only launcher status, dependency, and failure messages
 - Cross-map enemy model declarations and validated MSB round trips

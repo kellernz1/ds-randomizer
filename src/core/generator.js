@@ -119,6 +119,23 @@ function groundYForBoss(slot, catalog) {
   );
 }
 
+function bossGrounding(slot, catalog) {
+  if (slot.mapId === "m18_01_00_00" && slot.modelName === "c2232") {
+    const arenaFloor = catalog.enemySlots.find(
+      (candidate) =>
+        candidate.mapId === slot.mapId && candidate.modelName === "c2230",
+    );
+    if (arenaFloor) {
+      return {
+        groundX: arenaFloor.position.x,
+        groundY: arenaFloor.position.y,
+        groundZ: arenaFloor.position.z,
+      };
+    }
+  }
+  return { groundY: groundYForBoss(slot, catalog) };
+}
+
 function enemyPlacement(config, target, source, scaledNpcParamId, extra = {}) {
   const changed =
     source.modelName !== target.modelName ||
@@ -245,7 +262,7 @@ function buildDragonPlan(config, catalog) {
               slot: targetBody.name,
             },
             compatibility: "grounded-dragon-group-permutation",
-            groundY: groundYForBoss(targetBody, catalog),
+            ...bossGrounding(targetBody, catalog),
             linkedDragonGroup: target.id,
           }
         : {
@@ -380,12 +397,12 @@ function buildDragonPlan(config, catalog) {
                   slot: targetBody.name,
                 },
                 compatibility: "grounded-linked-boss-group-permutation",
-                groundY: groundYForBoss(targetBody, catalog),
+                ...bossGrounding(targetBody, catalog),
                 linkedEnemyGroup: target.id,
               }
             : {
                 compatibility: "grounded-linked-boss-auxiliary",
-                groundY: groundYForBoss(targetBody, catalog),
+                ...bossGrounding(targetBody, catalog),
                 linkedEnemyGroup: target.id,
               },
         );
@@ -424,7 +441,7 @@ function buildDragonPlan(config, catalog) {
           slot: body.name,
         },
         compatibility: "vanilla-preserved-linked-bed-of-chaos",
-        groundY: groundYForBoss(body, catalog),
+        ...bossGrounding(body, catalog),
         linkedEnemyGroup: "bed-of-chaos",
       }));
     }
@@ -558,7 +575,7 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
       compatibility: canonicalBossModel.has(slot.modelName)
         ? "linked-boss-form"
         : "grounded-unrestricted-boss-permutation",
-      groundY: groundYForBoss(slot, catalog),
+      ...bossGrounding(slot, catalog),
     });
   });
   return placements.concat(dragonPlan.bosses);

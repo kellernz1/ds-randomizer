@@ -916,9 +916,17 @@ static PatchReport PatchEnemies(
                 element.TryGetProperty("entityId", out var entityId)
                     ? entityId.GetInt32()
                     : -1,
+                element.TryGetProperty("groundX", out var groundX) &&
+                    groundX.ValueKind == JsonValueKind.Number
+                        ? groundX.GetSingle()
+                        : null,
                 element.TryGetProperty("groundY", out var groundY) &&
                     groundY.ValueKind == JsonValueKind.Number
                         ? groundY.GetSingle()
+                        : null,
+                element.TryGetProperty("groundZ", out var groundZ) &&
+                    groundZ.ValueKind == JsonValueKind.Number
+                        ? groundZ.GetSingle()
                         : null,
                 element.TryGetProperty("baseThinkParamId", out var baseThinkParam) &&
                     baseThinkParam.ValueKind == JsonValueKind.Number
@@ -1086,12 +1094,17 @@ static PatchReport PatchEnemies(
             enemy.ModelName = targetModelName;
             enemy.NPCParamID = placement.EffectiveNpcParamId;
             enemy.ThinkParamID = placement.TargetThinkParamId;
-            if (placement.GroundY.HasValue)
+            if (placement.GroundX.HasValue ||
+                placement.GroundY.HasValue ||
+                placement.GroundZ.HasValue)
                 enemy.Position = new System.Numerics.Vector3(
-                    enemy.Position.X,
-                    placement.GroundY.Value,
-                    enemy.Position.Z);
-            if (modelChanged || placement.GroundY.HasValue)
+                    placement.GroundX ?? enemy.Position.X,
+                    placement.GroundY ?? enemy.Position.Y,
+                    placement.GroundZ ?? enemy.Position.Z);
+            if (modelChanged ||
+                placement.GroundX.HasValue ||
+                placement.GroundY.HasValue ||
+                placement.GroundZ.HasValue)
             {
                 // Initial/damage animation IDs belong to the original character
                 // model. Retaining them can leave a replacement in a frozen bind
@@ -1139,10 +1152,14 @@ static PatchReport PatchEnemies(
         foreach (var (name, original) in originalEnemies)
         {
             var verified = verifiedEnemies[name];
-            var expectedY = placementsByName.TryGetValue(name, out var placement)
-                ? placement.GroundY
-                : null;
-            AssertSpawnUnchanged(original, verified, mapGroup.Key, expectedY);
+            placementsByName.TryGetValue(name, out var placement);
+            AssertSpawnUnchanged(
+                original,
+                verified,
+                mapGroup.Key,
+                placement?.GroundX,
+                placement?.GroundY,
+                placement?.GroundZ);
             if (!placedNames.Contains(name) &&
                 SnapshotEnemy(verified) != original)
             {
@@ -1166,8 +1183,12 @@ static PatchReport PatchEnemies(
             if (verifiedEnemy.ModelName != expectedModel ||
                 verifiedEnemy.NPCParamID != placement.EffectiveNpcParamId ||
                 verifiedEnemy.ThinkParamID != placement.TargetThinkParamId ||
+                (placement.GroundX.HasValue &&
+                 verifiedEnemy.Position.X != placement.GroundX.Value) ||
                 (placement.GroundY.HasValue &&
-                 verifiedEnemy.Position.Y != placement.GroundY.Value))
+                 verifiedEnemy.Position.Y != placement.GroundY.Value) ||
+                (placement.GroundZ.HasValue &&
+                 verifiedEnemy.Position.Z != placement.GroundZ.Value))
                 throw new InvalidDataException(
                     $"Enemy placement did not persist: {placement.SlotId}.");
             var original = originalEnemies[enemyName];
@@ -1195,7 +1216,11 @@ static PatchReport PatchEnemies(
         gameDirectory, outputDirectory, catalog, allEnemyPlacements);
 
     var patchedEvents = PatchBossNames(
-        gameDirectory, outputDirectory, catalog, bossPlacements);
+        gameDirectory,
+        outputDirectory,
+        catalog,
+        bossPlacements,
+        allEnemyPlacements);
 
     // Enemy effects are normally spread across map-local SFX bundles. An enemy
     // moved to another map can otherwise attack correctly while its projectile
@@ -1648,19 +1673,63 @@ static void RemoveEventInstruction(EMEVD.Event entry, int index)
     entry.Instructions.RemoveAt(index);
 }
 
+static EMEVD.Instruction IfAttackedInstruction(
+    int conditionGroup,
+    int attackedEntity,
+    int attacker)
+{
+    var args = new byte[12];
+    args[0] = unchecked((byte)(sbyte)conditionGroup);
+    BitConverter.GetBytes(attackedEntity).CopyTo(args, 4);
+    BitConverter.GetBytes(attacker).CopyTo(args, 8);
+    return new EMEVD.Instruction(4, 1, args);
+}
+
+static EMEVD.Instruction ForceAnimationInstruction(
+    int entityId,
+    int animationId,
+    bool waitForCompletion)
+{
+    var args = new byte[12];
+    BitConverter.GetBytes(entityId).CopyTo(args, 0);
+    BitConverter.GetBytes(animationId).CopyTo(args, 4);
+    args[8] = 0;
+    args[9] = waitForCompletion ? (byte)1 : (byte)0;
+    args[10] = 0;
+    return new EMEVD.Instruction(2003, 18, args);
+}
+
 static List<PatchedFile> PatchBossNames(
     string gameDirectory,
     string outputDirectory,
     GameCatalog catalog,
-    List<PatchPlacement> placements)
+    List<PatchPlacement> placements,
+    List<PatchPlacement> allEnemyPlacements)
 {
     var results = new List<PatchedFile>();
-    foreach (var mapGroup in placements
-                 .Where(placement =>
-                     placement.EntityId >= 0 &&
-                     GetBossNameId(placement.TargetModelName).HasValue)
-                 .GroupBy(placement => placement.MapId))
+    var namedBossPlacements = placements
+        .Where(placement =>
+            placement.EntityId >= 0 &&
+            GetBossNameId(placement.TargetModelName).HasValue)
+        .ToList();
+    var passivePlacements = allEnemyPlacements
+        .Where(placement =>
+            placement.PassiveUntilAttacked &&
+            placement.EntityId >= 0)
+        .ToList();
+    var eventMapIds = namedBossPlacements
+        .Select(placement => placement.MapId)
+        .Concat(passivePlacements.Select(placement => placement.MapId))
+        .Distinct(StringComparer.Ordinal)
+        .Order(StringComparer.Ordinal);
+    foreach (var mapId in eventMapIds)
     {
+        var mapGroup = namedBossPlacements
+            .Where(placement => placement.MapId == mapId)
+            .ToList();
+        var passiveMapPlacements = passivePlacements
+            .Where(placement => placement.MapId == mapId)
+            .ToList();
         var namesByEntity = mapGroup
             .GroupBy(placement => placement.EntityId)
             .ToDictionary(
@@ -1677,19 +1746,25 @@ static List<PatchedFile> PatchBossNames(
                 slot.ModelName != placement.TargetModelName)
             .Select(placement => placement.EntityId)
             .ToHashSet();
-        var relativeSource = $"event/{mapGroup.Key}.emevd.dcx";
+        var butterflyEntityIds = mapGroup
+            .Where(placement =>
+                randomizedEntityIds.Contains(placement.EntityId) &&
+                placement.TargetModelName == "c3230")
+            .Select(placement => placement.EntityId)
+            .ToHashSet();
+        var relativeSource = $"event/{mapId}.emevd.dcx";
         var sourceRecord = catalog.SourceFiles.SingleOrDefault(source =>
             source.Path.Equals(relativeSource, StringComparison.OrdinalIgnoreCase));
         if (sourceRecord == null)
             continue;
         var sourcePath = Path.Combine(
             gameDirectory, relativeSource.Replace('/', Path.DirectorySeparatorChar));
-        AssertHash(sourcePath, sourceRecord.Sha256, $"Event {mapGroup.Key} changed after extraction");
+        AssertHash(sourcePath, sourceRecord.Sha256, $"Event {mapId} changed after extraction");
 
         var emevd = EMEVD.Read(sourcePath);
         var changed = 0;
         var patchAsylumIntro =
-            mapGroup.Key == "m18_01_00_00" &&
+            mapId == "m18_01_00_00" &&
             mapGroup.Any(placement =>
                 placement.SlotId.EndsWith(":c2232_0000", StringComparison.Ordinal) &&
                 placement.TargetModelName != "c2232");
@@ -1737,6 +1812,41 @@ static List<PatchedFile> PatchBossNames(
                     new object[] { 1810800, 1 }));
             changed++;
         }
+        if (passiveMapPlacements.Count > 0)
+        {
+            var constructor = emevd.Events.Single(entry => entry.ID == 0);
+            const int passiveEventBase = 11_819_990;
+            foreach (var (placement, eventIndex) in passiveMapPlacements
+                         .OrderBy(placement => placement.EntityId)
+                         .Select((placement, index) => (placement, index)))
+            {
+                var eventId = passiveEventBase + eventIndex;
+                if (emevd.Events.Any(entry => entry.ID == eventId))
+                    throw new InvalidDataException(
+                        $"Passive Asylum event ID is already used: {eventId}.");
+                var passiveEvent = new EMEVD.Event(
+                    eventId,
+                    EMEVD.Event.RestBehaviorType.Restart);
+                passiveEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    1,
+                    new object[] { placement.EntityId, 0 }));
+                passiveEvent.Instructions.Add(IfAttackedInstruction(
+                    0,
+                    placement.EntityId,
+                    10_000));
+                passiveEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    1,
+                    new object[] { placement.EntityId, 1 }));
+                emevd.Events.Add(passiveEvent);
+                constructor.Instructions.Add(new EMEVD.Instruction(
+                    2000,
+                    0,
+                    new object[] { 0, eventId, 0 }));
+                changed += 4;
+            }
+        }
         foreach (var entry in emevd.Events)
         {
             for (var index = 0; index < entry.Instructions.Count; index++)
@@ -1759,6 +1869,33 @@ static List<PatchedFile> PatchBossNames(
                 }
                 if (!randomizedEntityIds.Contains(entityId))
                     continue;
+                if (butterflyEntityIds.Contains(entityId))
+                {
+                    InsertEventInstruction(
+                        entry,
+                        index + 1,
+                        new EMEVD.Instruction(
+                            2004,
+                            1,
+                            new object[] { entityId, 0 }));
+                    InsertEventInstruction(
+                        entry,
+                        index + 2,
+                        ForceAnimationInstruction(
+                            entityId,
+                            3020,
+                            true));
+                    InsertEventInstruction(
+                        entry,
+                        index + 3,
+                        new EMEVD.Instruction(
+                            2004,
+                            1,
+                            new object[] { entityId, 1 }));
+                    index += 3;
+                    changed += 3;
+                    continue;
+                }
                 var nextIsEnable =
                     index + 1 < entry.Instructions.Count &&
                     entry.Instructions[index + 1].Bank == 2004 &&
@@ -1821,6 +1958,55 @@ static List<PatchedFile> PatchBossNames(
                     "Randomized Asylum boss intro did not persist safely.");
             }
         }
+        if (passiveMapPlacements.Count > 0)
+        {
+            var constructor = verification.Events.Single(entry => entry.ID == 0);
+            const int passiveEventBase = 11_819_990;
+            foreach (var (placement, eventIndex) in passiveMapPlacements
+                         .OrderBy(placement => placement.EntityId)
+                         .Select((placement, index) => (placement, index)))
+            {
+                var eventId = passiveEventBase + eventIndex;
+                var passiveEvent = verification.Events.Single(entry =>
+                    entry.ID == eventId);
+                if (passiveEvent.RestBehavior !=
+                        EMEVD.Event.RestBehaviorType.Restart ||
+                    passiveEvent.Instructions.Count != 3 ||
+                    passiveEvent.Instructions[0].Bank != 2004 ||
+                    passiveEvent.Instructions[0].ID != 1 ||
+                    BitConverter.ToInt32(
+                        passiveEvent.Instructions[0].ArgData, 0) !=
+                        placement.EntityId ||
+                    BitConverter.ToInt32(
+                        passiveEvent.Instructions[0].ArgData, 4) != 0 ||
+                    passiveEvent.Instructions[1].Bank != 4 ||
+                    passiveEvent.Instructions[1].ID != 1 ||
+                    passiveEvent.Instructions[1].ArgData.Length != 12 ||
+                    passiveEvent.Instructions[1].ArgData[0] != 0 ||
+                    BitConverter.ToInt32(
+                        passiveEvent.Instructions[1].ArgData, 4) !=
+                        placement.EntityId ||
+                    BitConverter.ToInt32(
+                        passiveEvent.Instructions[1].ArgData, 8) != 10_000 ||
+                    passiveEvent.Instructions[2].Bank != 2004 ||
+                    passiveEvent.Instructions[2].ID != 1 ||
+                    BitConverter.ToInt32(
+                        passiveEvent.Instructions[2].ArgData, 0) !=
+                        placement.EntityId ||
+                    BitConverter.ToInt32(
+                        passiveEvent.Instructions[2].ArgData, 4) != 1 ||
+                    !constructor.Instructions.Any(instruction =>
+                        instruction.Bank == 2000 &&
+                        instruction.ID == 0 &&
+                        instruction.ArgData.Length >= 8 &&
+                        BitConverter.ToInt32(instruction.ArgData, 4) == eventId))
+                {
+                    throw new InvalidDataException(
+                        $"Passive-until-attacked event did not persist for " +
+                        $"{placement.SlotId}.");
+                }
+            }
+        }
         foreach (var instruction in verification.Events
                      .SelectMany(entry => entry.Instructions)
                      .Where(value =>
@@ -1832,7 +2018,7 @@ static List<PatchedFile> PatchBossNames(
             if (namesByEntity.TryGetValue(entityId, out var expectedNameId) &&
                 BitConverter.ToInt16(instruction.ArgData, 10) != expectedNameId)
                 throw new InvalidDataException(
-                    $"Boss name did not persist for entity {entityId} in {mapGroup.Key}.");
+                    $"Boss name did not persist for entity {entityId} in {mapId}.");
         }
         foreach (var entry in verification.Events)
         {
@@ -1846,6 +2032,39 @@ static List<PatchedFile> PatchBossNames(
                 var entityId = BitConverter.ToInt32(instruction.ArgData, 4);
                 if (!randomizedEntityIds.Contains(entityId))
                     continue;
+                if (butterflyEntityIds.Contains(entityId))
+                {
+                    if (index + 3 >= entry.Instructions.Count)
+                        throw new InvalidDataException(
+                            $"Moonlight Butterfly landing sequence is incomplete " +
+                            $"for entity {entityId} in {mapId}.");
+                    var disable = entry.Instructions[index + 1];
+                    var landing = entry.Instructions[index + 2];
+                    var landingEnable = entry.Instructions[index + 3];
+                    if (disable.Bank != 2004 ||
+                        disable.ID != 1 ||
+                        BitConverter.ToInt32(disable.ArgData, 0) != entityId ||
+                        BitConverter.ToInt32(disable.ArgData, 4) != 0 ||
+                        landing.Bank != 2003 ||
+                        landing.ID != 18 ||
+                        landing.ArgData.Length != 12 ||
+                        BitConverter.ToInt32(landing.ArgData, 0) != entityId ||
+                        BitConverter.ToInt32(landing.ArgData, 4) != 3020 ||
+                        landing.ArgData[9] != 1 ||
+                        landingEnable.Bank != 2004 ||
+                        landingEnable.ID != 1 ||
+                        BitConverter.ToInt32(
+                            landingEnable.ArgData, 0) != entityId ||
+                        BitConverter.ToInt32(
+                            landingEnable.ArgData, 4) != 1)
+                    {
+                        throw new InvalidDataException(
+                            $"Moonlight Butterfly did not start grounded for " +
+                            $"entity {entityId} in {mapId}.");
+                    }
+                    index += 3;
+                    continue;
+                }
                 var enable = entry.Instructions[index + 1];
                 if (enable.Bank != 2004 ||
                     enable.ID != 1 ||
@@ -1855,7 +2074,7 @@ static List<PatchedFile> PatchBossNames(
                 {
                     throw new InvalidDataException(
                         $"Randomized boss AI activation did not persist for " +
-                        $"entity {entityId} in {mapGroup.Key}.");
+                        $"entity {entityId} in {mapId}.");
                 }
             }
         }
@@ -2717,11 +2936,13 @@ static void AssertSpawnUnchanged(
     EnemyPartSnapshot original,
     MSB1.Part.EnemyBase verified,
     string mapId,
-    float? expectedY = null)
+    float? expectedX = null,
+    float? expectedY = null,
+    float? expectedZ = null)
 {
-    if (verified.Position.X != original.PositionX ||
+    if (verified.Position.X != (expectedX ?? original.PositionX) ||
         verified.Position.Y != (expectedY ?? original.PositionY) ||
-        verified.Position.Z != original.PositionZ ||
+        verified.Position.Z != (expectedZ ?? original.PositionZ) ||
         verified.Rotation.X != original.RotationX ||
         verified.Rotation.Y != original.RotationY ||
         verified.Rotation.Z != original.RotationZ ||
@@ -3097,7 +3318,9 @@ record PatchPlacement(
     int SourceNpcParamId,
     int? ScaledNpcParamId,
     int EntityId,
+    float? GroundX,
     float? GroundY,
+    float? GroundZ,
     int? BaseThinkParamId,
     bool PassiveUntilAttacked,
     bool LinkedEnemyGroup)
