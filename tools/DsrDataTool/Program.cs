@@ -973,6 +973,10 @@ static PatchReport PatchEnemies(
                     perception.ValueKind == JsonValueKind.True,
                 element.TryGetProperty("passiveUntilAttacked", out var passive) &&
                     passive.ValueKind == JsonValueKind.True,
+                element.TryGetProperty("initialTeamType", out var initialTeamType) &&
+                    initialTeamType.ValueKind == JsonValueKind.Number
+                        ? initialTeamType.GetInt32()
+                        : null,
                 element.TryGetProperty("linkedDragonGroup", out var dragonGroup) &&
                     dragonGroup.ValueKind == JsonValueKind.String ||
                 element.TryGetProperty("linkedEnemyGroup", out var enemyGroup) &&
@@ -983,7 +987,7 @@ static PatchReport PatchEnemies(
                     scaling.ValueKind == JsonValueKind.String
                         ? scaling.GetString() ?? "vanilla"
                         : "vanilla",
-                element.TryGetProperty("activationEventId", out var activation) &&
+                element.TryGetProperty("activationRegionId", out var activation) &&
                     activation.ValueKind == JsonValueKind.Number
                         ? activation.GetInt32()
                         : null,
@@ -1781,16 +1785,16 @@ static EMEVD.Instruction IfDeadInstruction(
     return new EMEVD.Instruction(4, 0, args);
 }
 
-static EMEVD.Instruction IfEventFlagInstruction(
+static EMEVD.Instruction IfCharacterInsideRegionInstruction(
     int conditionGroup,
-    int eventFlagId)
+    int regionId)
 {
-    var args = new byte[8];
+    var args = new byte[12];
     args[0] = unchecked((byte)(sbyte)conditionGroup);
     args[1] = 1;
-    args[2] = 0;
-    BitConverter.GetBytes(eventFlagId).CopyTo(args, 4);
-    return new EMEVD.Instruction(3, 0, args);
+    BitConverter.GetBytes(10_000).CopyTo(args, 4);
+    BitConverter.GetBytes(regionId).CopyTo(args, 8);
+    return new EMEVD.Instruction(3, 2, args);
 }
 
 static EMEVD.Instruction ForceAnimationInstruction(
@@ -1843,7 +1847,7 @@ static List<PatchedFile> PatchBossNames(
         .ToList();
     var deferredActivationPlacements = allEnemyPlacements
         .Where(placement =>
-            placement.ActivationEventId.HasValue &&
+            placement.ActivationRegionId.HasValue &&
             placement.EntityId >= 0)
         .ToList();
     var staticBridgePlacements = allEnemyPlacements
@@ -1936,6 +1940,9 @@ static List<PatchedFile> PatchBossNames(
                 placement.SlotId.EndsWith(":c2232_0000", StringComparison.Ordinal) &&
                 placement.TargetModelName != "c2232");
         var generallyPatchedEntityIds = modelSpecificEntityIds.ToHashSet();
+        var deferredActivationEntityIds = deferredMapPlacements
+            .Select(placement => placement.EntityId)
+            .ToHashSet();
         var staticLifecycleEntityIds = staticBridgeMapPlacements
             .Concat(disabledMapPlacements)
             .Select(placement => placement.EntityId)
@@ -1978,6 +1985,16 @@ static List<PatchedFile> PatchBossNames(
                         instruction.ArgData.Length < 4 ||
                         !generallyPatchedEntityIds.Contains(
                             BitConverter.ToInt32(instruction.ArgData, 0)))
+                        continue;
+                    // The Stray Demon event contains an early vanilla
+                    // DisableCharacter that is safe for every replacement and
+                    // closes the constructor-frame visibility race.
+                    if (instruction.Bank == 2004 &&
+                        instruction.ID == 5 &&
+                        instruction.ArgData.Length >= 8 &&
+                        deferredActivationEntityIds.Contains(
+                            BitConverter.ToInt32(instruction.ArgData, 0)) &&
+                        BitConverter.ToInt32(instruction.ArgData, 4) == 0)
                         continue;
                     RemoveEventInstruction(
                         entry,
@@ -2098,14 +2115,14 @@ static List<PatchedFile> PatchBossNames(
             {
                 var activationEvent = new EMEVD.Event(
                     nextCustomEventId++,
-                    EMEVD.Event.RestBehaviorType.End);
+                    EMEVD.Event.RestBehaviorType.Restart);
                 activationEvent.Instructions.Add(new EMEVD.Instruction(
                     2004,
                     5,
                     new object[] { placement.EntityId, 0 }));
-                activationEvent.Instructions.Add(IfEventFlagInstruction(
+                activationEvent.Instructions.Add(IfCharacterInsideRegionInstruction(
                     0,
-                    placement.ActivationEventId!.Value));
+                    placement.ActivationRegionId!.Value));
                 activationEvent.Instructions.Add(new EMEVD.Instruction(
                     2004,
                     5,
@@ -2114,6 +2131,12 @@ static List<PatchedFile> PatchBossNames(
                     2004,
                     1,
                     new object[] { placement.EntityId, 1 }));
+                // Keep a restarting event alive for the duration of the fight.
+                // End events reuse persistent completion flags from existing
+                // saves, which could skip the initial hide on a later seed.
+                activationEvent.Instructions.Add(IfDeadInstruction(
+                    0,
+                    placement.EntityId));
                 RegisterCustomEvent(activationEvent);
             }
             foreach (var placement in staticBridgeMapPlacements
@@ -2410,20 +2433,24 @@ static List<PatchedFile> PatchBossNames(
                 var eventId = nextCustomEventId++;
                 var activation = verification.Events.Single(entry =>
                     entry.ID == eventId);
-                if (activation.Instructions.Count != 4 ||
+                if (activation.RestBehavior !=
+                        EMEVD.Event.RestBehaviorType.Restart ||
+                    activation.Instructions.Count != 5 ||
                     activation.Instructions[0].Bank != 2004 ||
                     activation.Instructions[0].ID != 5 ||
                     BitConverter.ToInt32(
                         activation.Instructions[0].ArgData, 4) != 0 ||
                     activation.Instructions[1].Bank != 3 ||
-                    activation.Instructions[1].ID != 0 ||
+                    activation.Instructions[1].ID != 2 ||
                     BitConverter.ToInt32(
-                        activation.Instructions[1].ArgData, 4) !=
-                        placement.ActivationEventId ||
+                        activation.Instructions[1].ArgData, 8) !=
+                        placement.ActivationRegionId ||
                     activation.Instructions[2].Bank != 2004 ||
                     activation.Instructions[2].ID != 5 ||
                     BitConverter.ToInt32(
                         activation.Instructions[2].ArgData, 4) != 1 ||
+                    activation.Instructions[4].Bank != 4 ||
+                    activation.Instructions[4].ID != 0 ||
                     !IsInitialized(eventId))
                 {
                     throw new InvalidDataException(
@@ -2490,6 +2517,12 @@ static List<PatchedFile> PatchBossNames(
                     instruction.ArgData.Length >= 4 &&
                     generallyPatchedEntityIds.Contains(
                         BitConverter.ToInt32(instruction.ArgData, 0)) &&
+                    !(instruction.Bank == 2004 &&
+                      instruction.ID == 5 &&
+                      instruction.ArgData.Length >= 8 &&
+                      deferredActivationEntityIds.Contains(
+                          BitConverter.ToInt32(instruction.ArgData, 0)) &&
+                      BitConverter.ToInt32(instruction.ArgData, 4) == 0) &&
                     !(instruction.Bank == 2003 &&
                       instruction.ID == 18 &&
                       instruction.ArgData.Length >= 8 &&
@@ -2942,6 +2975,10 @@ static PatchedFile? PatchGameParam(
             }
         }
         AssertCell(scaled, "nameId", GetCellInt(target, "nameId"));
+        AssertCell(
+            scaled,
+            "teamType",
+            placement.InitialTeamType ?? GetCellInt(source, "teamType"));
         if (placement.MakeTangible)
             AssertCell(scaled, "isGhost", 0);
     }
@@ -3029,12 +3066,24 @@ static void AddScaledNpcRows(PARAM npcParam, List<PatchPlacement> placements)
         }
         if (placement.MakeTangible)
             SetCell(scaled, "isGhost", 0);
+        // A replacement may use a neutral/friendly PARAM team in its vanilla
+        // arena (Gwyndolin is the important example). Preserve the destination
+        // encounter's allegiance unless a passive slot explicitly overrides it.
+        SetCell(
+            scaled,
+            "teamType",
+            placement.InitialTeamType ?? GetCellInt(source, "teamType"));
         AssertCells(
             RowCells(target),
             scaled,
             name =>
                 !combatFields.Contains(name) &&
+                name != "teamType" &&
                 !(placement.MakeTangible && name == "isGhost"));
+        AssertCell(
+            scaled,
+            "teamType",
+            placement.InitialTeamType ?? GetCellInt(source, "teamType"));
         if (placement.MakeTangible)
             AssertCell(scaled, "isGhost", 0);
         npcParam.Rows.Add(scaled);
@@ -3877,10 +3926,11 @@ record PatchPlacement(
     int? DestinationThinkParamId,
     bool PreserveDestinationPerception,
     bool PassiveUntilAttacked,
+    int? InitialTeamType,
     bool LinkedEnemyGroup,
     bool MakeTangible,
     string Scaling,
-    int? ActivationEventId,
+    int? ActivationRegionId,
     bool StaticBridgeDragon,
     bool DisableEntity,
     int? AwardItemLotId)

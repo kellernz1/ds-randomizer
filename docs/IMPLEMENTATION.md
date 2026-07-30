@@ -82,9 +82,10 @@ files; source hashes prevent applying it to a different installation state.
 - First Asylum boss rooftop animation is replaced by a floor spawn
 - Adapted Asylum intro explicitly enables replacement AI after arena entry
 - The first three regular Asylum slots receive cloned replacement
-  `NpcThinkParam` rows plus restarting EMEVD guards that assign friendly-enemy
-  allegiance until the player damages each entity. They keep native idle
-  movement, switch to enemy allegiance on damage, replan immediately, and stay
+  `NpcThinkParam` and `NpcParam` rows plus restarting EMEVD guards. Their
+  friendly-enemy allegiance now exists in the PARAM before the first map frame,
+  preventing the AI from acquiring the player before the constructor runs.
+  They switch to enemy allegiance on damage, replan immediately, and stay
   hostile until death before the guard prepares the next respawn.
 - Male Ghost, Female Ghost, and Pisaca replacements use their canonical active
   combat brains instead of area-dependent ambush/defensive AI variants.
@@ -95,12 +96,16 @@ files; source hashes prevent applying it to a different installation state.
   its movement and battle goals come from the randomized enemy, while battle,
   sight, and hearing distances come from the destination slot.
 - The first three Asylum slots and the fifteen passive Hollows at New Londo's
-  elevator entrance use race-free friendly-enemy events. AI is stopped and its
-  target cleared before the passive allegiance is applied, then restored to
+  elevator entrance use race-free friendly-enemy PARAM rows and events. AI is
+  stopped and its target cleared during initialization, then restored to
   hostile only after the player attacks.
 - Second-visit Asylum enemies retain event 11810350's disabled/enabled
-  lifecycle. The Stray Demon slot remains disabled until the floor-break battle
-  event, and the Taurus slot remains disabled until its bridge battle event.
+  lifecycle. The Stray Demon slot remains disabled until the player reaches the
+  lower arena region after the floor breaks, and the Taurus slot remains
+  disabled until the player reaches the bridge region beyond the fog wall.
+- Per-placement boss `NpcParam` rows inherit the destination encounter's team.
+  Bosses whose vanilla PARAM is neutral, especially Gwyndolin, therefore
+  become hostile and run their combat AI when moved to another arena.
 - New Londo's two Masses of Souls and their twelve overlapping Wisp entities
   are treated as two inseparable groups and exchange only with each other.
   Arbitrary full-sized enemies can no longer occupy the low item tunnel, and

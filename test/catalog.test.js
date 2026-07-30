@@ -74,7 +74,10 @@ test("real catalog produces deterministic enemies with visibly different models"
   assert.equal(new Set(scaled).size, scaled.length);
   assert.equal(
     scaled.length,
-    first.placements.enemies.filter((placement) => placement.changed).length,
+    first.placements.enemies.filter(
+      (placement) =>
+        placement.changed || placement.initialTeamType !== undefined,
+    ).length,
   );
   const vanillaScaling = generate(
     { ...config, enemyScaling: "vanilla" },
@@ -84,7 +87,8 @@ test("real catalog produces deterministic enemies with visibly different models"
     vanillaScaling.placements.enemies.every(
       (placement) =>
         placement.scaledNpcParamId === null ||
-        placement.makeTangible === true,
+        placement.makeTangible === true ||
+        placement.initialTeamType !== undefined,
     ),
   );
   assert.ok(
@@ -220,6 +224,8 @@ test("real catalog produces deterministic enemies with visibly different models"
     );
     assert.ok(placement.targetThinkParamId >= 9_600_000);
     assert.equal(placement.passiveUntilAttacked, true);
+    assert.equal(placement.initialTeamType, 12);
+    assert.ok(placement.scaledNpcParamId !== null);
     assert.equal(
       placement.compatibility,
       "passive-asylum-source-ai-permutation",
@@ -233,6 +239,8 @@ test("real catalog produces deterministic enemies with visibly different models"
     newLondoPassive.every(
       (placement) =>
         placement.passiveUntilAttacked === true &&
+        placement.initialTeamType === 12 &&
+        placement.scaledNpcParamId !== null &&
         placement.entityId >= 16_099_000 &&
         placement.compatibility ===
           "passive-new-londo-entrance-permutation",
@@ -475,7 +483,13 @@ test("real catalog produces real boss and world-item placements", async () => {
   );
   assert.ok(stray);
   assert.notEqual(stray.targetModelName, "c2230");
-  assert.equal(stray.activationEventId, 11815382);
+  assert.equal(stray.activationRegionId, 1812896);
+  const gwyndolinReplacement = result.placements.bosses.find(
+    (entry) => entry.targetModelName === "c5320",
+  );
+  assert.ok(gwyndolinReplacement);
+  assert.ok(gwyndolinReplacement.scaledNpcParamId !== null);
+  assert.ok([0, 1].includes(gwyndolinReplacement.initialTeamType));
   const assignmentsByVanillaModel = new Map();
   for (const entry of result.placements.bosses.filter(
     (placement) =>
@@ -520,7 +534,7 @@ test("real catalog produces real boss and world-item placements", async () => {
   const taurus = result.placements.bosses.find(
     (entry) => entry.slot === "m10_01_00_00:c2250_0000",
   );
-  assert.equal(taurus.activationEventId, 11015382);
+  assert.equal(taurus.activationRegionId, 1012701);
   assert.deepEqual(
     [taurus.groundX, taurus.groundY, taurus.groundZ],
     [1.16, 15.82, -114.34],

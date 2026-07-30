@@ -82,9 +82,12 @@ const newLondoPassiveSlots = new Set(
       `m16_00_00_00:c2500_${String(index).padStart(4, "0")}`,
   ),
 );
-const deferredBossActivationEvents = new Map([
-  ["m10_01_00_00:c2250_0000", 11015382],
-  ["m18_01_00_00:c2230_0000", 11815382],
+const deferredBossActivationRegions = new Map([
+  // The regions used by the vanilla battle events are beyond the fog gate and
+  // below the collapsing Asylum floor respectively. Waiting on the event ID
+  // itself is too late and can also expose the character for one load frame.
+  ["m10_01_00_00:c2250_0000", 1012701],
+  ["m18_01_00_00:c2230_0000", 1812896],
 ]);
 const safeBossSpawnPositions = new Map([
   // The Asylum Demon encounter floor. The vanilla entity begins above this
@@ -164,6 +167,11 @@ function enemyPlacement(config, target, source, scaledNpcParamId, extra = {}) {
     source.modelName !== target.modelName ||
     source.npcParamId !== target.npcParamId ||
     source.thinkParamId !== target.thinkParamId;
+  const desiredInitialTeamType =
+    extra.initialTeamType ?? target.teamType;
+  const requiresTeamOverride =
+    Number.isInteger(desiredInitialTeamType) &&
+    source.teamType !== desiredInitialTeamType;
   return {
     slot: target.id,
     sourceSlot: source.id,
@@ -181,11 +189,15 @@ function enemyPlacement(config, target, source, scaledNpcParamId, extra = {}) {
     targetBattleGoalId: source.battleGoalId,
     scaledNpcParamId:
       (config.enemyScaling === "vanilla" || !changed) &&
-      extra.makeTangible !== true
+      extra.makeTangible !== true &&
+      !requiresTeamOverride
         ? null
         : scaledNpcParamId,
     changed,
     scaling: config.enemyScaling,
+    ...(requiresTeamOverride
+      ? { initialTeamType: desiredInitialTeamType }
+      : {}),
     ...extra,
   };
 }
@@ -667,6 +679,10 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan) {
       ...(passiveUntilAttacked
         ? {
             passiveUntilAttacked: true,
+            // The event still changes allegiance after the first hit, but the
+            // initial PARAM team prevents AI from targeting the player before
+            // the map constructor has started that event.
+            initialTeamType: 12,
           }
         : {}),
       compatibility: passiveUntilAttacked
@@ -748,8 +764,8 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
       compatibility: canonicalBossModel.has(slot.modelName)
         ? "linked-boss-form"
         : "grounded-unrestricted-boss-permutation",
-      ...(deferredBossActivationEvents.has(slot.id)
-        ? { activationEventId: deferredBossActivationEvents.get(slot.id) }
+      ...(deferredBossActivationRegions.has(slot.id)
+        ? { activationRegionId: deferredBossActivationRegions.get(slot.id) }
         : {}),
       ...bossGrounding(slot, catalog),
     });
