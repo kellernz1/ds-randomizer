@@ -89,6 +89,11 @@ const deferredBossActivationRegions = new Map([
   ["m10_01_00_00:c2250_0000", 1012701],
   ["m18_01_00_00:c2230_0000", 1812896],
 ]);
+const containedBossCombatRegions = new Map([
+  // Keep the first Asylum boss visible in its encounter, but stop its AI and
+  // clear its target whenever the player escapes through the side door.
+  ["m18_01_00_00:c2232_0000", 1812996],
+]);
 const safeBossSpawnPositions = new Map([
   // The Asylum Demon encounter floor. The vanilla entity begins above this
   // point and enters through a model-specific drop event.
@@ -682,7 +687,7 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan) {
             // The event still changes allegiance after the first hit, but the
             // initial PARAM team prevents AI from targeting the player before
             // the map constructor has started that event.
-            initialTeamType: 12,
+            initialTeamType: 2,
           }
         : {}),
       compatibility: passiveUntilAttacked
@@ -766,6 +771,9 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
         : "grounded-unrestricted-boss-permutation",
       ...(deferredBossActivationRegions.has(slot.id)
         ? { activationRegionId: deferredBossActivationRegions.get(slot.id) }
+        : {}),
+      ...(containedBossCombatRegions.has(slot.id)
+        ? { combatRegionId: containedBossCombatRegions.get(slot.id) }
         : {}),
       ...bossGrounding(slot, catalog),
     });

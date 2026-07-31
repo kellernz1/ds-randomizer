@@ -83,8 +83,9 @@ files; source hashes prevent applying it to a different installation state.
 - Adapted Asylum intro explicitly enables replacement AI after arena entry
 - The first three regular Asylum slots receive cloned replacement
   `NpcThinkParam` and `NpcParam` rows plus restarting EMEVD guards. Their
-  friendly-enemy allegiance now exists in the PARAM before the first map frame,
-  preventing the AI from acquiring the player before the constructor runs.
+  neutral allegiance now exists in the PARAM before the first map frame,
+  preventing the AI from acquiring the player before the constructor runs
+  while keeping the character vulnerable to ordinary attacks.
   They switch to enemy allegiance on damage, replan immediately, and stay
   hostile until death before the guard prepares the next respawn.
 - Male Ghost, Female Ghost, and Pisaca replacements use their canonical active
@@ -96,7 +97,7 @@ files; source hashes prevent applying it to a different installation state.
   its movement and battle goals come from the randomized enemy, while battle,
   sight, and hearing distances come from the destination slot.
 - The first three Asylum slots and the fifteen passive Hollows at New Londo's
-  elevator entrance use race-free friendly-enemy PARAM rows and events. AI is
+  elevator entrance use race-free neutral PARAM rows and hostility events. AI is
   stopped and its target cleared during initialization, then restored to
   hostile only after the player attacks.
 - Second-visit Asylum enemies retain event 11810350's disabled/enabled
@@ -118,6 +119,9 @@ files; source hashes prevent applying it to a different installation state.
   vanilla rooftop warp is removed, preventing pre-fight fall damage. A
   Moonlight Butterfly replacement has AI held while landing animation 3020
   completes, then resumes its native battle AI.
+- The first Asylum boss AI is contained to the vanilla arena region. Escaping
+  through the side door disables its AI and clears its target; returning to the
+  arena enables combat again.
 - Portable seed files contain deterministic options, version, catalog fingerprint, and verified placement hash
 - English-only launcher status, dependency, and failure messages
 - Cross-map enemy model declarations and validated MSB round trips

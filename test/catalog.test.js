@@ -224,7 +224,7 @@ test("real catalog produces deterministic enemies with visibly different models"
     );
     assert.ok(placement.targetThinkParamId >= 9_600_000);
     assert.equal(placement.passiveUntilAttacked, true);
-    assert.equal(placement.initialTeamType, 12);
+    assert.equal(placement.initialTeamType, 2);
     assert.ok(placement.scaledNpcParamId !== null);
     assert.equal(
       placement.compatibility,
@@ -239,7 +239,7 @@ test("real catalog produces deterministic enemies with visibly different models"
     newLondoPassive.every(
       (placement) =>
         placement.passiveUntilAttacked === true &&
-        placement.initialTeamType === 12 &&
+        placement.initialTeamType === 2 &&
         placement.scaledNpcParamId !== null &&
         placement.entityId >= 16_099_000 &&
         placement.compatibility ===
@@ -478,6 +478,7 @@ test("real catalog produces real boss and world-item placements", async () => {
   assert.equal(asylum.groundX, 3.41);
   assert.equal(asylum.groundY, 197.61);
   assert.equal(asylum.groundZ, -23.1);
+  assert.equal(asylum.combatRegionId, 1812996);
   const stray = result.placements.bosses.find(
     (entry) => entry.slot === "m18_01_00_00:c2230_0000",
   );
