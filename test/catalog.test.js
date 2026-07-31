@@ -493,6 +493,11 @@ test("real catalog produces real boss and world-item placements", async () => {
   assert.ok(stray);
   assert.notEqual(stray.targetModelName, "c2230");
   assert.equal(stray.activationRegionId, 1812896);
+  assert.equal(stray.activationWarpRegionId, 1812302);
+  assert.deepEqual(
+    [stray.groundX, stray.groundY, stray.groundZ],
+    [3.31, 100, -19],
+  );
   const gwyndolinReplacement = result.placements.bosses.find(
     (entry) => entry.targetModelName === "c5320",
   );

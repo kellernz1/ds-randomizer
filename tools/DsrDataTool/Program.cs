@@ -991,6 +991,11 @@ static PatchReport PatchEnemies(
                     activation.ValueKind == JsonValueKind.Number
                         ? activation.GetInt32()
                         : null,
+                element.TryGetProperty(
+                        "activationWarpRegionId", out var activationWarp) &&
+                    activationWarp.ValueKind == JsonValueKind.Number
+                        ? activationWarp.GetInt32()
+                        : null,
                 element.TryGetProperty("combatRegionId", out var combatRegion) &&
                     combatRegion.ValueKind == JsonValueKind.Number
                         ? combatRegion.GetInt32()
@@ -1959,6 +1964,26 @@ static List<PatchedFile> PatchBossNames(
         var deferredActivationEntityIds = deferredMapPlacements
             .Select(placement => placement.EntityId)
             .ToHashSet();
+        var deferredWarpRegionsByEntity = deferredMapPlacements
+            .Where(placement => placement.ActivationWarpRegionId.HasValue)
+            .ToDictionary(
+                placement => placement.EntityId,
+                placement => placement.ActivationWarpRegionId!.Value);
+        bool IsDeferredWarpInstruction(EMEVD.Instruction instruction)
+        {
+            if (instruction.Bank != 2004 ||
+                instruction.ArgData.Length < 8 ||
+                !deferredWarpRegionsByEntity.TryGetValue(
+                    BitConverter.ToInt32(instruction.ArgData, 0),
+                    out var warpRegionId))
+                return false;
+            return
+                (instruction.ID == 41 &&
+                 instruction.ArgData.Length >= 12 &&
+                 BitConverter.ToInt32(instruction.ArgData, 8) == warpRegionId) ||
+                (instruction.ID == 13 &&
+                 BitConverter.ToInt32(instruction.ArgData, 4) == warpRegionId);
+        }
         var staticLifecycleEntityIds = staticBridgeMapPlacements
             .Concat(disabledMapPlacements)
             .Select(placement => placement.EntityId)
@@ -2134,9 +2159,38 @@ static List<PatchedFile> PatchBossNames(
                     2004,
                     5,
                     new object[] { placement.EntityId, 0 }));
+                activationEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    1,
+                    new object[] { placement.EntityId, 0 }));
+                activationEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    16,
+                    new object[] { placement.EntityId }));
                 activationEvent.Instructions.Add(IfCharacterInsideRegionInstruction(
                     0,
                     placement.ActivationRegionId!.Value));
+                if (placement.ActivationWarpRegionId.HasValue)
+                {
+                    activationEvent.Instructions.Add(new EMEVD.Instruction(
+                        2004,
+                        41,
+                        new object[]
+                        {
+                            placement.EntityId,
+                            1,
+                            placement.ActivationWarpRegionId.Value,
+                            -1,
+                        }));
+                    activationEvent.Instructions.Add(new EMEVD.Instruction(
+                        2004,
+                        13,
+                        new object[]
+                        {
+                            placement.EntityId,
+                            placement.ActivationWarpRegionId.Value,
+                        }));
+                }
                 activationEvent.Instructions.Add(new EMEVD.Instruction(
                     2004,
                     5,
@@ -2145,6 +2199,10 @@ static List<PatchedFile> PatchBossNames(
                     2004,
                     1,
                     new object[] { placement.EntityId, 1 }));
+                activationEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    20,
+                    new object[] { placement.EntityId }));
                 // Keep a restarting event alive for the duration of the fight.
                 // End events reuse persistent completion flags from existing
                 // saves, which could skip the initial hide on a later seed.
@@ -2470,24 +2528,53 @@ static List<PatchedFile> PatchBossNames(
                 var eventId = nextCustomEventId++;
                 var activation = verification.Events.Single(entry =>
                     entry.ID == eventId);
+                var warpOffset = placement.ActivationWarpRegionId.HasValue ? 2 : 0;
+                var enableCharacterIndex = 4 + warpOffset;
+                var enableAiIndex = 5 + warpOffset;
+                var replanIndex = 6 + warpOffset;
+                var deadIndex = 7 + warpOffset;
                 if (activation.RestBehavior !=
                         EMEVD.Event.RestBehaviorType.Restart ||
-                    activation.Instructions.Count != 5 ||
+                    activation.Instructions.Count != 8 + warpOffset ||
                     activation.Instructions[0].Bank != 2004 ||
                     activation.Instructions[0].ID != 5 ||
                     BitConverter.ToInt32(
                         activation.Instructions[0].ArgData, 4) != 0 ||
-                    activation.Instructions[1].Bank != 3 ||
-                    activation.Instructions[1].ID != 2 ||
+                    activation.Instructions[1].Bank != 2004 ||
+                    activation.Instructions[1].ID != 1 ||
                     BitConverter.ToInt32(
-                        activation.Instructions[1].ArgData, 8) !=
-                        placement.ActivationRegionId ||
+                        activation.Instructions[1].ArgData, 4) != 0 ||
                     activation.Instructions[2].Bank != 2004 ||
-                    activation.Instructions[2].ID != 5 ||
+                    activation.Instructions[2].ID != 16 ||
+                    activation.Instructions[3].Bank != 3 ||
+                    activation.Instructions[3].ID != 2 ||
                     BitConverter.ToInt32(
-                        activation.Instructions[2].ArgData, 4) != 1 ||
-                    activation.Instructions[4].Bank != 4 ||
-                    activation.Instructions[4].ID != 0 ||
+                        activation.Instructions[3].ArgData, 8) !=
+                        placement.ActivationRegionId ||
+                    (placement.ActivationWarpRegionId.HasValue &&
+                     (activation.Instructions[4].Bank != 2004 ||
+                      activation.Instructions[4].ID != 41 ||
+                      BitConverter.ToInt32(
+                          activation.Instructions[4].ArgData, 8) !=
+                          placement.ActivationWarpRegionId ||
+                      activation.Instructions[5].Bank != 2004 ||
+                      activation.Instructions[5].ID != 13 ||
+                      BitConverter.ToInt32(
+                          activation.Instructions[5].ArgData, 4) !=
+                          placement.ActivationWarpRegionId)) ||
+                    activation.Instructions[enableCharacterIndex].Bank != 2004 ||
+                    activation.Instructions[enableCharacterIndex].ID != 5 ||
+                    BitConverter.ToInt32(
+                        activation.Instructions[enableCharacterIndex].ArgData,
+                        4) != 1 ||
+                    activation.Instructions[enableAiIndex].Bank != 2004 ||
+                    activation.Instructions[enableAiIndex].ID != 1 ||
+                    BitConverter.ToInt32(
+                        activation.Instructions[enableAiIndex].ArgData, 4) != 1 ||
+                    activation.Instructions[replanIndex].Bank != 2004 ||
+                    activation.Instructions[replanIndex].ID != 20 ||
+                    activation.Instructions[deadIndex].Bank != 4 ||
+                    activation.Instructions[deadIndex].ID != 0 ||
                     !IsInitialized(eventId))
                 {
                     throw new InvalidDataException(
@@ -2596,6 +2683,7 @@ static List<PatchedFile> PatchBossNames(
                       deferredActivationEntityIds.Contains(
                           BitConverter.ToInt32(instruction.ArgData, 0)) &&
                       BitConverter.ToInt32(instruction.ArgData, 4) == 0) &&
+                    !IsDeferredWarpInstruction(instruction) &&
                     !(instruction.Bank == 2003 &&
                       instruction.ID == 18 &&
                       instruction.ArgData.Length >= 8 &&
@@ -4004,6 +4092,7 @@ record PatchPlacement(
     bool MakeTangible,
     string Scaling,
     int? ActivationRegionId,
+    int? ActivationWarpRegionId,
     int? CombatRegionId,
     int? CombatExitRegionId,
     bool StaticBridgeDragon,

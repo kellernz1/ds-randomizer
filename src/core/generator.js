@@ -89,8 +89,11 @@ const deferredBossActivationRegions = new Map([
   // The regions used by the vanilla battle events are beyond the fog gate and
   // below the collapsing Asylum floor respectively. Waiting on the event ID
   // itself is too late and can also expose the character for one load frame.
-  ["m10_01_00_00:c2250_0000", 1012701],
-  ["m18_01_00_00:c2230_0000", 1812896],
+  ["m10_01_00_00:c2250_0000", { enter: 1012701 }],
+  [
+    "m18_01_00_00:c2230_0000",
+    { enter: 1812896, warp: 1812302 },
+  ],
 ]);
 const containedBossCombatRegions = new Map([
   // Keep the first Asylum boss visible in its encounter, but stop its AI and
@@ -104,6 +107,10 @@ const safeBossSpawnPositions = new Map([
   // The Asylum Demon encounter floor. The vanilla entity begins above this
   // point and enters through a model-specific drop event.
   ["m18_01_00_00:c2232_0000", { x: 3.41, y: 197.61, z: -23.1 }],
+  // Keep the second Asylum boss far below both playable floors. Its activation
+  // event warps it to region 1812302 only after the player reaches the lower
+  // arena, preventing tall replacements from clipping through the upper floor.
+  ["m18_01_00_00:c2230_0000", { x: 3.31, y: 100, z: -19 }],
   // Taurus starts inside the tower and normally jumps to the bridge through
   // a model-specific event. Replacements must begin directly on the bridge.
   ["m10_01_00_00:c2250_0000", { x: 1.16, y: 15.82, z: -114.34 }],
@@ -776,7 +783,16 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
         ? "linked-boss-form"
         : "grounded-unrestricted-boss-permutation",
       ...(deferredBossActivationRegions.has(slot.id)
-        ? { activationRegionId: deferredBossActivationRegions.get(slot.id) }
+        ? {
+            activationRegionId:
+              deferredBossActivationRegions.get(slot.id).enter,
+            ...(deferredBossActivationRegions.get(slot.id).warp
+              ? {
+                  activationWarpRegionId:
+                    deferredBossActivationRegions.get(slot.id).warp,
+                }
+              : {}),
+          }
         : {}),
       ...(containedBossCombatRegions.has(slot.id)
         ? {

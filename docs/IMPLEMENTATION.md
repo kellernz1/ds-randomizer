@@ -102,8 +102,11 @@ files; source hashes prevent applying it to a different installation state.
   hostile only after the player attacks.
 - Second-visit Asylum enemies retain event 11810350's disabled/enabled
   lifecycle. The Stray Demon slot remains disabled until the player reaches the
-  lower arena region after the floor breaks, and the Taurus slot remains
-  disabled until the player reaches the bridge region beyond the fog wall.
+  lower arena region after the floor breaks. Before activation it is staged
+  well below the map, then warped to the lower arena and assigned a new home
+  point; even exceptionally tall replacements cannot clip through the upper
+  floor. The Taurus slot remains disabled until the player reaches the bridge
+  region beyond the fog wall.
 - Per-placement boss `NpcParam` rows inherit the destination encounter's team.
   Bosses whose vanilla PARAM is neutral, especially Gwyndolin, therefore
   become hostile and run their combat AI when moved to another arena.

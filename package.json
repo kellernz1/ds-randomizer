@@ -1,6 +1,6 @@
 {
   "name": "dsr-randomizer",
-  "version": "0.5.31",
+  "version": "0.5.32",
   "private": true,
   "description": "Configurable, deterministic randomizer for Dark Souls Remastered",
   "license": "GPL-3.0-only",
