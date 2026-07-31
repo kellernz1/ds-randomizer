@@ -136,6 +136,13 @@ test("real catalog produces deterministic enemies with visibly different models"
     new Set(ordinaryPlacements.map((placement) => placement.sourceSlot)).size,
     ordinaryPlacements.length,
   );
+  assert.ok(
+    ordinaryPlacements.every(
+      (placement) =>
+        placement.modelName !== "c3501" &&
+        placement.targetModelName !== "c3501",
+    ),
+  );
   for (const map of gameCatalog.maps) {
     const uniqueModels = new Set(
       ordinaryPlacements
@@ -267,7 +274,7 @@ test("real catalog produces deterministic enemies with visibly different models"
   )) {
     const slot = slots.get(placement.slot);
     const source = slots.get(placement.sourceSlot);
-    assert.ok(slot.teamType === 0 || slot.modelName === "c3501");
+    assert.equal(slot.teamType, 0);
     assert.notEqual(slot.modelName, "c0000");
     assert.equal(placement.targetModelName, source.modelName);
     assert.equal(placement.targetNpcParamId, source.npcParamId);
@@ -479,6 +486,7 @@ test("real catalog produces real boss and world-item placements", async () => {
   assert.equal(asylum.groundY, 197.61);
   assert.equal(asylum.groundZ, -23.1);
   assert.equal(asylum.combatRegionId, 1812996);
+  assert.equal(asylum.combatExitRegionId, 1812320);
   const stray = result.placements.bosses.find(
     (entry) => entry.slot === "m18_01_00_00:c2230_0000",
   );

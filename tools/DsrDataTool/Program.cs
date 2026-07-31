@@ -996,6 +996,11 @@ static PatchReport PatchEnemies(
                         ? combatRegion.GetInt32()
                         : null,
                 element.TryGetProperty(
+                        "combatExitRegionId", out var combatExitRegion) &&
+                    combatExitRegion.ValueKind == JsonValueKind.Number
+                        ? combatExitRegion.GetInt32()
+                        : null,
+                element.TryGetProperty(
                         "staticBridgeDragon", out var staticBridge) &&
                     staticBridge.ValueKind == JsonValueKind.True,
                 element.TryGetProperty("disableEntity", out var disableEntity) &&
@@ -1013,9 +1018,7 @@ static PatchReport PatchEnemies(
     foreach (var placement in regularEnemyPlacements)
     {
         if (!slotsById.TryGetValue(placement.SlotId, out var slot) ||
-            (slot.TeamType != 0 &&
-             slot.ModelName != "c3501" &&
-             !placement.LinkedEnemyGroup) ||
+            (slot.TeamType != 0 && !placement.LinkedEnemyGroup) ||
             slot.ModelName == "c0000" ||
             slot.NpcParamId != placement.SourceNpcParamId ||
             placement.TargetNpcParamId < 0 ||
@@ -1791,12 +1794,11 @@ static EMEVD.Instruction IfDeadInstruction(
 
 static EMEVD.Instruction IfCharacterInsideRegionInstruction(
     int conditionGroup,
-    int regionId,
-    bool inside = true)
+    int regionId)
 {
     var args = new byte[12];
     args[0] = unchecked((byte)(sbyte)conditionGroup);
-    args[1] = inside ? (byte)1 : (byte)0;
+    args[1] = 1;
     BitConverter.GetBytes(10_000).CopyTo(args, 4);
     BitConverter.GetBytes(regionId).CopyTo(args, 8);
     return new EMEVD.Instruction(3, 2, args);
@@ -2178,8 +2180,7 @@ static List<PatchedFile> PatchBossNames(
                     new object[] { placement.EntityId, 1 }));
                 combatEvent.Instructions.Add(IfCharacterInsideRegionInstruction(
                     0,
-                    placement.CombatRegionId.Value,
-                    inside: false));
+                    placement.CombatExitRegionId!.Value));
                 RegisterCustomEvent(combatEvent);
             }
             foreach (var placement in staticBridgeMapPlacements
@@ -2519,10 +2520,10 @@ static List<PatchedFile> PatchBossNames(
                         combatEvent.Instructions[4].ArgData, 4) != 1 ||
                     combatEvent.Instructions[5].Bank != 3 ||
                     combatEvent.Instructions[5].ID != 2 ||
-                    combatEvent.Instructions[5].ArgData[1] != 0 ||
+                    combatEvent.Instructions[5].ArgData[1] != 1 ||
                     BitConverter.ToInt32(
                         combatEvent.Instructions[5].ArgData, 8) !=
-                        placement.CombatRegionId ||
+                        placement.CombatExitRegionId ||
                     !IsInitialized(eventId))
                 {
                     throw new InvalidDataException(
@@ -4004,6 +4005,7 @@ record PatchPlacement(
     string Scaling,
     int? ActivationRegionId,
     int? CombatRegionId,
+    int? CombatExitRegionId,
     bool StaticBridgeDragon,
     bool DisableEntity,
     int? AwardItemLotId)

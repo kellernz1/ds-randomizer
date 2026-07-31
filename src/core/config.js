@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 
-export const RANDOMIZER_VERSION = "0.5.30";
+export const RANDOMIZER_VERSION = "0.5.31";
 
 export const defaultConfig = Object.freeze({
   version: RANDOMIZER_VERSION,

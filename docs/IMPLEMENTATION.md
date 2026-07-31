@@ -109,6 +109,7 @@ files; source hashes prevent applying it to a different installation state.
   become hostile and run their combat AI when moved to another arena.
 - New Londo's two Masses of Souls and their twelve overlapping Wisp entities
   are treated as two inseparable groups and exchange only with each other.
+  Other invisible `c3501` helper variants are excluded from ordinary slots.
   Arbitrary full-sized enemies can no longer occupy the low item tunnel, and
   Wisps can no longer turn into twelve stacked unrelated enemies.
 - Internal boss forms such as Super Smough are excluded from regular-enemy
@@ -119,9 +120,9 @@ files; source hashes prevent applying it to a different installation state.
   vanilla rooftop warp is removed, preventing pre-fight fall damage. A
   Moonlight Butterfly replacement has AI held while landing animation 3020
   completes, then resumes its native battle AI.
-- The first Asylum boss AI is contained to the vanilla arena region. Escaping
-  through the side door disables its AI and clears its target; returning to the
-  arena enables combat again.
+- The first Asylum boss AI is enabled by the vanilla arena-entry region and
+  disabled by the dedicated boss-room escape region. Crossing the side door
+  clears its target immediately; returning to the arena enables combat again.
 - Portable seed files contain deterministic options, version, catalog fingerprint, and verified placement hash
 - English-only launcher status, dependency, and failure messages
 - Cross-map enemy model declarations and validated MSB round trips

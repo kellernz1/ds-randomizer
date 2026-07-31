@@ -37,6 +37,9 @@ const linkedPartModels = new Set([
 ]);
 const internalHelperModels = new Set([
   "c3510", // Asylum transport crow
+  // Invisible Mass of Souls wisps are moved only by their explicit linked
+  // group; standalone variants must never occupy an ordinary enemy slot.
+  "c3501",
 ]);
 const MAX_UNIQUE_REGULAR_MODELS_PER_MAP = 30;
 const dragonNames = new Map([
@@ -91,8 +94,11 @@ const deferredBossActivationRegions = new Map([
 ]);
 const containedBossCombatRegions = new Map([
   // Keep the first Asylum boss visible in its encounter, but stop its AI and
-  // clear its target whenever the player escapes through the side door.
-  ["m18_01_00_00:c2232_0000", 1812996],
+  // clear its target at the vanilla boss-room escape trigger.
+  [
+    "m18_01_00_00:c2232_0000",
+    { enter: 1812996, exit: 1812320 },
+  ],
 ]);
 const safeBossSpawnPositions = new Map([
   // The Asylum Demon encounter floor. The vanilla entity begins above this
@@ -628,7 +634,7 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan) {
       !bossSlotIds.has(slot.id) &&
       !dragonPlan.reservedSlotIds.has(slot.id) &&
       !massOfSoulsPlan.reservedSlotIds.has(slot.id) &&
-      (slot.teamType === 0 || slot.modelName === "c3501") &&
+      slot.teamType === 0 &&
       slot.modelName !== "c0000" &&
       slot.modelName.startsWith("c") &&
       slot.npcParamId >= 0 &&
@@ -773,7 +779,10 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
         ? { activationRegionId: deferredBossActivationRegions.get(slot.id) }
         : {}),
       ...(containedBossCombatRegions.has(slot.id)
-        ? { combatRegionId: containedBossCombatRegions.get(slot.id) }
+        ? {
+            combatRegionId: containedBossCombatRegions.get(slot.id).enter,
+            combatExitRegionId: containedBossCombatRegions.get(slot.id).exit,
+          }
         : {}),
       ...bossGrounding(slot, catalog),
     });
