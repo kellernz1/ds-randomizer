@@ -637,6 +637,18 @@ test("real catalog produces real boss and world-item placements", async () => {
     ),
     "ordinary Anor Londo gargoyles must not enter the boss pool",
   );
+  assert.ok(
+    result.placements.bosses.every(
+      (placement) => placement.targetModelName !== "c3230",
+    ),
+    "Moonlight Butterfly must not leave its arena as a replacement boss",
+  );
+  assert.ok(
+    result.placements.bosses
+      .filter((placement) => placement.modelName === "c3230")
+      .every((placement) => placement.targetModelName !== "c3230"),
+    "the original Butterfly encounter must still be randomized",
+  );
   const taurus = result.placements.bosses.find(
     (entry) => entry.slot === "m10_01_00_00:c2250_0000",
   );

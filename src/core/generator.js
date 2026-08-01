@@ -787,6 +787,34 @@ const canonicalBossModel = new Map([
   ["c5271", "c5270"],
   ["c5351", "c5350"],
 ]);
+const nonPortableBossReplacementModels = new Set([
+  // Its battle AI follows arena-specific flight rails. Outside the original
+  // arena it can remain below the floor or permanently outside melee range.
+  "c3230", // Moonlight Butterfly
+]);
+
+function shuffledPortableBosses(rng, modelNames, archetypes) {
+  const portable = archetypes.filter(
+    (archetype) =>
+      !nonPortableBossReplacementModels.has(archetype.modelName),
+  );
+  if (portable.length === 0) return [...archetypes];
+  const candidates = [...portable];
+  while (candidates.length < archetypes.length) {
+    candidates.push(portable[rng.int(portable.length)]);
+  }
+  for (let attempt = 0; attempt < 128; attempt += 1) {
+    const shuffled = rng.shuffle(candidates);
+    if (shuffled.every((replacement, index) => {
+      const replacementModel =
+        canonicalBossModel.get(replacement.modelName) || replacement.modelName;
+      return replacementModel !== modelNames[index];
+    })) {
+      return shuffled;
+    }
+  }
+  throw new Error("Could not create a safe boss permutation.");
+}
 
 function randomizeExtractedBosses(config, catalog, dragonPlan) {
   if (!config.randomizeBosses || !catalog?.bossSlots?.length) return [];
@@ -818,7 +846,7 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
         modelName,
     ),
   );
-  const shuffled = shuffledWithoutFixedPoints(rng, archetypes);
+  const shuffled = shuffledPortableBosses(rng, modelNames, archetypes);
   const replacementsByModel = new Map();
   modelNames.forEach((modelName, index) =>
     replacementsByModel.set(modelName, shuffled[index]),
