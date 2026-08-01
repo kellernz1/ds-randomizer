@@ -127,6 +127,8 @@ test("real catalog produces deterministic enemies with visibly different models"
     ["c2670", 267000],
     ["c2680", 268000],
     ["c3330", 333000],
+    ["c2280", 228000],
+    ["c2300", 230000],
   ]);
   const ordinaryPlacements = first.placements.enemies.filter(
     (placement) =>
@@ -234,6 +236,19 @@ test("real catalog produces deterministic enemies with visibly different models"
   assert.ok(
     disabledHellkiteAuxiliaries.every(
       (placement) => placement.disableEntity && placement.groundY === -1000,
+    ),
+  );
+  const randomizedDrakes = first.placements.enemies.filter(
+    (placement) => placement.targetModelName === "c3520",
+  );
+  assert.ok(randomizedDrakes.length > 10);
+  assert.ok(
+    randomizedDrakes.every(
+      (placement) =>
+        placement.sourceSlot === "m16_00_00_00:c3520_0007" &&
+        placement.targetNpcParamId === 352002 &&
+        placement.targetThinkParamId === 352002 &&
+        placement.targetBattleGoalId === 352002,
     ),
   );
   for (const slotId of [
@@ -383,6 +398,29 @@ test("real catalog produces deterministic enemies with visibly different models"
         ["c3530", "c3531"].includes(placement.modelName) &&
         ["c3530", "c3531"].includes(placement.targetModelName),
     ),
+  );
+  assert.ok(
+    hydraPlacements
+      .filter((placement) => placement.targetModelName === "c3530")
+      .every((placement) => {
+        const target = slots.get(placement.slot);
+        return (
+          placement.targetNpcParamId === target.npcParamId &&
+          placement.targetThinkParamId === target.thinkParamId &&
+          placement.targetBattleGoalId === target.battleGoalId &&
+          placement.forceCombatActivation === true
+        );
+      }),
+  );
+  assert.ok(
+    ordinaryPlacements
+      .filter(
+        (placement) =>
+          ["c2280", "c2300"].includes(placement.targetModelName) &&
+          placement.entityId >= 0 &&
+          !placement.passiveUntilAttacked,
+      )
+      .every((placement) => placement.forceCombatActivation === true),
   );
   assert.ok(
     first.placements.enemies.filter(

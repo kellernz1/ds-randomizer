@@ -82,7 +82,10 @@ const activeReplacementThinkParams = new Map([
   ["c2670", 267000], // Male Ghost
   ["c2680", 268000], // Female Ghost
   ["c3330", 333000], // Pisaca
+  ["c2280", 228000], // Mushroom Child (non-ambush combat brain)
+  ["c2300", 230000], // Titanite Demon (portable combat brain)
 ]);
+const forceCombatActivationModels = new Set(["c2280", "c2300"]);
 const tangibleGhostModels = new Set(["c2670", "c2680"]);
 const asylumPassiveSlots = new Set([
   "m18_01_00_00:c2500_0000",
@@ -326,13 +329,11 @@ function buildDragonPlan(config, catalog) {
       const source = simpleSources[index];
       const targetBody = target.bodies[0];
       const shuffledSourceBody = source.bodies[0];
-      const sourceBody = target.id === "hellkite-bridge"
-        ? slots.find(
-            (slot) =>
-              slot.id === staticBridgeCombatSourceByModel.get(
-                shuffledSourceBody.modelName,
-              ),
-          ) ?? shuffledSourceBody
+      const portableCombatSourceId =
+        staticBridgeCombatSourceByModel.get(shuffledSourceBody.modelName);
+      const sourceBody = portableCombatSourceId
+        ? slots.find((slot) => slot.id === portableCombatSourceId) ??
+          shuffledSourceBody
         : shuffledSourceBody;
       result.reservedSlotIds.add(targetBody.id);
       result.enemies.push(enemyPlacement(
@@ -474,6 +475,12 @@ function buildDragonPlan(config, catalog) {
           {
             compatibility: "linked-hydra-group-permutation",
             linkedEnemyGroup: target.id,
+            // Hydra AI is authored for the geometry and trigger regions of its
+            // own lake. Retain the destination lake's combat parameters.
+            targetNpcParamId: targetBody.npcParamId,
+            targetThinkParamId: targetBody.thinkParamId,
+            targetBattleGoalId: targetBody.battleGoalId,
+            forceCombatActivation: targetBody.entityId >= 0,
           },
         ));
       });
@@ -747,6 +754,10 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan, bossPlan) {
             targetThinkParamId: replacementThinkParamId,
           }),
       ...(makeTangible ? { makeTangible: true } : {}),
+      ...(forceCombatActivationModels.has(replacement.modelName) &&
+      !passiveUntilAttacked && assignedEntityId >= 0
+        ? { forceCombatActivation: true }
+        : {}),
       ...(passiveUntilAttacked
         ? {
             passiveUntilAttacked: true,

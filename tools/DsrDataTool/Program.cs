@@ -974,6 +974,9 @@ static PatchReport PatchEnemies(
                     perception.ValueKind == JsonValueKind.True,
                 element.TryGetProperty("passiveUntilAttacked", out var passive) &&
                     passive.ValueKind == JsonValueKind.True,
+                element.TryGetProperty(
+                        "forceCombatActivation", out var forceCombat) &&
+                    forceCombat.ValueKind == JsonValueKind.True,
                 element.TryGetProperty("initialTeamType", out var initialTeamType) &&
                     initialTeamType.ValueKind == JsonValueKind.Number
                         ? initialTeamType.GetInt32()
@@ -1342,7 +1345,6 @@ static PatchReport PatchEnemies(
         gameDirectory,
         outputDirectory,
         catalog,
-        bossPlacements,
         allEnemyPlacements);
 
     // Enemy effects are normally spread across map-local SFX bundles. An enemy
@@ -1872,11 +1874,12 @@ static List<PatchedFile> PatchBossNames(
     string gameDirectory,
     string outputDirectory,
     GameCatalog catalog,
-    List<PatchPlacement> placements,
     List<PatchPlacement> allEnemyPlacements)
 {
     var results = new List<PatchedFile>();
-    var namedBossPlacements = placements
+    // Secondary bodies such as the second Bell Gargoyle live in the regular
+    // placement list even though their vanilla event still creates a boss bar.
+    var namedBossPlacements = allEnemyPlacements
         .Where(placement =>
             placement.EntityId >= 0 &&
             GetBossNameId(placement.TargetModelName).HasValue)
@@ -1906,6 +1909,14 @@ static List<PatchedFile> PatchBossNames(
             placement.DisableEntity &&
             placement.EntityId >= 0)
         .ToList();
+    var forceCombatPlacements = allEnemyPlacements
+        .Where(placement =>
+            placement.ForceCombatActivation &&
+            placement.EntityId >= 0 &&
+            !placement.PassiveUntilAttacked &&
+            !placement.ActivationRegionId.HasValue &&
+            !placement.CombatRegionId.HasValue)
+        .ToList();
     var slotsById = catalog.EnemySlots
         .Concat(catalog.BossSlots)
         .DistinctBy(slot => slot.Id)
@@ -1924,6 +1935,7 @@ static List<PatchedFile> PatchBossNames(
         .Concat(containedCombatPlacements.Select(placement => placement.MapId))
         .Concat(staticBridgePlacements.Select(placement => placement.MapId))
         .Concat(disabledPlacements.Select(placement => placement.MapId))
+        .Concat(forceCombatPlacements.Select(placement => placement.MapId))
         .Concat(modelSpecificPlacements.Select(placement => placement.MapId))
         .Distinct(StringComparer.Ordinal)
         .Order(StringComparer.Ordinal);
@@ -1947,6 +1959,9 @@ static List<PatchedFile> PatchBossNames(
         var disabledMapPlacements = disabledPlacements
             .Where(placement => placement.MapId == mapId)
             .ToList();
+        var forceCombatMapPlacements = forceCombatPlacements
+            .Where(placement => placement.MapId == mapId)
+            .ToList();
         var modelSpecificEntityIds = modelSpecificPlacements
             .Where(placement => placement.MapId == mapId)
             .Select(placement => placement.EntityId)
@@ -1956,14 +1971,9 @@ static List<PatchedFile> PatchBossNames(
             .ToDictionary(
                 group => group.Key,
                 group => GetBossNameId(group.First().TargetModelName)!.Value);
-        var bossSlotsById = catalog.BossSlots
-            .Concat(catalog.EnemySlots.Where(slot =>
-                IsBossModel(slot.ModelName) && IsPrimaryBossSlot(slot)))
-            .DistinctBy(slot => slot.Id)
-            .ToDictionary(slot => slot.Id);
         var randomizedEntityIds = mapGroup
             .Where(placement =>
-                bossSlotsById.TryGetValue(placement.SlotId, out var slot) &&
+                slotsById.TryGetValue(placement.SlotId, out var slot) &&
                 slot.ModelName != placement.TargetModelName)
             .Select(placement => placement.EntityId)
             .ToHashSet();
@@ -2113,7 +2123,8 @@ static List<PatchedFile> PatchBossNames(
             deferredMapPlacements.Count > 0 ||
             containedMapPlacements.Count > 0 ||
             staticBridgeMapPlacements.Count > 0 ||
-            disabledMapPlacements.Count > 0)
+            disabledMapPlacements.Count > 0 ||
+            forceCombatMapPlacements.Count > 0)
         {
             var constructor = emevd.Events.Single(entry => entry.ID == 0);
             var mapNumber = int.Parse(mapId.Substring(1, 2));
@@ -2336,6 +2347,29 @@ static List<PatchedFile> PatchBossNames(
                     new object[] { placement.EntityId, 0 }));
                 RegisterCustomEvent(disableEvent);
             }
+            foreach (var placement in forceCombatMapPlacements
+                         .OrderBy(placement => placement.EntityId))
+            {
+                var combatEvent = new EMEVD.Event(
+                    nextCustomEventId++,
+                    EMEVD.Event.RestBehaviorType.Restart);
+                combatEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    1,
+                    new object[] { placement.EntityId, 1 }));
+                combatEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    16,
+                    new object[] { placement.EntityId }));
+                combatEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    20,
+                    new object[] { placement.EntityId }));
+                combatEvent.Instructions.Add(IfDeadInstruction(
+                    0,
+                    placement.EntityId));
+                RegisterCustomEvent(combatEvent);
+            }
         }
         foreach (var entry in emevd.Events)
         {
@@ -2382,8 +2416,15 @@ static List<PatchedFile> PatchBossNames(
                             2004,
                             1,
                             new object[] { entityId, 1 }));
-                    index += 3;
-                    changed += 3;
+                    InsertEventInstruction(
+                        entry,
+                        index + 4,
+                        new EMEVD.Instruction(
+                            2004,
+                            20,
+                            new object[] { entityId }));
+                    index += 4;
+                    changed += 4;
                     continue;
                 }
                 var nextIsEnable =
@@ -2395,16 +2436,25 @@ static List<PatchedFile> PatchBossNames(
                         entry.Instructions[index + 1].ArgData, 0) == entityId &&
                     BitConverter.ToInt32(
                         entry.Instructions[index + 1].ArgData, 4) == 1;
-                if (nextIsEnable)
-                    continue;
+                if (!nextIsEnable)
+                {
+                    InsertEventInstruction(
+                        entry,
+                        index + 1,
+                        new EMEVD.Instruction(
+                            2004,
+                            1,
+                            new object[] { entityId, 1 }));
+                    changed++;
+                }
                 InsertEventInstruction(
                     entry,
-                    index + 1,
+                    index + 2,
                     new EMEVD.Instruction(
                         2004,
-                        1,
-                        new object[] { entityId, 1 }));
-                index++;
+                        20,
+                        new object[] { entityId }));
+                index += 2;
                 changed++;
             }
         }
@@ -2476,7 +2526,8 @@ static List<PatchedFile> PatchBossNames(
             deferredMapPlacements.Count > 0 ||
             containedMapPlacements.Count > 0 ||
             staticBridgeMapPlacements.Count > 0 ||
-            disabledMapPlacements.Count > 0)
+            disabledMapPlacements.Count > 0 ||
+            forceCombatMapPlacements.Count > 0)
         {
             var constructor = verification.Events.Single(entry => entry.ID == 0);
             var mapNumber = int.Parse(mapId.Substring(1, 2));
@@ -2696,6 +2747,35 @@ static List<PatchedFile> PatchBossNames(
                         $"{placement.SlotId}.");
                 }
             }
+            foreach (var placement in forceCombatMapPlacements
+                         .OrderBy(placement => placement.EntityId))
+            {
+                var eventId = nextCustomEventId++;
+                var combatEvent = verification.Events.Single(entry =>
+                    entry.ID == eventId);
+                if (combatEvent.RestBehavior !=
+                        EMEVD.Event.RestBehaviorType.Restart ||
+                    combatEvent.Instructions.Count != 4 ||
+                    combatEvent.Instructions[0].Bank != 2004 ||
+                    combatEvent.Instructions[0].ID != 1 ||
+                    BitConverter.ToInt32(
+                        combatEvent.Instructions[0].ArgData, 0) !=
+                        placement.EntityId ||
+                    BitConverter.ToInt32(
+                        combatEvent.Instructions[0].ArgData, 4) != 1 ||
+                    combatEvent.Instructions[1].Bank != 2004 ||
+                    combatEvent.Instructions[1].ID != 16 ||
+                    combatEvent.Instructions[2].Bank != 2004 ||
+                    combatEvent.Instructions[2].ID != 20 ||
+                    combatEvent.Instructions[3].Bank != 4 ||
+                    combatEvent.Instructions[3].ID != 0 ||
+                    !IsInitialized(eventId))
+                {
+                    throw new InvalidDataException(
+                        $"Forced combat activation did not persist for " +
+                        $"{placement.SlotId}.");
+                }
+            }
         }
         if (generallyPatchedEntityIds.Count > 0)
         {
@@ -2754,13 +2834,14 @@ static List<PatchedFile> PatchBossNames(
                     continue;
                 if (butterflyEntityIds.Contains(entityId))
                 {
-                    if (index + 3 >= entry.Instructions.Count)
+                    if (index + 4 >= entry.Instructions.Count)
                         throw new InvalidDataException(
                             $"Moonlight Butterfly landing sequence is incomplete " +
                             $"for entity {entityId} in {mapId}.");
                     var disable = entry.Instructions[index + 1];
                     var landing = entry.Instructions[index + 2];
                     var landingEnable = entry.Instructions[index + 3];
+                    var landingReplan = entry.Instructions[index + 4];
                     if (disable.Bank != 2004 ||
                         disable.ID != 1 ||
                         BitConverter.ToInt32(disable.ArgData, 0) != entityId ||
@@ -2776,21 +2857,32 @@ static List<PatchedFile> PatchBossNames(
                         BitConverter.ToInt32(
                             landingEnable.ArgData, 0) != entityId ||
                         BitConverter.ToInt32(
-                            landingEnable.ArgData, 4) != 1)
+                            landingEnable.ArgData, 4) != 1 ||
+                        landingReplan.Bank != 2004 ||
+                        landingReplan.ID != 20 ||
+                        BitConverter.ToInt32(
+                            landingReplan.ArgData, 0) != entityId)
                     {
                         throw new InvalidDataException(
                             $"Moonlight Butterfly did not start grounded for " +
                             $"entity {entityId} in {mapId}.");
                     }
-                    index += 3;
+                    index += 4;
                     continue;
                 }
                 var enable = entry.Instructions[index + 1];
+                var replan = index + 2 < entry.Instructions.Count
+                    ? entry.Instructions[index + 2]
+                    : null;
                 if (enable.Bank != 2004 ||
                     enable.ID != 1 ||
                     enable.ArgData.Length != 8 ||
                     BitConverter.ToInt32(enable.ArgData, 0) != entityId ||
-                    BitConverter.ToInt32(enable.ArgData, 4) != 1)
+                    BitConverter.ToInt32(enable.ArgData, 4) != 1 ||
+                    replan == null ||
+                    replan.Bank != 2004 ||
+                    replan.ID != 20 ||
+                    BitConverter.ToInt32(replan.ArgData, 0) != entityId)
                 {
                     throw new InvalidDataException(
                         $"Randomized boss AI activation did not persist for " +
@@ -4119,6 +4211,7 @@ record PatchPlacement(
     int? DestinationThinkParamId,
     bool PreserveDestinationPerception,
     bool PassiveUntilAttacked,
+    bool ForceCombatActivation,
     int? InitialTeamType,
     bool LinkedEnemyGroup,
     bool MakeTangible,
