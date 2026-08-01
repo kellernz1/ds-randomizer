@@ -214,11 +214,27 @@ test("real catalog produces deterministic enemies with visibly different models"
     [9.144, 9.55, -48.007],
   );
   assert.equal(hellkiteBridge.targetCollisionName, "h1113B1");
-  assert.equal(
-    first.placements.enemies.find(
-      (placement) => placement.slot === "m10_01_00_00:c3430_0001",
-    )?.disableEntity,
-    true,
+  const bridgeCombatSources = {
+    c3420: ["m16_00_00_00:c3420_0000", 342002, 342002],
+    c3520: ["m16_00_00_00:c3520_0007", 352002, 352002],
+  };
+  assert.deepEqual(
+    [
+      hellkiteBridge.sourceSlot,
+      hellkiteBridge.targetNpcParamId,
+      hellkiteBridge.targetThinkParamId,
+    ],
+    bridgeCombatSources[hellkiteBridge.targetModelName],
+  );
+  const disabledHellkiteAuxiliaries = first.placements.enemies.filter(
+    (placement) =>
+      placement.compatibility === "disabled-hellkite-flight-auxiliary",
+  );
+  assert.equal(disabledHellkiteAuxiliaries.length, 2);
+  assert.ok(
+    disabledHellkiteAuxiliaries.every(
+      (placement) => placement.disableEntity && placement.groundY === -1000,
+    ),
   );
   for (const slotId of [
     "m18_01_00_00:c2500_0000",
@@ -451,6 +467,15 @@ test("real catalog produces real boss and world-item placements", async () => {
   assert.deepEqual(
     result.placements.items.map((entry) => entry.sourceRowId).sort((a, b) => a - b),
     result.placements.items.map((entry) => entry.rowId).sort((a, b) => a - b),
+  );
+  const blueTearstoneLot = gameCatalog.worldItemLots.find(
+    (lot) => lot.rowId === 1_010_160,
+  );
+  assert.equal(blueTearstoneLot?.protectedProgression, false);
+  assert.notEqual(
+    result.placements.items.find((entry) => entry.rowId === 1_010_160)
+      ?.sourceRowId,
+    1_010_160,
   );
   assert.ok(
     result.placements.bosses.every(

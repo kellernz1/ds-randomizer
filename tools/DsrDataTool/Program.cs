@@ -485,7 +485,7 @@ static RandomizerParamData ReadRandomizerParamData(
                   itemId is >= 2000 and < 3000 ||
                   itemId == 384)) ||
                 (category == accessoryCategory &&
-                 itemId is 138 or 139 or 147 or 149);
+                 itemId is 138 or 139 or 149);
         });
     }
     var enemyDropLots = itemLotParam.Rows
@@ -533,7 +533,7 @@ static RandomizerParamData ReadRandomizerParamData(
                      entry.ItemId is >= 2000 and < 3000 ||
                      entry.ItemId == 384)) ||
                 (entry.Category == accessoryCategory &&
-                    entry.ItemId is 138 or 139 or 147 or 149));
+                    entry.ItemId is 138 or 139 or 149));
             var area = row.ID / 100_000 % 100;
             var block = row.ID / 10_000 % 10;
             var displayName = string.Join(" + ", entries.Select(entry =>

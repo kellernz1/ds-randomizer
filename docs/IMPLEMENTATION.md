@@ -119,7 +119,8 @@ files; source hashes prevent applying it to a different installation state.
 - Internal boss forms such as Super Smough are excluded from regular-enemy
   sources. The Hellkite bridge uses a full regular-dragon replacement at the
   bridge combat point and loading sector, removes the fly-in lifecycle and
-  disables its obsolete auxiliary body/tail entities.
+  disables and stages its obsolete auxiliary body/tail entities below the map.
+  Drake replacements use a ground-combat AI instead of a patrol-flight brain.
 - Both transport-crow models and all zero-parameter dummy character slots are
   protected from the ordinary enemy permutation.
 - The first Asylum boss starts directly on its actual encounter floor and its
@@ -166,9 +167,10 @@ dragon-only groups.
 
 World-item payload fields are copied while each destination keeps its
 acquisition flag. Progression protection recognizes key goods, embers, the
-Peculiar Doll, and progression rings. Those lots remain vanilla in protected
-mode. Shop rows preserve price, stock, flags, and conditions while only the
-item ID is redistributed within its item type.
+Peculiar Doll, and required progression rings. Ordinary accessories such as
+the Blue Tearstone Ring remain in the world-item permutation. Protected lots
+stay vanilla in protected mode. Shop rows preserve price, stock, flags, and
+conditions while only the item ID is redistributed within its item type.
 
 ## Known limitations
 

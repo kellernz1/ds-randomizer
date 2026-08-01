@@ -49,6 +49,10 @@ const staticBridgeDragonSpawn = Object.freeze({
   z: -48.007,
   collisionName: "h1113B1",
 });
+const staticBridgeCombatSourceByModel = new Map([
+  ["c3420", "m16_00_00_00:c3420_0000"],
+  ["c3520", "m16_00_00_00:c3520_0007"],
+]);
 const dragonNames = new Map([
   ["c2730", "Crossbreed Priscilla"],
   ["c3420", "Undead Dragon"],
@@ -321,7 +325,15 @@ function buildDragonPlan(config, catalog) {
     simpleRegularDragons.forEach((target, index) => {
       const source = simpleSources[index];
       const targetBody = target.bodies[0];
-      const sourceBody = source.bodies[0];
+      const shuffledSourceBody = source.bodies[0];
+      const sourceBody = target.id === "hellkite-bridge"
+        ? slots.find(
+            (slot) =>
+              slot.id === staticBridgeCombatSourceByModel.get(
+                shuffledSourceBody.modelName,
+              ),
+          ) ?? shuffledSourceBody
+        : shuffledSourceBody;
       result.reservedSlotIds.add(targetBody.id);
       result.enemies.push(enemyPlacement(
         config,
@@ -358,6 +370,9 @@ function buildDragonPlan(config, catalog) {
           compatibility: "disabled-hellkite-flight-auxiliary",
           linkedDragonGroup: "hellkite-bridge",
           disableEntity: true,
+          groundX: auxiliary.position.x,
+          groundY: -1000,
+          groundZ: auxiliary.position.z,
         },
       ));
     }
