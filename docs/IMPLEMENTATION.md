@@ -118,8 +118,10 @@ files; source hashes prevent applying it to a different installation state.
   Wisps can no longer turn into twelve stacked unrelated enemies.
 - Internal boss forms such as Super Smough are excluded from regular-enemy
   sources. The Hellkite bridge uses a full regular-dragon replacement at the
-  bridge position, removes the fly-in lifecycle and disables its obsolete
-  auxiliary body/tail entities.
+  bridge combat point and loading sector, removes the fly-in lifecycle and
+  disables its obsolete auxiliary body/tail entities.
+- Both transport-crow models and all zero-parameter dummy character slots are
+  protected from the ordinary enemy permutation.
 - The first Asylum boss starts directly on its actual encounter floor and its
   vanilla rooftop warp is removed, preventing pre-fight fall damage. A
   Moonlight Butterfly replacement has AI held while landing animation 3020

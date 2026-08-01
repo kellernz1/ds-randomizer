@@ -139,8 +139,12 @@ test("real catalog produces deterministic enemies with visibly different models"
   assert.ok(
     ordinaryPlacements.every(
       (placement) =>
-        placement.modelName !== "c3501" &&
-        placement.targetModelName !== "c3501",
+        !["c3501", "c3510", "c3511"].includes(placement.modelName) &&
+        !["c3501", "c3510", "c3511"].includes(placement.targetModelName) &&
+        slots.get(placement.slot).npcParamId > 0 &&
+        slots.get(placement.sourceSlot).npcParamId > 0 &&
+        slots.get(placement.slot).thinkParamId > 0 &&
+        slots.get(placement.sourceSlot).thinkParamId > 0,
     ),
   );
   for (const map of gameCatalog.maps) {
@@ -205,6 +209,11 @@ test("real catalog produces deterministic enemies with visibly different models"
   assert.notEqual(hellkiteBridge.targetModelName, "c3430");
   assert.ok(["c3420", "c3520"].includes(hellkiteBridge.targetModelName));
   assert.equal(hellkiteBridge.staticBridgeDragon, true);
+  assert.deepEqual(
+    [hellkiteBridge.groundX, hellkiteBridge.groundY, hellkiteBridge.groundZ],
+    [9.144, 9.55, -48.007],
+  );
+  assert.equal(hellkiteBridge.targetCollisionName, "h1113B1");
   assert.equal(
     first.placements.enemies.find(
       (placement) => placement.slot === "m10_01_00_00:c3430_0001",

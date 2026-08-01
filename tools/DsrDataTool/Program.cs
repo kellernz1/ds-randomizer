@@ -959,6 +959,11 @@ static PatchReport PatchEnemies(
                     groundZ.ValueKind == JsonValueKind.Number
                         ? groundZ.GetSingle()
                         : null,
+                element.TryGetProperty(
+                        "targetCollisionName", out var targetCollisionName) &&
+                    targetCollisionName.ValueKind == JsonValueKind.String
+                        ? targetCollisionName.GetString()
+                        : null,
                 element.TryGetProperty("baseThinkParamId", out var baseThinkParam) &&
                     baseThinkParam.ValueKind == JsonValueKind.Number
                         ? baseThinkParam.GetInt32()
@@ -1160,6 +1165,8 @@ static PatchReport PatchEnemies(
                 enemy.NPCParamID == placement.EffectiveNpcParamId &&
                 enemy.ThinkParamID == placement.TargetThinkParamId &&
                 (placement.EntityId < 0 || enemy.EntityID == placement.EntityId) &&
+                (string.IsNullOrWhiteSpace(placement.TargetCollisionName) ||
+                 enemy.CollisionName == placement.TargetCollisionName) &&
                 !placement.GroundX.HasValue &&
                 !placement.GroundY.HasValue &&
                 !placement.GroundZ.HasValue)
@@ -1183,6 +1190,8 @@ static PatchReport PatchEnemies(
                         $"Cannot replace existing entity ID for {placement.SlotId}.");
                 enemy.EntityID = placement.EntityId;
             }
+            if (!string.IsNullOrWhiteSpace(placement.TargetCollisionName))
+                enemy.CollisionName = placement.TargetCollisionName;
             if (placement.GroundX.HasValue ||
                 placement.GroundY.HasValue ||
                 placement.GroundZ.HasValue)
@@ -1270,6 +1279,7 @@ static PatchReport PatchEnemies(
                 placement?.GroundX,
                 placement?.GroundY,
                 placement?.GroundZ,
+                placement?.TargetCollisionName,
                 placement?.EntityId >= 0
                     ? placement.EntityId
                     : null);
@@ -1303,7 +1313,9 @@ static PatchReport PatchEnemies(
                 (placement.GroundY.HasValue &&
                  verifiedEnemy.Position.Y != placement.GroundY.Value) ||
                 (placement.GroundZ.HasValue &&
-                 verifiedEnemy.Position.Z != placement.GroundZ.Value))
+                 verifiedEnemy.Position.Z != placement.GroundZ.Value) ||
+                (!string.IsNullOrWhiteSpace(placement.TargetCollisionName) &&
+                 verifiedEnemy.CollisionName != placement.TargetCollisionName))
                 throw new InvalidDataException(
                     $"Enemy placement did not persist: {placement.SlotId}.");
             var original = originalEnemies[enemyName];
@@ -3703,6 +3715,7 @@ static void AssertSpawnUnchanged(
     float? expectedX = null,
     float? expectedY = null,
     float? expectedZ = null,
+    string? expectedCollisionName = null,
     int? expectedEntityId = null)
 {
     if (verified.Position.X != (expectedX ?? original.PositionX) ||
@@ -3717,7 +3730,8 @@ static void AssertSpawnUnchanged(
         verified.EntityID != (expectedEntityId ?? original.EntityId) ||
         verified.TalkID != original.TalkId ||
         verified.CharaInitID != original.CharaInitId ||
-        verified.CollisionName != original.CollisionName ||
+        verified.CollisionName !=
+            (expectedCollisionName ?? original.CollisionName) ||
         string.Join("\u001f", verified.MovePointNames) != original.MovePoints ||
         verified.PointMoveType != original.PointMoveType ||
         verified.PlatoonID != original.PlatoonId)
@@ -4104,6 +4118,7 @@ record PatchPlacement(
     float? GroundX,
     float? GroundY,
     float? GroundZ,
+    string? TargetCollisionName,
     int? BaseThinkParamId,
     int? DestinationThinkParamId,
     bool PreserveDestinationPerception,

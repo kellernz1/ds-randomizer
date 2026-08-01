@@ -37,11 +37,18 @@ const linkedPartModels = new Set([
 ]);
 const internalHelperModels = new Set([
   "c3510", // Asylum transport crow
+  "c3511", // Alternate transport-crow dummy
   // Invisible Mass of Souls wisps are moved only by their explicit linked
   // group; standalone variants must never occupy an ordinary enemy slot.
   "c3501",
 ]);
 const MAX_ENEMY_MODELS_PER_MAP = 30;
+const staticBridgeDragonSpawn = Object.freeze({
+  x: 9.144,
+  y: 9.55,
+  z: -48.007,
+  collisionName: "h1113B1",
+});
 const dragonNames = new Map([
   ["c2730", "Crossbreed Priscilla"],
   ["c3420", "Undead Dragon"],
@@ -326,9 +333,10 @@ function buildDragonPlan(config, catalog) {
               compatibility: "static-bridge-dragon-permutation",
               linkedDragonGroup: target.id,
               staticBridgeDragon: true,
-              groundX: targetBody.position.x,
-              groundY: targetBody.position.y,
-              groundZ: targetBody.position.z,
+              groundX: staticBridgeDragonSpawn.x,
+              groundY: staticBridgeDragonSpawn.y,
+              groundZ: staticBridgeDragonSpawn.z,
+              targetCollisionName: staticBridgeDragonSpawn.collisionName,
               ...(config.randomizeEnemyDrops
                 ? { awardItemLotId: 34_310_000 }
                 : {}),
@@ -644,8 +652,8 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan, bossPlan) {
       slot.teamType === 0 &&
       slot.modelName !== "c0000" &&
       slot.modelName.startsWith("c") &&
-      slot.npcParamId >= 0 &&
-      slot.thinkParamId >= 0 &&
+      slot.npcParamId > 0 &&
+      slot.thinkParamId > 0 &&
       slot.baseHp > 0 &&
       (!bossFamilyModels.has(slot.modelName) ||
         nonBossEncounterSlots.has(slot.id)) &&
