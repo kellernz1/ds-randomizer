@@ -928,6 +928,10 @@ static PatchReport PatchEnemies(
                     ?? throw new InvalidDataException("Placement has no slot."),
                 element.GetProperty("map").GetString()
                     ?? throw new InvalidDataException("Placement has no map."),
+                element.TryGetProperty("sourceSlot", out var sourceSlot) &&
+                    sourceSlot.ValueKind == JsonValueKind.String
+                        ? sourceSlot.GetString()
+                        : null,
                 element.TryGetProperty("targetModelName", out var modelName)
                     ? modelName.GetString()
                         ?? throw new InvalidDataException("Placement has no target model.")
@@ -954,6 +958,10 @@ static PatchReport PatchEnemies(
                 element.TryGetProperty("groundZ", out var groundZ) &&
                     groundZ.ValueKind == JsonValueKind.Number
                         ? groundZ.GetSingle()
+                        : null,
+                element.TryGetProperty("groundRotationY", out var groundRotationY) &&
+                    groundRotationY.ValueKind == JsonValueKind.Number
+                        ? groundRotationY.GetSingle()
                         : null,
                 element.TryGetProperty(
                         "targetCollisionName", out var targetCollisionName) &&
@@ -1014,6 +1022,11 @@ static PatchReport PatchEnemies(
                     staticBridge.ValueKind == JsonValueKind.True,
                 element.TryGetProperty("disableEntity", out var disableEntity) &&
                     disableEntity.ValueKind == JsonValueKind.True,
+                element.TryGetProperty("syntheticEnemy", out var syntheticEnemy) &&
+                    syntheticEnemy.ValueKind == JsonValueKind.True,
+                element.TryGetProperty(
+                        "portableHydraGroup", out var portableHydraGroup) &&
+                    portableHydraGroup.ValueKind == JsonValueKind.True,
                 element.TryGetProperty("awardItemLotId", out var awardItemLot) &&
                     awardItemLot.ValueKind == JsonValueKind.Number
                         ? awardItemLot.GetInt32()
@@ -1026,10 +1039,24 @@ static PatchReport PatchEnemies(
     var slotsById = catalog.EnemySlots.ToDictionary(slot => slot.Id);
     foreach (var placement in regularEnemyPlacements)
     {
-        if (!slotsById.TryGetValue(placement.SlotId, out var slot) ||
-            (slot.TeamType != 0 && !placement.LinkedEnemyGroup) ||
-            slot.ModelName == "c0000" ||
-            slot.NpcParamId != placement.SourceNpcParamId ||
+        var validSyntheticHydraHead =
+            placement.SyntheticEnemy &&
+            placement.PortableHydraGroup &&
+            placement.TargetModelName == "c3531" &&
+            placement.EntityId >= 0 &&
+            placement.SourceSlotId != null &&
+            slotsById.TryGetValue(placement.SourceSlotId, out var sourceSlot) &&
+            sourceSlot.ModelName == "c3531";
+        var hasTargetSlot = slotsById.TryGetValue(
+            placement.SlotId,
+            out var targetSlot);
+        if ((!hasTargetSlot && !validSyntheticHydraHead) ||
+            (placement.SyntheticEnemy && !validSyntheticHydraHead) ||
+            (hasTargetSlot && targetSlot!.TeamType != 0 &&
+             !placement.LinkedEnemyGroup) ||
+            (hasTargetSlot && targetSlot!.ModelName == "c0000") ||
+            (hasTargetSlot &&
+             targetSlot!.NpcParamId != placement.SourceNpcParamId) ||
             placement.TargetNpcParamId < 0 ||
             placement.TargetThinkParamId < 0 ||
             (placement.PassiveUntilAttacked &&
@@ -1138,6 +1165,44 @@ static PatchReport PatchEnemies(
         }
 
         var msb = MSB1.Read(sourcePath);
+        foreach (var placement in mapGroup.Where(entry => entry.SyntheticEnemy))
+        {
+            if (placement.SourceSlotId == null ||
+                !slotsById.TryGetValue(placement.SourceSlotId, out var sourceSlot))
+                throw new InvalidDataException(
+                    $"Synthetic enemy source is missing: {placement.SlotId}.");
+            var sourceRelativePath = $"map/MapStudio/{sourceSlot.MapId}.msb";
+            var sourceMapRecord = catalog.SourceFiles.SingleOrDefault(source =>
+                source.Path.Equals(
+                    sourceRelativePath,
+                    StringComparison.OrdinalIgnoreCase))
+                ?? throw new InvalidDataException(
+                    $"Synthetic source map is missing: {sourceSlot.MapId}.");
+            var sourceMapPath = ResolveGamePath(gameDirectory, sourceRelativePath);
+            AssertHash(
+                sourceMapPath,
+                sourceMapRecord.Sha256,
+                $"Synthetic source map {sourceSlot.MapId} changed after extraction");
+            var sourceMsb = MSB1.Read(sourceMapPath);
+            var sourceEnemy = sourceMsb.Parts.Enemies
+                .Cast<MSB1.Part.EnemyBase>()
+                .Concat(sourceMsb.Parts.DummyEnemies)
+                .SingleOrDefault(enemy => enemy.Name == sourceSlot.Name)
+                ?? throw new InvalidDataException(
+                    $"Synthetic source slot was not found: {placement.SourceSlotId}.");
+            var clone = sourceEnemy.DeepCopy();
+            var separator = placement.SlotId.IndexOf(':');
+            clone.Name = separator >= 0
+                ? placement.SlotId[(separator + 1)..]
+                : placement.SlotId;
+            if (clone is MSB1.Part.Enemy enemyClone)
+                msb.Parts.Enemies.Add(enemyClone);
+            else if (clone is MSB1.Part.DummyEnemy dummyClone)
+                msb.Parts.DummyEnemies.Add(dummyClone);
+            else
+                throw new InvalidDataException(
+                    $"Unsupported synthetic enemy type: {sourceEnemy.GetType().Name}.");
+        }
         var allMapEnemies = msb.Parts.Enemies
             .Cast<MSB1.Part.EnemyBase>()
             .Concat(msb.Parts.DummyEnemies);
@@ -1184,7 +1249,9 @@ static PatchReport PatchEnemies(
             enemy.ThinkParamID = placement.TargetThinkParamId;
             if (placement.EntityId >= 0)
             {
-                if (enemy.EntityID >= 0 && enemy.EntityID != placement.EntityId)
+                if (enemy.EntityID >= 0 &&
+                    enemy.EntityID != placement.EntityId &&
+                    !placement.PortableHydraGroup)
                     throw new InvalidDataException(
                         $"Cannot replace existing entity ID for {placement.SlotId}.");
                 enemy.EntityID = placement.EntityId;
@@ -1198,6 +1265,11 @@ static PatchReport PatchEnemies(
                     placement.GroundX ?? enemy.Position.X,
                     placement.GroundY ?? enemy.Position.Y,
                     placement.GroundZ ?? enemy.Position.Z);
+            if (placement.GroundRotationY.HasValue)
+                enemy.Rotation = new System.Numerics.Vector3(
+                    enemy.Rotation.X,
+                    placement.GroundRotationY.Value,
+                    enemy.Rotation.Z);
             if (modelChanged ||
                 placement.GroundX.HasValue ||
                 placement.GroundY.HasValue ||
@@ -1278,6 +1350,7 @@ static PatchReport PatchEnemies(
                 placement?.GroundX,
                 placement?.GroundY,
                 placement?.GroundZ,
+                placement?.GroundRotationY,
                 placement?.TargetCollisionName,
                 placement?.EntityId >= 0
                     ? placement.EntityId
@@ -1313,6 +1386,8 @@ static PatchReport PatchEnemies(
                  verifiedEnemy.Position.Y != placement.GroundY.Value) ||
                 (placement.GroundZ.HasValue &&
                  verifiedEnemy.Position.Z != placement.GroundZ.Value) ||
+                (placement.GroundRotationY.HasValue &&
+                 verifiedEnemy.Rotation.Y != placement.GroundRotationY.Value) ||
                 (!string.IsNullOrWhiteSpace(placement.TargetCollisionName) &&
                  verifiedEnemy.CollisionName != placement.TargetCollisionName))
                 throw new InvalidDataException(
@@ -3834,6 +3909,7 @@ static void AssertSpawnUnchanged(
     float? expectedX = null,
     float? expectedY = null,
     float? expectedZ = null,
+    float? expectedRotationY = null,
     string? expectedCollisionName = null,
     int? expectedEntityId = null)
 {
@@ -3841,7 +3917,7 @@ static void AssertSpawnUnchanged(
         verified.Position.Y != (expectedY ?? original.PositionY) ||
         verified.Position.Z != (expectedZ ?? original.PositionZ) ||
         verified.Rotation.X != original.RotationX ||
-        verified.Rotation.Y != original.RotationY ||
+        verified.Rotation.Y != (expectedRotationY ?? original.RotationY) ||
         verified.Rotation.Z != original.RotationZ ||
         verified.Scale.X != original.ScaleX ||
         verified.Scale.Y != original.ScaleY ||
@@ -4227,6 +4303,7 @@ record ScanError(string Path, string Stage, string Message);
 record PatchPlacement(
     string SlotId,
     string MapId,
+    string? SourceSlotId,
     string TargetModelName,
     int TargetNpcParamId,
     int TargetThinkParamId,
@@ -4237,6 +4314,7 @@ record PatchPlacement(
     float? GroundX,
     float? GroundY,
     float? GroundZ,
+    float? GroundRotationY,
     string? TargetCollisionName,
     int? BaseThinkParamId,
     int? DestinationThinkParamId,
@@ -4253,6 +4331,8 @@ record PatchPlacement(
     int? CombatExitRegionId,
     bool StaticBridgeDragon,
     bool DisableEntity,
+    bool SyntheticEnemy,
+    bool PortableHydraGroup,
     int? AwardItemLotId)
 {
     public int EffectiveNpcParamId => ScaledNpcParamId ?? TargetNpcParamId;

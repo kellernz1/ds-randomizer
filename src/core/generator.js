@@ -252,6 +252,17 @@ function buildDragonPlan(config, catalog) {
     (body) => body !== hellkitePrimary,
   );
   const hellkiteParts = byModel("c3431", "m10_01_00_00");
+  const hydras = ["m12_00_00_00", "m12_00_00_01", "m13_02_00_00"]
+    .map((mapId) =>
+      unit(
+        `hydra-${mapId}`,
+        byModel("c3530", mapId),
+        byModel("c3531", mapId),
+      ))
+    .filter((entry) => entry.bodies.length && entry.parts.length === 7);
+  const hydraHeadTemplate = byModel("c3531", "m12_00_00_00")
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const isHydra = (entry) => entry.id.startsWith("hydra-");
   const simpleRegularDragons = [
     ...(hellkitePrimary
       ? [unit("hellkite-bridge", [hellkitePrimary])]
@@ -261,6 +272,7 @@ function buildDragonPlan(config, catalog) {
       byModel("c3420", "m16_00_00_00"),
     ),
     ...byModel("c3520").map((body) => unit(`drake-${body.id}`, [body])),
+    ...hydras,
   ].filter((entry) => entry.bodies.length > 0);
   const boundingDragons = byModel("c3421", "m14_01_00_00").map((body) =>
     unit(`bounding-${body.id}`, [body]));
@@ -335,13 +347,51 @@ function buildDragonPlan(config, catalog) {
         ? slots.find((slot) => slot.id === portableCombatSourceId) ??
           shuffledSourceBody
         : shuffledSourceBody;
+      const targetIsHydra = isHydra(target);
+      const sourceIsHydra = isHydra(source);
+      const targetPosition = target.id === "hellkite-bridge"
+        ? staticBridgeDragonSpawn
+        : targetBody.position;
+      const portableHydraEntityBase = 9_650_000 + index * 10;
       result.reservedSlotIds.add(targetBody.id);
       result.enemies.push(enemyPlacement(
         config,
         targetBody,
         sourceBody,
         9_150_000 + enemyIndex++,
-        target.id === "hellkite-bridge"
+        sourceIsHydra && !targetIsHydra
+          ? {
+              compatibility: "portable-hydra-dragon-permutation",
+              linkedDragonGroup: target.id,
+              portableHydraGroup: true,
+              entityId: portableHydraEntityBase,
+              groundX: targetPosition.x,
+              groundY: targetPosition.y,
+              groundZ: targetPosition.z,
+              targetCollisionName: targetBody.collisionName,
+              forceCombatActivation: true,
+              ...(target.id === "hellkite-bridge"
+                ? {
+                    staticBridgeDragon: true,
+                    ...(config.randomizeEnemyDrops
+                      ? { awardItemLotId: 34_310_000 }
+                      : {}),
+                  }
+                : {}),
+            }
+          : sourceIsHydra && targetIsHydra
+          ? {
+              compatibility: "linked-hydra-dragon-permutation",
+              linkedDragonGroup: target.id,
+              linkedEnemyGroup: target.id,
+              // Each lake has its own authored combat distances and goals.
+              // Keep those destination parameters when Hydras swap lakes.
+              targetNpcParamId: targetBody.npcParamId,
+              targetThinkParamId: targetBody.thinkParamId,
+              targetBattleGoalId: targetBody.battleGoalId,
+              forceCombatActivation: targetBody.entityId >= 0,
+            }
+          : target.id === "hellkite-bridge"
           ? {
               compatibility: "static-bridge-dragon-permutation",
               linkedDragonGroup: target.id,
@@ -359,6 +409,105 @@ function buildDragonPlan(config, catalog) {
               linkedDragonGroup: target.id,
             },
       ));
+
+      if (targetIsHydra) {
+        target.parts.forEach((targetPart, partIndex) => {
+          result.reservedSlotIds.add(targetPart.id);
+          if (sourceIsHydra) {
+            const sourcePart = source.parts[partIndex];
+            result.enemies.push(enemyPlacement(
+              config,
+              targetPart,
+              sourcePart,
+              9_150_000 + enemyIndex++,
+              {
+                compatibility: "linked-hydra-dragon-permutation",
+                linkedDragonGroup: target.id,
+                linkedEnemyGroup: target.id,
+                targetNpcParamId: targetPart.npcParamId,
+                targetThinkParamId: targetPart.thinkParamId,
+                targetBattleGoalId: targetPart.battleGoalId,
+                forceCombatActivation: targetPart.entityId >= 0,
+              },
+            ));
+          } else {
+            result.enemies.push(enemyPlacement(
+              config,
+              targetPart,
+              targetPart,
+              null,
+              {
+                compatibility: "disabled-native-hydra-head",
+                linkedDragonGroup: target.id,
+                linkedEnemyGroup: target.id,
+                disableEntity: true,
+                groundX: targetPart.position.x,
+                groundY: -1000,
+                groundZ: targetPart.position.z,
+              },
+            ));
+          }
+        });
+      } else if (sourceIsHydra) {
+        const templateBody = hydras[0].bodies[0];
+        source.parts.forEach((sourcePart, partIndex) => {
+          const templatePart = hydraHeadTemplate[partIndex];
+          const offset = {
+            x: templatePart.position.x - templateBody.position.x,
+            y: templatePart.position.y - templateBody.position.y,
+            z: templatePart.position.z - templateBody.position.z,
+          };
+          const yawDelta =
+            (targetBody.rotation.y - templateBody.rotation.y) * Math.PI / 180;
+          const rotatedX =
+            offset.x * Math.cos(yawDelta) - offset.z * Math.sin(yawDelta);
+          const rotatedZ =
+            offset.x * Math.sin(yawDelta) + offset.z * Math.cos(yawDelta);
+          const syntheticName = `dsr_hydra_${index}_${partIndex}`;
+          result.enemies.push({
+            ...enemyPlacement(
+              config,
+              {
+                ...templatePart,
+                id: `${targetBody.mapId}:${syntheticName}`,
+                mapId: targetBody.mapId,
+                name: syntheticName,
+                entityId: portableHydraEntityBase + partIndex + 1,
+                collisionName: targetBody.collisionName,
+                position: {
+                  x: targetPosition.x + rotatedX,
+                  y: targetPosition.y + offset.y,
+                  z: targetPosition.z + rotatedZ,
+                },
+                rotation: {
+                  ...templatePart.rotation,
+                  y: targetBody.rotation.y +
+                    (templatePart.rotation.y - templateBody.rotation.y),
+                },
+              },
+              sourcePart,
+              9_150_000 + enemyIndex++,
+              {
+                compatibility: "synthetic-linked-hydra-head",
+                linkedDragonGroup: target.id,
+                linkedEnemyGroup: target.id,
+                portableHydraGroup: true,
+                syntheticEnemy: true,
+                entityId: portableHydraEntityBase + partIndex + 1,
+                groundX: targetPosition.x + rotatedX,
+                groundY: targetPosition.y + offset.y,
+                groundZ: targetPosition.z + rotatedZ,
+                groundRotationY: targetBody.rotation.y +
+                  (templatePart.rotation.y - templateBody.rotation.y),
+                targetCollisionName: targetBody.collisionName,
+                forceCombatActivation: true,
+              },
+            ),
+            sourceSlot: hydraHeadTemplate[partIndex].id,
+            sourceMap: hydraHeadTemplate[partIndex].mapId,
+          });
+        });
+      }
     });
     for (const auxiliary of [...hellkiteAuxiliary, ...hellkiteParts]) {
       result.reservedSlotIds.add(auxiliary.id);
@@ -448,54 +597,6 @@ function buildDragonPlan(config, catalog) {
           linkedDragonGroup: target.id,
         },
       ));
-    });
-  }
-
-  if (config.randomizeEnemies) {
-    const hydras = ["m12_00_00_00", "m12_00_00_01", "m13_02_00_00"]
-      .map((mapId) =>
-        unit(
-          `hydra-${mapId}`,
-          byModel("c3530", mapId),
-          byModel("c3531", mapId),
-        ))
-      .filter((entry) => entry.bodies.length && entry.parts.length);
-    const hydraSources = shuffledWithoutFixedPoints(rng, hydras);
-    hydras.forEach((target, unitIndex) => {
-      const source = hydraSources[unitIndex];
-      [...target.bodies, ...target.parts].forEach((slot) =>
-        result.reservedSlotIds.add(slot.id),
-      );
-      target.bodies.forEach((targetBody, index) => {
-        result.enemies.push(enemyPlacement(
-          config,
-          targetBody,
-          source.bodies[index],
-          9_150_000 + enemyIndex++,
-          {
-            compatibility: "linked-hydra-group-permutation",
-            linkedEnemyGroup: target.id,
-            // Hydra AI is authored for the geometry and trigger regions of its
-            // own lake. Retain the destination lake's combat parameters.
-            targetNpcParamId: targetBody.npcParamId,
-            targetThinkParamId: targetBody.thinkParamId,
-            targetBattleGoalId: targetBody.battleGoalId,
-            forceCombatActivation: targetBody.entityId >= 0,
-          },
-        ));
-      });
-      target.parts.forEach((targetPart, index) => {
-        result.enemies.push(enemyPlacement(
-          config,
-          targetPart,
-          source.parts[index],
-          9_150_000 + enemyIndex++,
-          {
-            compatibility: "linked-hydra-part-permutation",
-            linkedEnemyGroup: target.id,
-          },
-        ));
-      });
     });
   }
 

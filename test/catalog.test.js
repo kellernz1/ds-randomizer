@@ -112,8 +112,10 @@ test("real catalog produces deterministic enemies with visibly different models"
         "static-bridge-dragon-permutation",
         "disabled-hellkite-flight-auxiliary",
         "linked-dragon-part-permutation",
-        "linked-hydra-group-permutation",
-        "linked-hydra-part-permutation",
+        "portable-hydra-dragon-permutation",
+        "synthetic-linked-hydra-head",
+        "linked-hydra-dragon-permutation",
+        "disabled-native-hydra-head",
         "linked-mass-of-souls-group-permutation",
         "grounded-linked-boss-auxiliary",
         "linked-boss-part-permutation",
@@ -369,7 +371,8 @@ test("real catalog produces deterministic enemies with visibly different models"
   );
   const dragonModels = new Set([
     "c2730", "c2731", "c3420", "c3421", "c3422", "c3430", "c3431",
-    "c3520", "c4510", "c4511", "c5260", "c5261", "c5290", "c5291",
+    "c3520", "c3530", "c3531", "c4510", "c4511", "c5260", "c5261",
+    "c5290", "c5291",
   ]);
   assert.ok(
     first.placements.enemies
@@ -388,30 +391,37 @@ test("real catalog produces deterministic enemies with visibly different models"
     ),
     "Super Smough must never enter the regular-enemy pool",
   );
-  const hydraPlacements = first.placements.enemies.filter(
-    (placement) => placement.linkedEnemyGroup?.startsWith("hydra-"),
+  const portableHydraBodies = first.placements.enemies.filter(
+    (placement) => placement.compatibility ===
+      "portable-hydra-dragon-permutation",
   );
-  assert.equal(hydraPlacements.length, 24);
-  assert.ok(
-    hydraPlacements.every(
+  assert.ok(portableHydraBodies.length > 0);
+  for (const body of portableHydraBodies) {
+    const heads = first.placements.enemies.filter(
       (placement) =>
-        ["c3530", "c3531"].includes(placement.modelName) &&
-        ["c3530", "c3531"].includes(placement.targetModelName),
-    ),
+        placement.linkedDragonGroup === body.linkedDragonGroup &&
+        placement.compatibility === "synthetic-linked-hydra-head",
+    );
+    assert.equal(heads.length, 7);
+    assert.ok(heads.every((head) =>
+      head.syntheticEnemy === true &&
+      head.portableHydraGroup === true &&
+      head.map === body.map &&
+      head.targetModelName === "c3531" &&
+      head.targetCollisionName === body.targetCollisionName));
+    assert.deepEqual(
+      heads.map((head) => head.entityId).sort((a, b) => a - b),
+      Array.from({ length: 7 }, (_, index) => body.entityId + index + 1),
+    );
+  }
+  const nativeHydraTargets = first.placements.enemies.filter(
+    (placement) => placement.modelName === "c3530",
   );
-  assert.ok(
-    hydraPlacements
-      .filter((placement) => placement.targetModelName === "c3530")
-      .every((placement) => {
-        const target = slots.get(placement.slot);
-        return (
-          placement.targetNpcParamId === target.npcParamId &&
-          placement.targetThinkParamId === target.thinkParamId &&
-          placement.targetBattleGoalId === target.battleGoalId &&
-          placement.forceCombatActivation === true
-        );
-      }),
-  );
+  assert.equal(nativeHydraTargets.length, 3);
+  assert.ok(nativeHydraTargets.every((body) =>
+    first.placements.enemies.filter((placement) =>
+      placement.linkedDragonGroup === body.linkedDragonGroup &&
+      placement.modelName === "c3531").length === 7));
   assert.ok(
     ordinaryPlacements
       .filter(
