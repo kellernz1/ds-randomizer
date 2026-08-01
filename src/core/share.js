@@ -13,7 +13,7 @@ const sharedKeys = Object.freeze([
   "randomizeEnemies",
   "randomizeBosses",
   "randomizeItems",
-  "randomizeKeyItems",
+  "randomizeProtectedItems",
   "progressionLogic",
   "enemyScaling",
   "guaranteeEarlyWeapon",

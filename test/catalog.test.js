@@ -680,6 +680,68 @@ test("real catalog produces real boss and world-item placements", async () => {
   );
 });
 
+test("protected world items join the global pool except both Asylum keys", async () => {
+  const gameCatalog = await catalog();
+  const eastKeyRowId = 1_020_220;
+  const catalogWithEastKey = {
+    ...gameCatalog,
+    worldItemLots: [
+      ...gameCatalog.worldItemLots,
+      {
+        rowId: eastKeyRowId,
+        name: "Undead Asylum F2 East Key",
+        mapId: "m10_02_00_00",
+        protectedProgression: true,
+        entries: [
+          { itemId: 2015, category: 0x40000000, quantity: 1 },
+        ],
+      },
+    ],
+  };
+  const result = generate(
+    {
+      ...defaultConfig,
+      seed: "all-world-items-except-asylum-keys",
+      randomizeItems: true,
+      randomizeProtectedItems: true,
+    },
+    { gameCatalog: catalogWithEastKey },
+  );
+  const fixedRowIds = new Set([1_810_000, eastKeyRowId]);
+  assert.ok(
+    result.placements.items.every(
+      (entry) =>
+        !fixedRowIds.has(entry.rowId) &&
+        !fixedRowIds.has(entry.sourceRowId),
+    ),
+  );
+  assert.equal(
+    result.placements.items.length,
+    catalogWithEastKey.worldItemLots.length - fixedRowIds.size,
+  );
+  const protectedRowIds = new Set(
+    gameCatalog.worldItemLots
+      .filter(
+        (lot) => lot.protectedProgression && !fixedRowIds.has(lot.rowId),
+      )
+      .map((lot) => lot.rowId),
+  );
+  assert.ok(protectedRowIds.size > 0);
+  assert.ok(
+    [...protectedRowIds].every((rowId) =>
+      result.placements.items.some(
+        (entry) => entry.rowId === rowId || entry.sourceRowId === rowId,
+      )),
+  );
+  assert.ok(
+    result.placements.items.some(
+      (entry) =>
+        protectedRowIds.has(entry.sourceRowId) &&
+        !protectedRowIds.has(entry.rowId),
+    ),
+  );
+});
+
 test("classes use deterministic stats and general-catalog equipment", async () => {
   const gameCatalog = await catalog();
   const config = {

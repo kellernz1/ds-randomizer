@@ -24,6 +24,7 @@ test("shared seed reproduces placements without leaking local paths", async () =
     lastPackageDirectory: "C:\\private\\package",
     randomizeStartingClass: true,
     randomizeStartingEquipment: true,
+    randomizeProtectedItems: true,
     randomizeGifts: true,
     randomizeEnemyDrops: true,
     randomizeShops: true,

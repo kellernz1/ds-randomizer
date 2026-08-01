@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 
-export const RANDOMIZER_VERSION = "0.5.36";
+export const RANDOMIZER_VERSION = "0.5.37";
 
 export const defaultConfig = Object.freeze({
   version: RANDOMIZER_VERSION,
@@ -11,7 +11,7 @@ export const defaultConfig = Object.freeze({
   randomizeEnemies: true,
   randomizeBosses: true,
   randomizeItems: true,
-  randomizeKeyItems: false,
+  randomizeProtectedItems: false,
   progressionLogic: true,
   enemyScaling: "area",
   guaranteeEarlyWeapon: true,
@@ -32,7 +32,7 @@ const booleanKeys = [
   "randomizeEnemies",
   "randomizeBosses",
   "randomizeItems",
-  "randomizeKeyItems",
+  "randomizeProtectedItems",
   "progressionLogic",
   "guaranteeEarlyWeapon",
   "balancedEarlyLoot",
@@ -79,9 +79,6 @@ export function validateConfig(config, { requireGame = false } = {}) {
   if (!/^[\w.-]{1,64}$/u.test(config.seed)) {
     errors.push("The seed must contain 1-64 characters (letters, numbers, dot, hyphen, or underscore).");
   }
-  if (config.randomizeKeyItems && !config.progressionLogic) {
-    errors.push("Key items require progression protection.");
-  }
   if (requireGame && !config.gameDirectory) {
     errors.push("Select the Dark Souls Remastered game directory.");
   }
@@ -92,7 +89,7 @@ export function validateConfig(config, { requireGame = false } = {}) {
     !config.randomizeEnemies &&
     !config.randomizeBosses &&
     !config.randomizeItems &&
-    !config.randomizeKeyItems &&
+    !config.randomizeProtectedItems &&
     !config.randomizeStartingClass &&
     !config.randomizeStartingEquipment &&
     !config.randomizeGifts &&

@@ -169,9 +169,11 @@ World-item payload fields are copied while each destination keeps its
 acquisition flag. Progression protection recognizes key goods plus the
 Covenant of Artorias and Orange Charred Ring. Embers, the Peculiar Doll,
 Darkmoon Seance Ring, and ordinary accessories remain in the world-item
-permutation. Protected lots stay vanilla in protected mode. Shop rows preserve
-price, stock, flags, and conditions while only the item ID is redistributed
-within its item type.
+permutation. The optional protected-item mode merges ordinary and protected
+world lots into one global permutation. Dungeon Cell Key and Undead Asylum F2
+East Key are permanently excluded as both sources and destinations. Shop rows
+preserve price, stock, flags, and conditions while only the item ID is
+redistributed within its item type.
 
 ## Known limitations
 
@@ -180,8 +182,8 @@ within its item type.
   some later arenas still contain bespoke cutscenes or geometry.
 - Bed of Chaos remains vanilla because its three entities and progression
   events cannot be represented safely by a single ordinary boss slot.
-- Full key-item graph randomization is not enabled in protected real-data mode;
-  recognized progression lots remain vanilla to prevent softlocks.
+- Protected-item randomization is intentionally unrestricted and can produce
+  progression softlocks; only the two Asylum escape keys are permanently fixed.
 - Area and progressive modes currently use the same slot-relative combat-stat
   inheritance; a distinct progressive curve is planned.
 - The project currently activates through direct, hash-guarded file replacement;

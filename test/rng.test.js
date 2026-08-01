@@ -25,8 +25,12 @@ test("independent streams isolate items from enemy options", () => {
   assert.deepEqual(enabled.placements.items, disabled.placements.items);
 });
 
-test("key items remain vanilla when disabled", () => {
-  const result = generate({ ...defaultConfig, seed: "keys-safe", randomizeKeyItems: false });
+test("key items remain vanilla when protected-item randomization is disabled", () => {
+  const result = generate({
+    ...defaultConfig,
+    seed: "keys-safe",
+    randomizeProtectedItems: false,
+  });
   const keys = result.placements.items.filter((placement) => placement.progression);
   assert.ok(keys.length > 0);
   assert.ok(keys.every((placement) => placement.preserved && placement.from === placement.to));
@@ -44,18 +48,18 @@ test("each location receives exactly one item", () => {
   const result = generate({
     ...defaultConfig,
     seed: "unique-locations",
-    randomizeKeyItems: true,
+    randomizeProtectedItems: true,
   });
   const locations = result.placements.items.map((placement) => placement.location);
   assert.equal(new Set(locations).size, locations.length);
 });
 
-test("key-item-only randomization preserves other items through swaps", () => {
+test("protected-item-only randomization preserves ordinary items", () => {
   const result = generate({
     ...defaultConfig,
     seed: "key-only",
     randomizeItems: false,
-    randomizeKeyItems: true,
+    randomizeProtectedItems: true,
   });
   assert.equal(result.placements.items.length, 8);
   assert.equal(

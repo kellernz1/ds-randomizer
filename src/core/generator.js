@@ -869,17 +869,31 @@ function randomizeExtractedItems(config, catalog) {
     map: lot.mapId,
     itemLot: lot.rowId,
   });
-  const lots = catalog.worldItemLots.filter((lot) =>
-    lot.protectedProgression
-      ? config.randomizeKeyItems && !config.progressionLogic
-      : config.randomizeItems,
+  const permanentlyFixedGoods = new Set([2010, 2015]);
+  const isPermanentlyFixed = (lot) =>
+    lot.entries?.some(
+      (entry) =>
+        entry.category === 0x40000000 &&
+        permanentlyFixedGoods.has(entry.itemId),
+    ) ||
+    lot.name === "Dungeon Cell Key" ||
+    lot.name === "Undead Asylum F2 East Key";
+  const lots = catalog.worldItemLots.filter(
+    (lot) =>
+      !isPermanentlyFixed(lot) &&
+      (lot.protectedProgression
+        ? config.randomizeProtectedItems
+        : config.randomizeItems),
   );
   if (lots.length < 2) return [];
   const rng = createStream(config.seed, "world-items", config.version);
   const ordinary = lots.filter((lot) => !lot.protectedProgression);
   const progression = lots.filter((lot) => lot.protectedProgression);
   const placements = [];
-  for (const group of [ordinary, progression]) {
+  const groups = config.randomizeItems && config.randomizeProtectedItems
+    ? [lots]
+    : [ordinary, progression];
+  for (const group of groups) {
     if (group.length < 2) continue;
     const sources = shuffledWithoutFixedPoints(rng, group);
     group.forEach((target, index) => {
@@ -1314,7 +1328,7 @@ function randomizeItems(config) {
   );
   const keyDestinationIds = new Set();
 
-  if (config.randomizeKeyItems) {
+  if (config.randomizeProtectedItems) {
     const rng = createStream(config.seed, "progression", config.version);
     const safeLocations = itemLocations
       .filter((location) => location.acceptsProgression)
@@ -1338,7 +1352,9 @@ function randomizeItems(config) {
       (location) => !keyDestinationIds.has(location.id),
     );
     const fixedKeyIds = new Set(
-      config.randomizeKeyItems ? [] : keyLocations.map((location) => location.id),
+      config.randomizeProtectedItems
+        ? []
+        : keyLocations.map((location) => location.id),
     );
     const randomizableLocations = targetLocations.filter(
       (location) => !fixedKeyIds.has(location.id),
@@ -1379,7 +1395,7 @@ function randomizeItems(config) {
     });
   }
 
-  if (!config.randomizeItems && !config.randomizeKeyItems) return [];
+  if (!config.randomizeItems && !config.randomizeProtectedItems) return [];
 
   return itemLocations.map((location) => {
     const original = itemIndex.get(location.original);
@@ -1453,15 +1469,15 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
     },
     validation: {
       valid: true,
-      finalBossReachable: config.randomizeKeyItems ? config.progressionLogic : true,
+      finalBossReachable: !config.randomizeProtectedItems,
       notes: extractedData
         ? [
             "All hostile regular-enemy slots use a count-preserving global permutation within a 30-character-model total map budget; friendly NPCs and invisible technical helpers stay vanilla.",
             "Area scaling inherits destination combat stats and replaces hidden level multipliers from the selected enemy.",
             "Bosses use an unrestricted permutation and are grounded at their destination encounter; dragons only exchange complete linked dragon groups.",
-            config.progressionLogic
-              ? "World items are randomized while progression lots remain in their original locations."
-              : "World items and progression lots are randomized independently.",
+            config.randomizeProtectedItems
+              ? "Protected world items joined the full item pool; the two Asylum escape keys stayed vanilla."
+              : "World items were randomized while protected progression lots stayed vanilla.",
             config.randomizeStartingClass
               ? "Starting-class base stats were redistributed."
               : "Starting-class base stats were preserved.",
@@ -1480,7 +1496,7 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
                 : "Shops were redistributed by item type."
               : "Shops were preserved.",
           ]
-        : config.randomizeKeyItems
+        : config.randomizeProtectedItems
           ? ["Prototype progression was validated through the opening sphere; full graph validation remains pending."]
           : ["Key items were preserved."],
     },
