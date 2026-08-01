@@ -481,11 +481,9 @@ static RandomizerParamData ReadRandomizerParamData(
             var category = GetCellInt(row, $"lotItemCategory{suffix}");
             return
                 (category == goodsCategory &&
-                 (itemId is >= 800 and < 900 ||
-                  itemId is >= 2000 and < 3000 ||
-                  itemId == 384)) ||
+                 itemId is >= 2000 and < 3000) ||
                 (category == accessoryCategory &&
-                 itemId is 138 or 139 or 149);
+                 itemId is 138 or 139);
         });
     }
     var enemyDropLots = itemLotParam.Rows
@@ -529,11 +527,9 @@ static RandomizerParamData ReadRandomizerParamData(
             const int goodsCategory = 0x40000000;
             var protectedProgression = entries.Any(entry =>
                 (entry.Category == goodsCategory &&
-                    (entry.ItemId is >= 800 and < 900 ||
-                     entry.ItemId is >= 2000 and < 3000 ||
-                     entry.ItemId == 384)) ||
+                    entry.ItemId is >= 2000 and < 3000) ||
                 (entry.Category == accessoryCategory &&
-                    entry.ItemId is 138 or 139 or 149));
+                    entry.ItemId is 138 or 139));
             var area = row.ID / 100_000 % 100;
             var block = row.ID / 10_000 % 10;
             var displayName = string.Join(" + ", entries.Select(entry =>

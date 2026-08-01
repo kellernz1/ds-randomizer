@@ -136,7 +136,7 @@ files; source hashes prevent applying it to a different installation state.
 - Explicit boss catalog with grounded, unrestricted replacement pools
 - Boss health-bar name patching in EMEVD while preserving encounter entity IDs
 - Per-slot scaled `NpcParam` clones for area and progressive scaling modes
-- 527 world item lots, including 25 recognized progression lots
+- 527 world item lots, including 13 recognized progression lots
 - Independent world-item, enemy, boss, class, gift, drop, and shop streams
 - Progression-lot and acquisition-flag preservation
 - Ten real starting classes from `CharaInitParam`
@@ -166,11 +166,12 @@ replaced model are removed. Dragon bodies and detachable parts use linked
 dragon-only groups.
 
 World-item payload fields are copied while each destination keeps its
-acquisition flag. Progression protection recognizes key goods, embers, the
-Peculiar Doll, and required progression rings. Ordinary accessories such as
-the Blue Tearstone Ring remain in the world-item permutation. Protected lots
-stay vanilla in protected mode. Shop rows preserve price, stock, flags, and
-conditions while only the item ID is redistributed within its item type.
+acquisition flag. Progression protection recognizes key goods plus the
+Covenant of Artorias and Orange Charred Ring. Embers, the Peculiar Doll,
+Darkmoon Seance Ring, and ordinary accessories remain in the world-item
+permutation. Protected lots stay vanilla in protected mode. Shop rows preserve
+price, stock, flags, and conditions while only the item ID is redistributed
+within its item type.
 
 ## Known limitations
 

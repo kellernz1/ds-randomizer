@@ -477,6 +477,33 @@ test("real catalog produces real boss and world-item placements", async () => {
       ?.sourceRowId,
     1_010_160,
   );
+  const newlyRandomizedProgressionItems = new Set([
+    "Large Ember",
+    "Very Large Ember",
+    "Crystal Ember",
+    "Large Magic Ember",
+    "Enchanted Ember",
+    "Divine Ember",
+    "Large Divine Ember",
+    "Dark Ember",
+    "Large Flame Ember",
+    "Chaos Flame Ember",
+    "Peculiar Doll",
+    "Darkmoon Seance Ring",
+  ]);
+  const randomizedFormerProgressionLots = gameCatalog.worldItemLots.filter(
+    (lot) => newlyRandomizedProgressionItems.has(lot.name),
+  );
+  assert.equal(randomizedFormerProgressionLots.length, 12);
+  assert.ok(
+    randomizedFormerProgressionLots.every(
+      (lot) => !lot.protectedProgression,
+    ),
+  );
+  assert.equal(
+    gameCatalog.worldItemLots.filter((lot) => lot.protectedProgression).length,
+    13,
+  );
   assert.ok(
     result.placements.bosses.every(
       (entry) =>
