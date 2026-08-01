@@ -1207,6 +1207,21 @@ static PatchReport PatchEnemies(
         if (mapChanges == 0)
             continue;
 
+        // Replacements can leave the original character declarations unused.
+        // Keeping both the old and new declarations makes the Remaster stream
+        // resources for models that no part references and can eventually
+        // corrupt the spatial/physics update when a dense map is loaded.
+        var usedEnemyModels = msb.Parts.Enemies
+            .Cast<MSB1.Part.EnemyBase>()
+            .Concat(msb.Parts.DummyEnemies)
+            .Select(enemy => enemy.ModelName)
+            .ToHashSet(StringComparer.Ordinal);
+        msb.Models.Enemies.RemoveAll(
+            model => !usedEnemyModels.Contains(model.Name));
+        var declaredEnemyModels = msb.Models.Enemies
+            .Select(model => model.Name)
+            .ToHashSet(StringComparer.Ordinal);
+
         var outputPath = Path.Combine(
             outputDirectory, "mod", "map", "MapStudio", $"{mapGroup.Key}.msb");
         Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
@@ -1220,6 +1235,12 @@ static PatchReport PatchEnemies(
             .Concat(verification.Parts.DummyEnemies)
             .ToDictionary(
             enemy => enemy.Name, StringComparer.Ordinal);
+        var verifiedModelNames = verification.Models.Enemies
+            .Select(model => model.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        if (!declaredEnemyModels.SetEquals(verifiedModelNames))
+            throw new InvalidDataException(
+                $"Enemy model declaration pruning did not persist: {mapGroup.Key}.");
         var placementsByName = mapGroup.ToDictionary(
             placement =>
             {

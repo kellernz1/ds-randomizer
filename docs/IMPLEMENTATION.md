@@ -62,8 +62,9 @@ files; source hashes prevent applying it to a different installation state.
 - Round-trip assertions that preserve every spawn transform and all unselected NPCs
 - Ordinary event enable/disable references do not block cross-model enemies
 - Deterministic multi-enemy permutation cycles with no eligible source reused
-- A 30-model per-map budget for ordinary enemies prevents asynchronous
-  character-resource loading from exceeding stable Remastered map diversity
+- A 30-character-model total budget per map includes regular enemies, bosses,
+  dragons, protected NPCs, and helpers; unused MSB model declarations are
+  pruned so asynchronous resource loading stays within stable Remastered limits
 - Area scaling copies every combat-scaling `SpEffect` from the destination
 - Bosses use a strict boss-only permutation; ordinary Anor Londo gargoyles
   cannot enter boss encounters

@@ -144,25 +144,18 @@ test("real catalog produces deterministic enemies with visibly different models"
     ),
   );
   for (const map of gameCatalog.maps) {
-    const uniqueModels = new Set(
-      ordinaryPlacements
+    const finalModelBySlot = new Map(
+      [...first.placements.enemies, ...first.placements.bosses]
         .filter((placement) => placement.map === map.id)
-        .map((placement) => placement.targetModelName),
+        .map((placement) => [placement.slot, placement.targetModelName]),
     );
-    assert.ok(
-      uniqueModels.size <= 30,
-      `${map.id} exceeded the regular-enemy model budget: ${uniqueModels.size}`,
-    );
-    const declaredModels = new Set([
-      ...gameCatalog.enemySlots
+    const declaredModels = new Set(
+      gameCatalog.enemySlots
         .filter((slot) => slot.mapId === map.id)
-        .map((slot) => slot.modelName),
-      ...first.placements.enemies
-        .filter((placement) => placement.map === map.id)
-        .map((placement) => placement.targetModelName),
-    ]);
+        .map((slot) => finalModelBySlot.get(slot.id) ?? slot.modelName),
+    );
     assert.ok(
-      declaredModels.size <= 60,
+      declaredModels.size <= 30,
       `${map.id} exceeded the Remastered model declaration budget: ` +
         declaredModels.size,
     );

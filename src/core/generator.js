@@ -41,7 +41,7 @@ const internalHelperModels = new Set([
   // group; standalone variants must never occupy an ordinary enemy slot.
   "c3501",
 ]);
-const MAX_UNIQUE_REGULAR_MODELS_PER_MAP = 30;
+const MAX_ENEMY_MODELS_PER_MAP = 30;
 const dragonNames = new Map([
   ["c2730", "Crossbreed Priscilla"],
   ["c3420", "Undead Dragon"],
@@ -624,7 +624,7 @@ function buildMassOfSoulsPlan(config, catalog) {
   return { placements, reservedSlotIds };
 }
 
-function randomizeExtractedEnemies(config, catalog, dragonPlan) {
+function randomizeExtractedEnemies(config, catalog, dragonPlan, bossPlan) {
   if (!config.randomizeEnemies) return dragonPlan.enemies;
   const rng = createStream(config.seed, "enemies", config.version);
   const massOfSoulsPlan = buildMassOfSoulsPlan(config, catalog);
@@ -654,10 +654,40 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan) {
       !internalHelperModels.has(slot.modelName),
   );
 
+  const regularSlotIds = new Set(slots.map((slot) => slot.id));
+  const specialPlacements = [
+    ...massOfSoulsPlan.placements,
+    ...dragonPlan.enemies,
+    ...dragonPlan.bosses,
+    ...bossPlan,
+  ];
+  const specialModelBySlot = new Map(
+    specialPlacements.map((placement) => [
+      placement.slot,
+      placement.targetModelName,
+    ]),
+  );
+  const fixedModelsByMap = new Map();
+  const addFixedModel = (mapId, modelName) => {
+    if (!fixedModelsByMap.has(mapId)) fixedModelsByMap.set(mapId, new Set());
+    fixedModelsByMap.get(mapId).add(modelName);
+  };
+  for (const slot of catalog.enemySlots) {
+    if (regularSlotIds.has(slot.id)) continue;
+    addFixedModel(
+      slot.mapId,
+      specialModelBySlot.get(slot.id) ?? slot.modelName,
+    );
+  }
+  for (const placement of specialPlacements) {
+    addFixedModel(placement.map, placement.targetModelName);
+  }
+
   const shuffledSources = limitUniqueEnemyModelsByMap(
     slots,
     shuffledWithoutFixedPoints(rng, slots),
-    MAX_UNIQUE_REGULAR_MODELS_PER_MAP,
+    MAX_ENEMY_MODELS_PER_MAP,
+    fixedModelsByMap,
   );
   const assignment = new Map(
     slots.map((target, index) => [target.id, shuffledSources[index]]),
@@ -858,7 +888,12 @@ function shuffledWithoutFixedPoints(rng, values) {
   return [...values.slice(1), values[0]];
 }
 
-function limitUniqueEnemyModelsByMap(targets, initialSources, maximumUnique) {
+function limitUniqueEnemyModelsByMap(
+  targets,
+  initialSources,
+  maximumUnique,
+  fixedModelsByMap = new Map(),
+) {
   const sources = [...initialSources];
   const indicesByMap = new Map();
   targets.forEach((target, index) => {
@@ -870,6 +905,9 @@ function limitUniqueEnemyModelsByMap(targets, initialSources, maximumUnique) {
     const result = new Map();
     for (const [mapId, indices] of indicesByMap) {
       const counts = new Map();
+      for (const modelName of fixedModelsByMap.get(mapId) ?? []) {
+        counts.set(modelName, 1);
+      }
       for (const index of indices) {
         const modelName = sources[index].modelName;
         counts.set(modelName, (counts.get(modelName) || 0) + 1);
@@ -1354,6 +1392,9 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
   const dragonPlan = extractedData
     ? buildDragonPlan(config, gameCatalog)
     : null;
+  const bossPlan = extractedData
+    ? randomizeExtractedBosses(config, gameCatalog, dragonPlan)
+    : null;
   const result = {
     schemaVersion: 1,
     randomizerVersion: config.version,
@@ -1365,10 +1406,15 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
     config,
     placements: {
       enemies: extractedData
-        ? randomizeExtractedEnemies(config, gameCatalog, dragonPlan)
+        ? randomizeExtractedEnemies(
+            config,
+            gameCatalog,
+            dragonPlan,
+            bossPlan,
+          )
         : randomizePrototypeEnemies(config),
       bosses: extractedData
-        ? randomizeExtractedBosses(config, gameCatalog, dragonPlan)
+        ? bossPlan
         : randomizeBosses(config),
       items: extractedData
         ? randomizeExtractedItems(config, gameCatalog)
@@ -1387,7 +1433,7 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
       finalBossReachable: config.randomizeKeyItems ? config.progressionLogic : true,
       notes: extractedData
         ? [
-            "All hostile regular-enemy slots use a count-preserving global permutation with a 30-model per-map resource budget; friendly NPCs and invisible technical helpers stay vanilla.",
+            "All hostile regular-enemy slots use a count-preserving global permutation within a 30-character-model total map budget; friendly NPCs and invisible technical helpers stay vanilla.",
             "Area scaling inherits destination combat stats and replaces hidden level multipliers from the selected enemy.",
             "Bosses use an unrestricted permutation and are grounded at their destination encounter; dragons only exchange complete linked dragon groups.",
             config.progressionLogic
