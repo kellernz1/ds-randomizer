@@ -1784,6 +1784,25 @@ static void InsertEventInstruction(
     entry.Instructions.Insert(index, instruction);
 }
 
+static int FindFreeCustomEventRange(
+    EMEVD emevd,
+    int preferredEventId,
+    int count)
+{
+    if (count <= 0)
+        return preferredEventId;
+    var usedEventIds = emevd.Events
+        .Select(entry => entry.ID)
+        .ToHashSet();
+    var candidate = preferredEventId;
+    while (Enumerable.Range(0, count).Any(offset =>
+               usedEventIds.Contains((long)candidate + offset)))
+    {
+        candidate = checked(candidate + 1);
+    }
+    return candidate;
+}
+
 static void RemoveEventInstruction(
     EMEVD.Event entry,
     int index,
@@ -1994,6 +2013,20 @@ static List<PatchedFile> PatchBossNames(
 
         var emevd = EMEVD.Read(sourcePath);
         var changed = 0;
+        var customEventCount =
+            passiveMapPlacements.Count +
+            deferredMapPlacements.Count +
+            containedMapPlacements.Count +
+            staticBridgeMapPlacements.Count +
+            disabledMapPlacements.Count +
+            forceCombatMapPlacements.Count;
+        var mapNumber = int.Parse(mapId.Substring(1, 2));
+        var preferredCustomEventId =
+            10_000_000 + mapNumber * 100_000 + 19_900;
+        var customEventBase = FindFreeCustomEventRange(
+            emevd,
+            preferredCustomEventId,
+            customEventCount);
         var patchAsylumIntro =
             mapId == "m18_01_00_00" &&
             mapGroup.Any(placement =>
@@ -2127,8 +2160,7 @@ static List<PatchedFile> PatchBossNames(
             forceCombatMapPlacements.Count > 0)
         {
             var constructor = emevd.Events.Single(entry => entry.ID == 0);
-            var mapNumber = int.Parse(mapId.Substring(1, 2));
-            var nextCustomEventId = 10_000_000 + mapNumber * 100_000 + 19_900;
+            var nextCustomEventId = customEventBase;
             void RegisterCustomEvent(EMEVD.Event customEvent)
             {
                 if (emevd.Events.Any(entry => entry.ID == customEvent.ID))
@@ -2530,8 +2562,7 @@ static List<PatchedFile> PatchBossNames(
             forceCombatMapPlacements.Count > 0)
         {
             var constructor = verification.Events.Single(entry => entry.ID == 0);
-            var mapNumber = int.Parse(mapId.Substring(1, 2));
-            var nextCustomEventId = 10_000_000 + mapNumber * 100_000 + 19_900;
+            var nextCustomEventId = customEventBase;
             bool IsInitialized(int eventId) =>
                 constructor.Instructions.Any(instruction =>
                     instruction.Bank == 2000 &&
