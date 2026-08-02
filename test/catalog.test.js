@@ -108,6 +108,7 @@ test("real catalog produces deterministic enemies with visibly different models"
         "count-preserving-fixed-point",
         "passive-asylum-source-ai-permutation",
         "passive-new-londo-entrance-permutation",
+        "grounded-new-londo-ghost-slot-permutation",
         "dragon-only-group-permutation",
         "static-bridge-dragon-permutation",
         "disabled-hellkite-flight-auxiliary",
@@ -140,6 +141,21 @@ test("real catalog produces deterministic enemies with visibly different models"
     new Set(ordinaryPlacements.map((placement) => placement.sourceSlot)).size,
     ordinaryPlacements.length,
   );
+  const newLondoSolidGhostSlotReplacements = ordinaryPlacements.filter(
+    (placement) => {
+      const target = slots.get(placement.slot);
+      return target?.mapId === "m16_00_00_00" &&
+        ["c2670", "c2680"].includes(target.modelName) &&
+        !["c2670", "c2680"].includes(placement.targetModelName);
+    },
+  );
+  assert.ok(newLondoSolidGhostSlotReplacements.length > 0);
+  assert.ok(newLondoSolidGhostSlotReplacements.every((placement) =>
+    placement.compatibility === "grounded-new-londo-ghost-slot-permutation" &&
+    Number.isFinite(placement.groundX) &&
+    Number.isFinite(placement.groundY) &&
+    Number.isFinite(placement.groundZ) &&
+    typeof placement.targetCollisionName === "string"));
   assert.ok(
     ordinaryPlacements.every(
       (placement) =>
@@ -679,6 +695,8 @@ test("real catalog produces real boss and world-item placements", async () => {
       expected,
       `${slot} must use its playable-arena spawn`,
     );
+    if (slot.includes(":c3230_0000"))
+      assert.equal(placement.activationRegionId, 1202896);
   }
   const stagedGargoyle = result.placements.enemies.find(
     (entry) => entry.slot === "m10_01_00_00:c5350_0001",

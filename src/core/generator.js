@@ -104,6 +104,11 @@ const deferredBossActivationRegions = new Map([
   // below the collapsing Asylum floor respectively. Waiting on the event ID
   // itself is too late and can also expose the character for one load frame.
   ["m10_01_00_00:c2250_0000", { enter: 1012701 }],
+  // The Butterfly is staged outside its bridge and the vanilla encounter
+  // event does not reliably wake grounded replacement bosses. Activate them
+  // only after the player crosses into the arena.
+  ["m12_00_00_00:c3230_0000", { enter: 1202896 }],
+  ["m12_00_00_01:c3230_0000", { enter: 1202896 }],
   [
     "m18_01_00_00:c2230_0000",
     { enter: 1812896, warp: 1812302 },
@@ -823,6 +828,45 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan, bossPlan) {
   const assignment = new Map(
     slots.map((target, index) => [target.id, shuffledSources[index]]),
   );
+  const newLondoGroundAnchors = catalog.enemySlots
+    .filter((slot) =>
+      slot.mapId === "m16_00_00_00" &&
+      slot.modelName === "c2390" &&
+      !slot.dummy &&
+      slot.position &&
+      slot.collisionName)
+    .sort((left, right) => left.id.localeCompare(right.id));
+
+  function groundedNewLondoGhostSpawn(slot, index) {
+    if (newLondoGroundAnchors.length === 0) return null;
+    const anchor = newLondoGroundAnchors.reduce((best, candidate) => {
+      const distance = Math.hypot(
+        candidate.position.x - slot.position.x,
+        candidate.position.y - slot.position.y,
+        candidate.position.z - slot.position.z,
+      );
+      return !best || distance < best.distance
+        ? { slot: candidate, distance }
+        : best;
+    }, null).slot;
+    let directionX = slot.position.x - anchor.position.x;
+    let directionZ = slot.position.z - anchor.position.z;
+    const length = Math.hypot(directionX, directionZ);
+    if (length < 0.01) {
+      const angle = index * 2.399963229728653;
+      directionX = Math.cos(angle);
+      directionZ = Math.sin(angle);
+    } else {
+      directionX /= length;
+      directionZ /= length;
+    }
+    return {
+      x: anchor.position.x + directionX * 1.25,
+      y: anchor.position.y + 0.25,
+      z: anchor.position.z + directionZ * 1.25,
+      collisionName: anchor.collisionName,
+    };
+  }
 
   const randomized = slots.map((slot, index) => {
     const replacement = assignment.get(slot.id) ?? slot;
@@ -837,6 +881,13 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan, bossPlan) {
       replacement.npcParamId !== slot.npcParamId ||
       replacementThinkParamId !== slot.thinkParamId;
     const makeTangible = tangibleGhostModels.has(replacement.modelName);
+    const replacesWallPhasingGhost =
+      slot.mapId === "m16_00_00_00" &&
+      tangibleGhostModels.has(slot.modelName) &&
+      !tangibleGhostModels.has(replacement.modelName);
+    const groundedGhostSpawn = replacesWallPhasingGhost
+      ? groundedNewLondoGhostSpawn(slot, index)
+      : null;
     const cloneThinkParam = changed || passiveUntilAttacked;
     const assignedEntityId =
       passiveUntilAttacked && slot.entityId < 0
@@ -855,6 +906,14 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan, bossPlan) {
             targetThinkParamId: replacementThinkParamId,
           }),
       ...(makeTangible ? { makeTangible: true } : {}),
+      ...(groundedGhostSpawn
+        ? {
+            groundX: groundedGhostSpawn.x,
+            groundY: groundedGhostSpawn.y,
+            groundZ: groundedGhostSpawn.z,
+            targetCollisionName: groundedGhostSpawn.collisionName,
+          }
+        : {}),
       ...(forceCombatActivationModels.has(replacement.modelName) &&
       !passiveUntilAttacked && assignedEntityId >= 0
         ? { forceCombatActivation: true }
@@ -872,6 +931,8 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan, bossPlan) {
         ? asylumPassiveSlots.has(slot.id)
           ? "passive-asylum-source-ai-permutation"
           : "passive-new-londo-entrance-permutation"
+        : groundedGhostSpawn
+          ? "grounded-new-londo-ghost-slot-permutation"
         : changed
           ? "count-preserving-unrestricted-permutation"
         : replacement.id !== slot.id
