@@ -61,9 +61,21 @@ if (state.catalog.available) {
 }
 
 document.querySelector("#new-seed").addEventListener("click", async () => {
-  const nextState = await request("/api/state");
-  latestGeneratedSeed = nextState.generatedSeed;
-  form.elements.seed.value = latestGeneratedSeed;
+  const button = document.querySelector("#new-seed");
+  button.disabled = true;
+  try {
+    const result = await request("/api/seed/new", {
+      method: "POST",
+      cache: "no-store",
+    });
+    latestGeneratedSeed = result.seed;
+    form.elements.seed.value = latestGeneratedSeed;
+    message.textContent = `New seed: ${latestGeneratedSeed}`;
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
 });
 
 document.querySelector("#export-seed").addEventListener("click", async () => {

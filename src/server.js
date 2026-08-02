@@ -45,7 +45,12 @@ async function readJson(request) {
 }
 
 function json(response, status, payload) {
-  response.writeHead(status, { "content-type": "application/json; charset=utf-8" });
+  response.writeHead(status, {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store, no-cache, must-revalidate",
+    pragma: "no-cache",
+    expires: "0",
+  });
   response.end(JSON.stringify(payload));
 }
 
@@ -116,6 +121,9 @@ export async function runDataTool(argumentsList) {
 }
 
 async function api(request, response, pathname) {
+  if (request.method === "POST" && pathname === "/api/seed/new") {
+    return json(response, 200, { seed: generateSeed() });
+  }
   if (request.method === "GET" && pathname === "/api/state") {
     const catalog = await loadGameCatalog(catalogPath);
     const config = await loadConfig();
@@ -309,6 +317,7 @@ export function startServer({ port = 0 } = {}) {
         const data = await readFile(filePath);
         response.writeHead(200, {
           "content-type": contentTypes[path.extname(filePath)] || "application/octet-stream",
+          "cache-control": "no-cache",
         });
         response.end(data);
       } catch (error) {
