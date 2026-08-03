@@ -227,7 +227,8 @@ function enemyPlacement(config, target, source, scaledNpcParamId, extra = {}) {
     scaledNpcParamId:
       (config.enemyScaling === "vanilla" || !changed) &&
       extra.makeTangible !== true &&
-      !requiresTeamOverride
+      !requiresTeamOverride &&
+      !(config.randomizeEnemyDrops && changed)
         ? null
         : scaledNpcParamId,
     changed,

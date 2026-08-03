@@ -3367,6 +3367,7 @@ static PatchedFile? PatchGameParam(
             scaled,
             "teamType",
             placement.InitialTeamType ?? GetCellInt(source, "teamType"));
+        AssertCells(RowCells(source), scaled, IsNpcItemLotField);
         if (placement.MakeTangible)
             AssertCell(scaled, "isGhost", 0);
     }
@@ -3452,6 +3453,12 @@ static void AddScaledNpcRows(PARAM npcParam, List<PatchPlacement> placements)
             CopyCells(RowCells(source), scaled, name => combatFields.Contains(name));
             AssertCells(RowCells(source), scaled, name => combatFields.Contains(name));
         }
+        // Drops belong to the randomized location, not to the replacement
+        // model. The referenced ItemLot rows are shuffled independently, so a
+        // replacement at a Black Knight location receives that location's
+        // randomized lots rather than an untracked vanilla model drop.
+        CopyCells(RowCells(source), scaled, IsNpcItemLotField);
+        AssertCells(RowCells(source), scaled, IsNpcItemLotField);
         if (placement.MakeTangible)
             SetCell(scaled, "isGhost", 0);
         // A replacement may use a neutral/friendly PARAM team in its vanilla
@@ -3467,6 +3474,7 @@ static void AddScaledNpcRows(PARAM npcParam, List<PatchPlacement> placements)
             name =>
                 !combatFields.Contains(name) &&
                 name != "teamType" &&
+                !IsNpcItemLotField(name) &&
                 !(placement.MakeTangible && name == "isGhost"));
         AssertCell(
             scaled,
@@ -3622,6 +3630,9 @@ static bool IsEquipmentField(string name) =>
     name.StartsWith("item_", StringComparison.Ordinal) ||
     name.StartsWith("itemNum_", StringComparison.Ordinal) ||
     name is "arrowNum" or "boltNum" or "subArrowNum" or "subBoltNum";
+
+static bool IsNpcItemLotField(string name) =>
+    name.StartsWith("itemLotId_", StringComparison.OrdinalIgnoreCase);
 
 static bool IsItemLotPayloadField(string name) =>
     !name.Contains("FlagId", StringComparison.OrdinalIgnoreCase) &&

@@ -961,6 +961,16 @@ test("real gifts, drops, and shops are independent and deterministic", async () 
   assert.ok(first.placements.gifts.every((entry) => entry.rowId !== entry.sourceRowId));
   assert.ok(first.placements.enemyDrops.every((entry) => entry.rowId !== entry.sourceRowId));
   assert.ok(first.placements.shops.every((entry) => entry.rowId !== entry.sourceRowId));
+  const vanillaDropScaling = generate(
+    { ...config, enemyScaling: "vanilla" },
+    { gameCatalog },
+  );
+  assert.ok(
+    vanillaDropScaling.placements.enemies
+      .filter((placement) => placement.changed)
+      .every((placement) => placement.scaledNpcParamId !== null),
+    "changed enemies need a cloned NPC row so randomized location drops persist",
+  );
   for (const bossDropRowId of [33_006_000, 34_310_000, 53_520_000]) {
     assert.ok(
       first.placements.enemyDrops.some(
