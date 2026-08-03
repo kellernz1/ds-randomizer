@@ -84,8 +84,9 @@ const activeReplacementThinkParams = new Map([
   ["c3330", 333000], // Pisaca
   ["c2280", 228000], // Mushroom Child (non-ambush combat brain)
   ["c2300", 230000], // Titanite Demon (portable combat brain)
+  ["c2780", 278000], // Mimic (awake combat brain; chest variants are event-bound)
 ]);
-const forceCombatActivationModels = new Set(["c2280", "c2300"]);
+const forceCombatActivationModels = new Set(["c2280", "c2300", "c2780"]);
 const tangibleGhostModels = new Set(["c2670", "c2680"]);
 const asylumPassiveSlots = new Set([
   "m18_01_00_00:c2500_0000",
@@ -132,15 +133,27 @@ const safeBossSpawnPositions = new Map([
   ["m18_01_00_00:c2230_0000", { x: 3.31, y: 100, z: -19 }],
   // Taurus starts inside the tower and normally jumps to the bridge through
   // a model-specific event. Replacements must begin directly on the bridge.
-  ["m10_01_00_00:c2250_0000", { x: 1.16, y: 15.82, z: -114.34 }],
+  [
+    "m10_01_00_00:c2250_0000",
+    { x: 1.16, y: 15.82, z: -114.34, rotationY: -73.54 },
+  ],
   // The second Bell Gargoyle has a rooftop staging position.
   ["m10_01_00_00:c5350_0001", { x: 10.69, y: 48.92, z: 124.35 }],
   ["m10_01_00_00:c5350_0002", { x: 6.14, y: 48.92, z: 124.35 }],
   // The Butterfly and Ceaseless encounters also enter from event-controlled
   // off-arena positions in vanilla.
-  ["m12_00_00_00:c3230_0000", { x: 196.12, y: 8.09, z: 62.25 }],
-  ["m12_00_00_01:c3230_0000", { x: 196.12, y: 8.09, z: 62.25 }],
-  ["m14_01_00_00:c5250_0000", { x: 396.14, y: -278.14, z: 74.56 }],
+  [
+    "m12_00_00_00:c3230_0000",
+    { x: 196.12, y: 8.09, z: 62.25, rotationY: 27.37 },
+  ],
+  [
+    "m12_00_00_01:c3230_0000",
+    { x: 196.12, y: 8.09, z: 62.25, rotationY: 27.37 },
+  ],
+  [
+    "m14_01_00_00:c5250_0000",
+    { x: 396.14, y: -278.14, z: 74.56, rotationY: 130.84 },
+  ],
 ]);
 
 function effectiveBossSlots(catalog) {
@@ -196,6 +209,7 @@ function bossGrounding(slot, catalog) {
     groundX: safePosition.x,
     groundY: safePosition.y,
     groundZ: safePosition.z,
+    groundRotationY: safePosition.rotationY ?? slot.rotation.y,
   };
 }
 
@@ -638,10 +652,26 @@ function buildDragonPlan(config, catalog) {
     );
     linkedBosses.forEach((target, unitIndex) => {
       const source = linkedBossSources[unitIndex];
+      const singleBellReplacement =
+        target.id === "bell-gargoyles" && source.id !== "bell-gargoyles";
       [...target.bodies, ...target.parts].forEach((slot) =>
         result.reservedSlotIds.add(slot.id),
       );
       target.bodies.forEach((targetBody, index) => {
+        if (singleBellReplacement && index > 0) {
+          result.enemies.push(enemyPlacement(
+            config,
+            targetBody,
+            targetBody,
+            null,
+            {
+              compatibility: "disabled-extra-bell-gargoyle-body",
+              linkedEnemyGroup: target.id,
+              disableEntity: true,
+            },
+          ));
+          return;
+        }
         const sourceBody = source.bodies[index % source.bodies.length];
         const isBossSlot = bossSlotIds.has(targetBody.id);
         const placement = enemyPlacement(
@@ -675,6 +705,20 @@ function buildDragonPlan(config, catalog) {
         (isBossSlot ? result.bosses : result.enemies).push(placement);
       });
       target.parts.forEach((targetPart, index) => {
+        if (singleBellReplacement && index > 0) {
+          result.enemies.push(enemyPlacement(
+            config,
+            targetPart,
+            targetPart,
+            null,
+            {
+              compatibility: "disabled-extra-bell-gargoyle-part",
+              linkedEnemyGroup: target.id,
+              disableEntity: true,
+            },
+          ));
+          return;
+        }
         const sourcePart = source.parts[index % source.parts.length];
         result.enemies.push(enemyPlacement(
           config,
@@ -890,8 +934,11 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan, bossPlan) {
       ? groundedNewLondoGhostSpawn(slot, index)
       : null;
     const cloneThinkParam = changed || passiveUntilAttacked;
+    const requiresCombatEvent = forceCombatActivationModels.has(
+      replacement.modelName,
+    );
     const assignedEntityId =
-      passiveUntilAttacked && slot.entityId < 0
+      (passiveUntilAttacked || requiresCombatEvent) && slot.entityId < 0
         ? 16_099_000 + index
         : slot.entityId;
     return enemyPlacement(config, slot, replacement, 9_100_000 + index, {
@@ -915,7 +962,7 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan, bossPlan) {
             targetCollisionName: groundedGhostSpawn.collisionName,
           }
         : {}),
-      ...(forceCombatActivationModels.has(replacement.modelName) &&
+      ...(requiresCombatEvent &&
       !passiveUntilAttacked && assignedEntityId >= 0
         ? { forceCombatActivation: true }
         : {}),
@@ -971,7 +1018,13 @@ function shuffledPortableBosses(rng, modelNames, archetypes) {
     if (shuffled.every((replacement, index) => {
       const replacementModel =
         canonicalBossModel.get(replacement.modelName) || replacement.modelName;
-      return replacementModel !== modelNames[index];
+      const targetModel = modelNames[index];
+      return (
+        replacementModel !== targetModel &&
+        // Ceaseless Discharge's retreat/navigation logic walks into the
+        // Taurus tower walls on the narrow Undead Burg bridge.
+        !(targetModel === "c2250" && replacementModel === "c5250")
+      );
     })) {
       return shuffled;
     }
@@ -1081,6 +1134,37 @@ function randomizableWorldItemLots(config, catalog) {
   );
 }
 
+const bulkShopGoodNames = new Set([
+  "Throwing Knife",
+  "Poison Throwing Knife",
+  "Firebomb",
+  "Black Firebomb",
+  "Dung Pie",
+  "Lloyd's Talisman",
+  "Alluring Skull",
+  "Prism Stone",
+]);
+
+function isBulkShopConsumable(entry) {
+  return (
+    (entry.equipType === 0 && /(?:Arrow|Bolt)$/u.test(entry.name)) ||
+    (entry.equipType === 3 && bulkShopGoodNames.has(entry.name))
+  );
+}
+
+function shopPurchaseLimit(entry) {
+  if (isBulkShopConsumable(entry)) return 99;
+  if (
+    entry.equipType === 0 ||
+    entry.equipType === 1 ||
+    entry.equipType === 4 ||
+    /^(?:Sorcery|Pyromancy|Miracle):/u.test(entry.name)
+  ) {
+    return 1;
+  }
+  return 10;
+}
+
 function randomizeExtractedItemLots(config, catalog) {
   const worldLots = randomizableWorldItemLots(config, catalog);
   const protectedGiftRows = new Set([1090, 1100]);
@@ -1137,12 +1221,17 @@ function randomizeExtractedItemLots(config, catalog) {
             ? 0x20000000
             : 0x40000000,
     equipType: entry.equipType,
+    quantity: 1,
     name: entry.name,
     progression: false,
   }));
-  const targets = [...lotTargets, ...shopTargets];
+  const shopOnlyTargets = shopTargets.filter(isBulkShopConsumable);
+  const globalTargets = [
+    ...lotTargets,
+    ...shopTargets.filter((entry) => !isBulkShopConsumable(entry)),
+  ];
   const result = { items: [], gifts: [], enemyDrops: [], shops: [] };
-  if (targets.length < 2) return result;
+  if (globalTargets.length + shopOnlyTargets.length < 2) return result;
 
   const areaNames = new Map(
     (catalog.maps || []).map((map) => [map.id, map.name]),
@@ -1171,11 +1260,10 @@ function randomizeExtractedItemLots(config, catalog) {
               map: "ItemLotParam",
               itemLot: entry.rowId,
             };
-  const rng = createStream(config.seed, "all-item-sources", config.version);
-  const sources = shuffledWithoutFixedPoints(rng, targets);
-
-  targets.forEach((target, index) => {
-    const source = sources[index];
+  const addPlacement = (target, source) => {
+    const singleQuantity =
+      [0, 1, 2, 4].includes(source.equipType) ||
+      /^(Sorcery|Pyromancy|Miracle):/.test(source.name);
     const placement = {
       rowId: target.rowId,
       sourceRowId: source.rowId,
@@ -1185,6 +1273,12 @@ function randomizeExtractedItemLots(config, catalog) {
       itemId: source.itemId,
       itemCategory: source.category,
       equipType: source.equipType,
+      itemQuantity: singleQuantity
+        ? 1
+        : Math.max(1, Number(source.quantity) || 1),
+      ...(target.kind === "shop"
+        ? { shopQuantity: shopPurchaseLimit(source) }
+        : {}),
       from: target.name,
       to: source.name,
       itemName: source.name,
@@ -1209,7 +1303,16 @@ function randomizeExtractedItemLots(config, catalog) {
     } else {
       result.shops.push(placement);
     }
-  });
+  };
+  for (const [stream, targets] of [
+    ["all-item-sources", globalTargets],
+    ["shop-consumables", shopOnlyTargets],
+  ]) {
+    if (targets.length === 0) continue;
+    const rng = createStream(config.seed, stream, config.version);
+    const sources = shuffledWithoutFixedPoints(rng, targets);
+    targets.forEach((target, index) => addPlacement(target, sources[index]));
+  }
   return result;
 }
 
@@ -1421,9 +1524,9 @@ function randomizeStartingClasses(config, catalog) {
     const requests = [];
     classes.forEach((target, index) => {
       const stats = statsSources[index].start;
-      const usableWeapons = equipmentPools.weapons.filter(
+      const baseStrength = Number(stats.baseStr);
+      const otherwiseUsableWeapons = equipmentPools.weapons.filter(
         (weapon) =>
-          weapon.strength <= Number(stats.baseStr) &&
           weapon.dexterity <= Number(stats.baseDex) &&
           weapon.intelligence <= Number(stats.baseMag) &&
           weapon.faith <= Number(stats.baseFai) &&
@@ -1433,14 +1536,22 @@ function randomizeStartingClasses(config, catalog) {
           weapon.name !== "Fists" &&
           !(weapon.id >= 1_200_000 && weapon.id < 1_300_000),
       );
+      const oneHandedWeapons = otherwiseUsableWeapons.filter(
+        (weapon) => weapon.strength <= baseStrength,
+      );
+      const twoHandCompatibleWeapons = otherwiseUsableWeapons.filter(
+        (weapon) => weapon.strength <= Math.floor(baseStrength * 1.5),
+      );
       const roles = specialIds.has(target.id)
         ? ["primary", "offhand", "special"]
         : ["primary", "offhand"];
       for (const role of roles) {
         const candidates =
           role === "primary"
-            ? usableWeapons.filter((weapon) => weapon.isPrimaryWeapon === true)
-            : usableWeapons;
+            ? twoHandCompatibleWeapons.filter(
+                (weapon) => weapon.isPrimaryWeapon === true,
+              )
+            : oneHandedWeapons;
         if (candidates.length === 0) {
           throw new Error(
             `Not enough compatible equipment for ${target.name}:${role}.`,
@@ -1732,8 +1843,8 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
               : "Enemy drops were preserved.",
             config.randomizeShops
               ? config.progressionLogic
-                ? "Shop inventory joined the enabled global item pool; finite and event-bound goods stayed protected."
-                : "Shop inventory joined the enabled global item pool."
+                ? "Shop inventory joined the enabled global item pool; arrows, bolts, and throwable stock stayed shop-only, while event-bound goods stayed protected."
+                : "Shop inventory joined the enabled global item pool; arrows, bolts, and throwable stock stayed shop-only."
               : "Shops were preserved.",
           ]
         : config.randomizeProtectedItems

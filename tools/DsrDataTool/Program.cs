@@ -1173,7 +1173,12 @@ static PatchReport PatchEnemies(
                     : null,
             row.GetProperty("itemId").GetInt32(),
             row.GetProperty("itemCategory").GetInt32(),
-            row.GetProperty("equipType").GetInt32()))
+            row.GetProperty("equipType").GetInt32(),
+            row.GetProperty("itemQuantity").GetInt32(),
+            row.TryGetProperty("shopQuantity", out var shopQuantity) &&
+                shopQuantity.ValueKind == JsonValueKind.Number
+                    ? shopQuantity.GetInt32()
+                    : null))
         .ToList();
 
     Directory.CreateDirectory(outputDirectory);
@@ -2480,7 +2485,7 @@ static List<PatchedFile> PatchBossNames(
             {
                 var disableEvent = new EMEVD.Event(
                     nextCustomEventId++,
-                    EMEVD.Event.RestBehaviorType.End);
+                    EMEVD.Event.RestBehaviorType.Restart);
                 disableEvent.Instructions.Add(new EMEVD.Instruction(
                     2004,
                     5,
@@ -2878,7 +2883,9 @@ static List<PatchedFile> PatchBossNames(
                 var eventId = nextCustomEventId++;
                 var disableEvent = verification.Events.Single(entry =>
                     entry.ID == eventId);
-                if (disableEvent.Instructions.Count != 2 ||
+                if (disableEvent.RestBehavior !=
+                        EMEVD.Event.RestBehaviorType.Restart ||
+                    disableEvent.Instructions.Count != 2 ||
                     disableEvent.Instructions.Any(instruction =>
                         instruction.Bank != 2004 ||
                         instruction.ID is not (1 or 5) ||
@@ -3389,12 +3396,17 @@ static PatchedFile? PatchGameParam(
             var suffix = assignment.TargetSlot!.Value.ToString("00");
             AssertCell(row, $"lotItemId{suffix}", assignment.ItemId);
             AssertCell(row, $"lotItemCategory{suffix}", assignment.ItemCategory);
+            AssertCell(row, $"lotItemNum{suffix}", assignment.ItemQuantity);
         }
         else
         {
             var row = verifiedShops.Rows.Single(entry => entry.ID == assignment.RowId);
             AssertCell(row, "equipId", assignment.ItemId);
             AssertCell(row, "equipType", assignment.EquipType);
+            AssertCell(row, "sellQuantity", assignment.ShopQuantity!.Value);
+            if (GetCellInt(row, "eventFlag", -1) < 0)
+                throw new InvalidDataException(
+                    $"Shop row {assignment.RowId} has no stock event flag.");
         }
     }
     foreach (var placement in enemyPlacements.Where(value => value.ScaledNpcParamId.HasValue))
@@ -4031,6 +4043,18 @@ static void ApplyItemAssignments(
     if (duplicateTarget != null)
         throw new InvalidDataException(
             $"Duplicate randomized item target: {duplicateTarget.Key}.");
+    var stockFlags = shopParam.Rows
+        .Select(row => GetCellInt(row, "eventFlag", -1))
+        .Where(flag => flag >= 0)
+        .ToHashSet();
+    int StockFlagFor(PARAM.Row row)
+    {
+        var candidate = 19_000_000 + row.ID * 10;
+        while (stockFlags.Contains(candidate))
+            candidate += 10;
+        stockFlags.Add(candidate);
+        return candidate;
+    }
     foreach (var assignment in assignments)
     {
         if (assignment.TargetKind == "lot")
@@ -4044,8 +4068,10 @@ static void ApplyItemAssignments(
             var suffix = assignment.TargetSlot.Value.ToString("00");
             SetCell(row, $"lotItemId{suffix}", assignment.ItemId);
             SetCell(row, $"lotItemCategory{suffix}", assignment.ItemCategory);
+            SetCell(row, $"lotItemNum{suffix}", assignment.ItemQuantity);
             AssertCell(row, $"lotItemId{suffix}", assignment.ItemId);
             AssertCell(row, $"lotItemCategory{suffix}", assignment.ItemCategory);
+            AssertCell(row, $"lotItemNum{suffix}", assignment.ItemQuantity);
         }
         else if (assignment.TargetKind == "shop")
         {
@@ -4054,8 +4080,16 @@ static void ApplyItemAssignments(
                     $"Shop row {assignment.RowId} is missing.");
             SetCell(row, "equipId", assignment.ItemId);
             SetCell(row, "equipType", assignment.EquipType);
+            SetCell(
+                row,
+                "sellQuantity",
+                assignment.ShopQuantity
+                    ?? throw new InvalidDataException(
+                        "Shop assignment has no purchase limit."));
+            SetCell(row, "eventFlag", StockFlagFor(row));
             AssertCell(row, "equipId", assignment.ItemId);
             AssertCell(row, "equipType", assignment.EquipType);
+            AssertCell(row, "sellQuantity", assignment.ShopQuantity.Value);
         }
         else
         {
@@ -4477,7 +4511,9 @@ record ItemAssignment(
     int? TargetSlot,
     int ItemId,
     int ItemCategory,
-    int EquipType);
+    int EquipType,
+    int ItemQuantity,
+    int? ShopQuantity);
 record PatchedMap(
     string MapId,
     string Source,

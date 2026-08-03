@@ -138,6 +138,8 @@ test("real catalog produces deterministic enemies with visibly different models"
         "grounded-new-londo-ghost-slot-permutation",
         "dragon-only-group-permutation",
         "static-bridge-dragon-permutation",
+        "disabled-extra-bell-gargoyle-body",
+        "disabled-extra-bell-gargoyle-part",
         "disabled-hellkite-flight-auxiliary",
         "linked-dragon-part-permutation",
         "portable-hydra-dragon-permutation",
@@ -159,6 +161,7 @@ test("real catalog produces deterministic enemies with visibly different models"
     ["c3330", 333000],
     ["c2280", 228000],
     ["c2300", 230000],
+    ["c2780", 278000],
   ]);
   const ordinaryPlacements = first.placements.enemies.filter(
     (placement) =>
@@ -329,6 +332,19 @@ test("real catalog produces deterministic enemies with visibly different models"
         placement.entityId >= 16_099_000 &&
         placement.compatibility ===
           "passive-new-londo-entrance-permutation",
+    ),
+  );
+  const activeMimics = ordinaryPlacements.filter(
+    (placement) =>
+      placement.targetModelName === "c2780" &&
+      !placement.passiveUntilAttacked,
+  );
+  assert.ok(activeMimics.length > 0);
+  assert.ok(
+    activeMimics.every(
+      (placement) =>
+        placement.baseThinkParamId === 278000 &&
+        placement.forceCombatActivation === true,
     ),
   );
   let longestCycle = 0;
@@ -710,11 +726,12 @@ test("real catalog produces real boss and world-item placements", async () => {
     [taurus.groundX, taurus.groundY, taurus.groundZ],
     [1.16, 15.82, -114.34],
   );
+  assert.equal(taurus.groundRotationY, -73.54);
+  assert.notEqual(taurus.targetModelName, "c5250");
   for (const [slot, expected] of new Map([
     ["m12_00_00_00:c3230_0000", [196.12, 8.09, 62.25]],
     ["m12_00_00_01:c3230_0000", [196.12, 8.09, 62.25]],
     ["m14_01_00_00:c5250_0000", [396.14, -278.14, 74.56]],
-    ["m10_01_00_00:c5350_0002", [6.14, 48.92, 124.35]],
   ])) {
     const placement = result.placements.bosses.find((entry) => entry.slot === slot);
     assert.deepEqual(
@@ -728,14 +745,11 @@ test("real catalog produces real boss and world-item placements", async () => {
   const stagedGargoyle = result.placements.enemies.find(
     (entry) => entry.slot === "m10_01_00_00:c5350_0001",
   );
-  assert.deepEqual(
-    [
-      stagedGargoyle.groundX,
-      stagedGargoyle.groundY,
-      stagedGargoyle.groundZ,
-    ],
-    [10.69, 48.92, 124.35],
+  assert.equal(stagedGargoyle.disableEntity, true);
+  const secondGargoyle = result.placements.enemies.find(
+    (entry) => entry.slot === "m10_01_00_00:c5350_0002",
   );
+  assert.equal(secondGargoyle.disableEntity, true);
   for (const [primary, linked] of [["c5270", "c5271"]]) {
     assert.equal(
       assignmentsByVanillaModel.get(linked).targetModelName,
@@ -760,7 +774,11 @@ test("real catalog produces real boss and world-item placements", async () => {
       family.has(body.targetModelName),
     );
     assert.ok(sourceFamily);
-    assert.ok(parts.every((entry) => sourceFamily.has(entry.targetModelName)));
+    assert.ok(
+      parts.every(
+        (entry) => entry.disableEntity || sourceFamily.has(entry.targetModelName),
+      ),
+    );
     assert.ok(
       [...targetFamily].some((modelName) =>
         [body, ...parts].some((entry) => entry.modelName === modelName),
@@ -878,8 +896,8 @@ test("classes use deterministic stats and general-catalog equipment", async () =
   const classById = new Map(
     gameCatalog.startingClasses.map((entry) => [entry.id, entry]),
   );
-  const canUse = (stats, weapon) =>
-    weapon.strength <= stats.baseStr &&
+  const canUse = (stats, weapon, twoHanded = false) =>
+    weapon.strength <= Math.floor(stats.baseStr * (twoHanded ? 1.5 : 1)) &&
     weapon.dexterity <= stats.baseDex &&
     weapon.intelligence <= stats.baseMag &&
     weapon.faith <= stats.baseFai;
@@ -887,7 +905,7 @@ test("classes use deterministic stats and general-catalog equipment", async () =
     classes.every((entry) => {
       const stats = classById.get(entry.statsFrom).start;
       return (
-        canUse(stats, entry.equipment.pickupWeapon) &&
+        canUse(stats, entry.equipment.pickupWeapon, true) &&
         entry.equipment.pickupWeapon.isPrimaryWeapon === true &&
         canUse(stats, entry.equipment.pickupOffhand) &&
         (!entry.equipment.pickupSpecial ||
@@ -925,6 +943,10 @@ test("classes use deterministic stats and general-catalog equipment", async () =
 test("every class receives a primary weapon as its first pickup", async () => {
   const gameCatalog = await catalog();
   const vanilla = vanillaStartingIds(gameCatalog);
+  const classById = new Map(
+    gameCatalog.startingClasses.map((entry) => [entry.id, entry]),
+  );
+  let foundTwoHandOnlyPrimary = false;
   for (let seed = 1; seed <= 100; seed += 1) {
     const result = generate(
       {
@@ -967,7 +989,18 @@ test("every class receives a primary weapon as its first pickup", async () => {
       entry.equipment.legs.id,
     ]);
     assert.equal(new Set(allArmor).size, allArmor.length);
+    foundTwoHandOnlyPrimary ||= result.placements.startingClasses.some(
+      (entry) => {
+        const stats = classById.get(entry.statsFrom).start;
+        const weapon = entry.equipment.pickupWeapon;
+        return (
+          weapon.strength > stats.baseStr &&
+          weapon.strength <= Math.floor(stats.baseStr * 1.5)
+        );
+      },
+    );
   }
+  assert.equal(foundTwoHandOnlyPrimary, true);
 });
 
 test("world items, gifts, enemy drops, and shops share one deterministic pool", async () => {
@@ -983,11 +1016,67 @@ test("world items, gifts, enemy drops, and shops share one deterministic pool", 
   const second = generate(config, { gameCatalog });
   assert.equal(first.placementHash, second.placementHash);
   assert.equal(first.placements.gifts.length, 18);
-  assert.equal(first.placements.enemyDrops.length, gameCatalog.enemyDropLots.length);
+  assert.equal(
+    first.placements.enemyDrops.length,
+    gameCatalog.enemyDropLots.reduce(
+      (count, lot) => count + lot.entries.length,
+      0,
+    ),
+  );
   assert.ok(first.placements.shops.length > 200);
   assert.ok(first.placements.gifts.every((entry) => entry.rowId !== entry.sourceRowId));
-  assert.ok(first.placements.enemyDrops.every((entry) => entry.rowId !== entry.sourceRowId));
+  assert.ok(first.placements.enemyDrops.every((entry) => !entry.preserved));
   assert.ok(first.placements.shops.every((entry) => entry.rowId !== entry.sourceRowId));
+  const bulkGoods = new Set([
+    "Throwing Knife",
+    "Poison Throwing Knife",
+    "Firebomb",
+    "Black Firebomb",
+    "Dung Pie",
+    "Lloyd's Talisman",
+    "Alluring Skull",
+    "Prism Stone",
+  ]);
+  const isBulk = (entry) =>
+    (entry.equipType === 0 && /(?:Arrow|Bolt)$/u.test(entry.name ?? entry.to)) ||
+    (entry.equipType === 3 && bulkGoods.has(entry.name ?? entry.to));
+  const restrictedShopRows = new Set(
+    gameCatalog.shopEntries.filter(isBulk).map((entry) => entry.rowId),
+  );
+  const restrictedShopPlacements = first.placements.shops.filter((entry) =>
+    restrictedShopRows.has(entry.rowId),
+  );
+  assert.equal(restrictedShopPlacements.length, restrictedShopRows.size);
+  assert.ok(
+    restrictedShopPlacements.every(
+      (entry) => entry.sourcePool === "shop" && isBulk(entry),
+    ),
+  );
+  assert.ok(
+    first.placements.shops.every((entry) => {
+      const magic =
+        entry.equipType === 4 ||
+        /^(?:Sorcery|Pyromancy|Miracle):/u.test(entry.to);
+      const expected = isBulk(entry)
+        ? 99
+        : entry.equipType === 0 || entry.equipType === 1 || magic
+          ? 1
+          : 10;
+      return entry.shopQuantity === expected;
+    }),
+  );
+  for (const placement of [
+    ...first.placements.items,
+    ...first.placements.gifts,
+    ...first.placements.enemyDrops,
+  ]) {
+    if (
+      [0, 1, 2, 4].includes(placement.equipType) ||
+      /^(?:Sorcery|Pyromancy|Miracle):/u.test(placement.to)
+    ) {
+      assert.equal(placement.itemQuantity, 1);
+    }
+  }
   assert.ok(
     first.placements.items.some((entry) => entry.sourcePool === "enemy"),
     "at least one enemy drop should move to a world-item location",

@@ -13,7 +13,10 @@ function formatItemLocation(location, fallbackMap, fallbackLot) {
 }
 
 function itemPlacementLine(placement) {
-  const itemName = placement.itemName || placement.to;
+  const quantity = Number(placement.itemQuantity) || 1;
+  const itemName = `${placement.itemName || placement.to}${
+    quantity > 1 ? ` x${quantity}` : ""
+  }`;
   const original = formatItemLocation(
     placement.originalLocation,
     placement.map,
