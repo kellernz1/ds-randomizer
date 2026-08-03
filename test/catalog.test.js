@@ -943,7 +943,7 @@ test("every class receives a primary weapon as its first pickup", async () => {
   }
 });
 
-test("real gifts, drops, and shops are independent and deterministic", async () => {
+test("world items and enemy drops share one deterministic pool", async () => {
   const gameCatalog = await catalog();
   const config = {
     ...defaultConfig,
@@ -961,6 +961,14 @@ test("real gifts, drops, and shops are independent and deterministic", async () 
   assert.ok(first.placements.gifts.every((entry) => entry.rowId !== entry.sourceRowId));
   assert.ok(first.placements.enemyDrops.every((entry) => entry.rowId !== entry.sourceRowId));
   assert.ok(first.placements.shops.every((entry) => entry.rowId !== entry.sourceRowId));
+  assert.ok(
+    first.placements.items.some((entry) => entry.sourcePool === "enemy"),
+    "at least one enemy drop should move to a world-item location",
+  );
+  assert.ok(
+    first.placements.enemyDrops.some((entry) => entry.sourcePool === "world"),
+    "at least one world item should move to an enemy-drop location",
+  );
   const vanillaDropScaling = generate(
     { ...config, enemyScaling: "vanilla" },
     { gameCatalog },
@@ -987,15 +995,18 @@ test("real gifts, drops, and shops are independent and deterministic", async () 
       ),
     );
   }
-  for (const placements of [
-    first.placements.gifts,
-    first.placements.enemyDrops,
-  ]) {
-    assert.deepEqual(
-      placements.map((entry) => entry.sourceRowId).sort((a, b) => a - b),
-      placements.map((entry) => entry.rowId).sort((a, b) => a - b),
-    );
-  }
+  assert.deepEqual(
+    first.placements.gifts.map((entry) => entry.sourceRowId).sort((a, b) => a - b),
+    first.placements.gifts.map((entry) => entry.rowId).sort((a, b) => a - b),
+  );
+  const sharedItemPlacements = [
+    ...first.placements.items,
+    ...first.placements.enemyDrops,
+  ];
+  assert.deepEqual(
+    sharedItemPlacements.map((entry) => entry.sourceRowId).sort((a, b) => a - b),
+    sharedItemPlacements.map((entry) => entry.rowId).sort((a, b) => a - b),
+  );
   for (const equipType of new Set(
     first.placements.shops.map((entry) => entry.equipType),
   )) {

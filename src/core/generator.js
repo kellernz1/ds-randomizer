@@ -1061,16 +1061,8 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
   return placements.concat(dragonPlan.bosses);
 }
 
-function randomizeExtractedItems(config, catalog) {
+function randomizableWorldItemLots(config, catalog) {
   if (!catalog?.worldItemLots?.length) return [];
-  const areaNames = new Map(
-    (catalog.maps || []).map((map) => [map.id, map.name]),
-  );
-  const describeLocation = (lot) => ({
-    area: areaNames.get(lot.mapId) || lot.mapId,
-    map: lot.mapId,
-    itemLot: lot.rowId,
-  });
   const permanentlyFixedGoods = new Set([2010, 2015]);
   const isPermanentlyFixed = (lot) =>
     lot.entries?.some(
@@ -1080,42 +1072,69 @@ function randomizeExtractedItems(config, catalog) {
     ) ||
     lot.name === "Dungeon Cell Key" ||
     lot.name === "Undead Asylum F2 East Key";
-  const lots = catalog.worldItemLots.filter(
+  return catalog.worldItemLots.filter(
     (lot) =>
       !isPermanentlyFixed(lot) &&
       (lot.protectedProgression
         ? config.randomizeProtectedItems
         : config.randomizeItems),
   );
-  if (lots.length < 2) return [];
-  const rng = createStream(config.seed, "world-items", config.version);
-  const ordinary = lots.filter((lot) => !lot.protectedProgression);
-  const progression = lots.filter((lot) => lot.protectedProgression);
-  const placements = [];
-  const groups = config.randomizeItems && config.randomizeProtectedItems
-    ? [lots]
-    : [ordinary, progression];
-  for (const group of groups) {
-    if (group.length < 2) continue;
-    const sources = shuffledWithoutFixedPoints(rng, group);
-    group.forEach((target, index) => {
-      const source = sources[index];
-      placements.push({
-        rowId: target.rowId,
-        sourceRowId: source.rowId,
-        location: `itemlot:${target.rowId}`,
-        map: target.mapId,
-        from: target.name,
-        to: source.name,
-        itemName: source.name,
-        originalLocation: describeLocation(source),
-        randomizedLocation: describeLocation(target),
-        progression: source.protectedProgression,
-        preserved: target.rowId === source.rowId,
-      });
-    });
-  }
-  return placements;
+}
+
+function randomizeExtractedItemLots(config, catalog) {
+  const worldLots = randomizableWorldItemLots(config, catalog);
+  const enemyLots = config.randomizeEnemyDrops
+    ? catalog?.enemyDropLots || []
+    : [];
+  const targets = [
+    ...worldLots.map((lot) => ({ ...lot, pool: "world" })),
+    ...enemyLots.map((lot) => ({ ...lot, pool: "enemy" })),
+  ];
+  const result = { items: [], enemyDrops: [] };
+  if (targets.length < 2) return result;
+
+  const areaNames = new Map(
+    (catalog.maps || []).map((map) => [map.id, map.name]),
+  );
+  const describeLocation = (lot) =>
+    lot.pool === "world"
+      ? {
+          area: areaNames.get(lot.mapId) || lot.mapId,
+          map: lot.mapId,
+          itemLot: lot.rowId,
+        }
+      : {
+          area: `Enemy drop: ${lot.name}`,
+          map: "ItemLotParam",
+          itemLot: lot.rowId,
+        };
+  const rng = createStream(config.seed, "all-item-lots", config.version);
+  const sources = shuffledWithoutFixedPoints(rng, targets);
+
+  targets.forEach((target, index) => {
+    const source = sources[index];
+    const placement = {
+      rowId: target.rowId,
+      sourceRowId: source.rowId,
+      from: target.name,
+      to: source.name,
+      itemName: source.name,
+      sourcePool: source.pool,
+      targetPool: target.pool,
+      originalLocation: describeLocation(source),
+      randomizedLocation: describeLocation(target),
+      progression: Boolean(source.protectedProgression),
+      preserved: target.rowId === source.rowId,
+    };
+    if (target.pool === "world") {
+      placement.location = `itemlot:${target.rowId}`;
+      placement.map = target.mapId;
+      result.items.push(placement);
+    } else {
+      result.enemyDrops.push(placement);
+    }
+  });
+  return result;
 }
 
 function shuffledWithoutFixedPoints(rng, values) {
@@ -1454,19 +1473,6 @@ function randomizeGifts(config, catalog) {
   }));
 }
 
-function randomizeEnemyDrops(config, catalog) {
-  if (!config.randomizeEnemyDrops || !catalog?.enemyDropLots?.length) return [];
-  const rng = createStream(config.seed, "enemy-drops", config.version);
-  const lots = catalog.enemyDropLots;
-  const sources = shuffledWithoutFixedPoints(rng, lots);
-  return lots.map((target, index) => ({
-    rowId: target.rowId,
-    sourceRowId: sources[index].rowId,
-    from: target.name,
-    to: sources[index].name,
-  }));
-}
-
 function randomizeShops(config, catalog) {
   if (!config.randomizeShops || !catalog?.shopEntries?.length) return [];
   const rng = createStream(config.seed, "shops", config.version);
@@ -1636,6 +1642,9 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
   const bossPlan = extractedData
     ? randomizeExtractedBosses(config, gameCatalog, dragonPlan)
     : null;
+  const itemLotPlan = extractedData
+    ? randomizeExtractedItemLots(config, gameCatalog)
+    : null;
   const result = {
     schemaVersion: 1,
     randomizerVersion: config.version,
@@ -1658,14 +1667,14 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
         ? bossPlan
         : randomizeBosses(config),
       items: extractedData
-        ? randomizeExtractedItems(config, gameCatalog)
+        ? itemLotPlan.items
         : randomizeItems(config),
       startingClasses: extractedData
         ? randomizeStartingClasses(config, gameCatalog)
         : [],
       gifts: extractedData ? randomizeGifts(config, gameCatalog) : [],
       enemyDrops: extractedData
-        ? randomizeEnemyDrops(config, gameCatalog)
+        ? itemLotPlan.enemyDrops
         : [],
       shops: extractedData ? randomizeShops(config, gameCatalog) : [],
     },
@@ -1690,7 +1699,9 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
               ? "Items granted by NPCs were redistributed."
               : "NPC gifts were preserved.",
             config.randomizeEnemyDrops
-              ? "Renewable enemy drops were redistributed."
+              ? config.randomizeItems || config.randomizeProtectedItems
+                ? "Enemy drops and enabled world items were redistributed together in one global pool."
+                : "Renewable enemy drops were redistributed."
               : "Enemy drops were preserved.",
             config.randomizeShops
               ? config.progressionLogic

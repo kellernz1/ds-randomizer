@@ -35,7 +35,10 @@ function bossPlacementLine(placement) {
 }
 
 function itemLocationsText(result) {
-  const itemPlacements = [...result.placements.items].sort(
+  const itemPlacements = [
+    ...result.placements.items,
+    ...(result.placements.enemyDrops || []),
+  ].sort(
     (left, right) =>
       (left.itemName || left.to).localeCompare(right.itemName || right.to) ||
       (left.sourceRowId ?? 0) - (right.sourceRowId ?? 0),
@@ -50,7 +53,7 @@ function itemLocationsText(result) {
   const sections = [];
   if (itemPlacements.length > 0) {
     sections.push(
-      "=== WORLD ITEMS ===",
+      "=== WORLD ITEMS AND ENEMY DROPS ===",
       "",
       ...itemPlacements.flatMap((placement) => [itemPlacementLine(placement), ""]),
     );
@@ -68,7 +71,7 @@ function itemLocationsText(result) {
     `Hash: ${result.placementHash}`,
     `Version: ${result.randomizerVersion}`,
     "",
-    "This report shows item placements and the boss assigned to each encounter.",
+    "This report shows world-item and enemy-drop placements, plus the boss assigned to each encounter.",
     "",
     ...sections,
   ].join("\n")}\n`;
@@ -153,6 +156,7 @@ export async function writeOutput(result, baseDirectory) {
   }
   if (
     result.placements.items.length > 0 ||
+    (result.placements.enemyDrops || []).length > 0 ||
     result.placements.bosses.length > 0
   ) {
     await writeFile(
@@ -170,7 +174,7 @@ export async function writeOutput(result, baseDirectory) {
           "The mod/map directory contains validated MSB copies when maps were changed.",
           "The generator does not modify the source game installation.",
           "Changed maps and GameParam are validated copies until activation.",
-          "Every category selected in the configurator is applied independently.",
+          "Enabled world items and enemy drops share one pool; other selected categories are applied separately.",
           "",
         ].join("\n")
       : [

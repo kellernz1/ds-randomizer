@@ -3289,14 +3289,9 @@ static PatchedFile? PatchGameParam(
         "NPC gift");
     ApplyRowMappings(
         itemLotParam,
-        enemyDropPlacements,
+        enemyDropPlacements.Concat(worldItemPlacements).ToList(),
         IsItemLotPayloadField,
-        "drop");
-    ApplyRowMappings(
-        itemLotParam,
-        worldItemPlacements,
-        IsItemLotPayloadField,
-        "world item");
+        "world item and enemy drop");
     ApplyRowMappings(
         shopParam,
         shopPlacements,
