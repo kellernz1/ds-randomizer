@@ -31,7 +31,7 @@ async function catalog() {
     }));
   return {
     ...data,
-    schemaVersion: 16,
+    schemaVersion: 17,
     gifts: hydrate(data.gifts, 8_000_000),
     enemyDropLots: hydrate(data.enemyDropLots, 8_100_000),
     worldItemLots: hydrate(data.worldItemLots, 8_200_000),
@@ -510,7 +510,7 @@ test("real catalog produces deterministic enemies with visibly different models"
 
 test("friendly NPC and human-character slots are never randomized", async () => {
   const gameCatalog = await catalog();
-  assert.equal(gameCatalog.schemaVersion, 16);
+  assert.equal(gameCatalog.schemaVersion, 17);
   const protectedSlots = gameCatalog.enemySlots.filter(
     (slot) =>
       (slot.teamType >= 2 && slot.modelName !== "c5291") ||
@@ -526,6 +526,42 @@ test("friendly NPC and human-character slots are never randomized", async () => 
     result.placements.enemies.map((placement) => placement.slot),
   );
   assert.ok(protectedSlots.every((slot) => !randomizedIds.has(slot.id)));
+});
+
+test("friendly NPC death drops and the Dusk Crown Ring enter the item pool", async () => {
+  const gameCatalog = await catalog();
+  const dropRows = new Map(
+    gameCatalog.enemyDropLots.map((entry) => [entry.rowId, entry]),
+  );
+  for (const [rowId, itemName] of [
+    [25_100_100, "Uchigatana"],
+    [26_400_000, "Blacksmith Hammer"],
+    [28_600_100, "Blacksmith Giant Hammer"],
+    [29_200_000, "Hammer of Vamos"],
+    [35_300_101, "Dusk Crown Ring"],
+  ]) {
+    assert.equal(dropRows.get(rowId)?.entries[0]?.name, itemName);
+  }
+  const result = generate(
+    {
+      ...defaultConfig,
+      seed: "friendly-npc-drops-01",
+      randomizeEnemyDrops: true,
+    },
+    { gameCatalog },
+  );
+  const randomizedRows = new Set(
+    result.placements.enemyDrops.map((entry) => entry.rowId),
+  );
+  for (const rowId of [
+    25_100_100,
+    26_400_000,
+    28_600_100,
+    29_200_000,
+    35_300_101,
+  ]) {
+    assert.ok(randomizedRows.has(rowId));
+  }
 });
 
 test("all report-facing item names come from English message tables", async () => {
@@ -1151,7 +1187,7 @@ test("progression protection fixes Lordvessel and Key to the Seal", async () => 
   assert.equal(chaosResult.placements.gifts.length, 20);
 });
 
-test("progression protection excludes finite and event-bound shop goods", async () => {
+test("requested event-bound shop goods randomize while the remainder stay protected", async () => {
   const gameCatalog = await catalog();
   const protectedResult = generate(
     {
@@ -1176,6 +1212,21 @@ test("progression protection excludes finite and event-bound shop goods", async 
     (entry) => entry.equipType === 3 && entry.eventFlag >= 0,
   );
   assert.ok(finiteGoods.length > 0);
-  assert.ok(finiteGoods.every((entry) => !protectedRows.has(entry.rowId)));
+  const stillProtectedNames = new Set([
+    "Residence Key",
+    "Servant Roster",
+    "Hello Carving",
+    "Thank you Carving",
+  ]);
+  const stillProtected = finiteGoods.filter((entry) =>
+    stillProtectedNames.has(entry.name),
+  );
+  const explicitlyRandomizable = finiteGoods.filter(
+    (entry) => !stillProtectedNames.has(entry.name),
+  );
+  assert.ok(stillProtected.length > 0);
+  assert.ok(explicitlyRandomizable.length > 50);
+  assert.ok(stillProtected.every((entry) => !protectedRows.has(entry.rowId)));
+  assert.ok(explicitlyRandomizable.every((entry) => protectedRows.has(entry.rowId)));
   assert.ok(unprotectedResult.placements.shops.length > protectedResult.placements.shops.length);
 });

@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using SoulsFormats;
 
-const int SchemaVersion = 16;
+const int SchemaVersion = 17;
 Console.OutputEncoding = new UTF8Encoding(false);
 Console.InputEncoding = new UTF8Encoding(false);
 
@@ -356,9 +356,7 @@ static GameCatalog ScanGame(string gameDirectory)
                     itemNames,
                     slots.Where(slot =>
                             slot.NpcParamId >= 0 &&
-                            slot.TeamType is 0 or 1 &&
-                            slot.ModelName.StartsWith('c') &&
-                            slot.ModelName != "c0000")
+                            slot.ModelName.StartsWith('c'))
                         .Select(slot => slot.NpcParamId)
                         .ToHashSet(),
                     eventAwardItemLotIds);
@@ -470,6 +468,9 @@ static RandomizerParamData ReadRandomizerParamData(
             })
             .Where(entry => entry.ItemId > 0 && entry.EquipType >= 0)
             .ToList();
+    bool ContainsDuskCrownRing(PARAM.Row row) =>
+        ItemLotEntries(row).Any(entry =>
+            entry.Name.Equals("Dusk Crown Ring", StringComparison.OrdinalIgnoreCase));
     var giftIds = new HashSet<int>
     {
         1010, 1040, 1050, 1060, 1090, 1100, 1110, 1140, 1150, 1190,
@@ -497,6 +498,11 @@ static RandomizerParamData ReadRandomizerParamData(
         .Where(id => id > 0)
         .ToHashSet();
     dropLotIds.UnionWith(eventAwardItemLotIds);
+    // The Darkroot Basin Hydra grants this ring through encounter-specific
+    // logic that is not represented by the ordinary hostile NPC drop scan.
+    dropLotIds.UnionWith(itemLotParam.Rows
+        .Where(ContainsDuskCrownRing)
+        .Select(row => row.ID));
     bool ContainsProtectedProgression(PARAM.Row row)
     {
         const int accessoryCategory = 0x20000000;
@@ -516,7 +522,8 @@ static RandomizerParamData ReadRandomizerParamData(
     var enemyDropLots = itemLotParam.Rows
         .Where(row => dropLotIds.Contains(row.ID))
         .Where(row => !giftIds.Contains(row.ID))
-        .Where(row => !ContainsProtectedProgression(row))
+        .Where(row =>
+            !ContainsProtectedProgression(row) || ContainsDuskCrownRing(row))
         .Where(row => row.Cells.Any(cell =>
             cell.Def.InternalName.StartsWith("lotItemId", StringComparison.Ordinal) &&
             Convert.ToInt32(cell.Value) > 0))

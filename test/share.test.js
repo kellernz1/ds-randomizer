@@ -26,7 +26,7 @@ async function catalog() {
     }));
   return {
     ...data,
-    schemaVersion: 16,
+    schemaVersion: 17,
     gifts: hydrate(data.gifts, 8_000_000),
     enemyDropLots: hydrate(data.enemyDropLots, 8_100_000),
     worldItemLots: hydrate(data.worldItemLots, 8_200_000),

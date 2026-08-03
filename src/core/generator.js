@@ -1145,6 +1145,69 @@ const bulkShopGoodNames = new Set([
   "Prism Stone",
 ]);
 
+const randomizableProtectedShopItems = new Set([
+  "Armor Smithbox",
+  "Bottomless Box",
+  "Crest of Artorias",
+  "Master Key",
+  "Repairbox",
+  "Weapon Smithbox",
+  "Book of the Guilty",
+  "Dried Finger",
+  "Eye of Death",
+  "Orange Guidance Soapstone",
+  "Divine Blessing",
+  "Gold Pine Resin",
+  "Humanity",
+  "Purging Stone",
+  "Transient Curse",
+  "Twin Humanities",
+  "Cast Light",
+  "Fire Orb",
+  "Great Combustion",
+  "Great Heal Excerpt",
+  "Homeward",
+  "Iron Flesh",
+  "Magic Weapon",
+  "Seek Guidance",
+  "Soul Spear",
+  "Force",
+  "Great Heal",
+  "Heal",
+  "Karmic Justice",
+  "Magic Barrier",
+  "Wrath of the Gods",
+  "Combustion",
+  "Fire Whip",
+  "Fireball",
+  "Firestorm",
+  "Flash Sweat",
+  "Great Fireball",
+  "Poison Mist",
+  "Toxic Mist",
+  "Undead Rapport",
+  "Aural Decoy",
+  "Chameleon",
+  "Crystal Magic Weapon",
+  "Crystal Soul Spear",
+  "Fall Control",
+  "Great Heavy Soul Arrow",
+  "Great Soul Arrow",
+  "Heavy Soul Arrow",
+  "Hidden Body",
+  "Hidden Weapon",
+  "Homing Crystal Soulmass",
+  "Homing Soulmass",
+  "Magic Shield",
+  "Repair",
+  "Resist Curse",
+  "Soul Arrow",
+]);
+
+function canonicalShopItemName(name) {
+  return String(name).replace(/^(?:Sorcery|Pyromancy|Miracle):\s*/u, "");
+}
+
 function isBulkShopConsumable(entry) {
   return (
     (entry.equipType === 0 && /(?:Arrow|Bolt)$/u.test(entry.name)) ||
@@ -1182,7 +1245,8 @@ function randomizeExtractedItemLots(config, catalog) {
         (entry) =>
           !config.progressionLogic ||
           entry.equipType !== 3 ||
-          entry.eventFlag < 0,
+          entry.eventFlag < 0 ||
+          randomizableProtectedShopItems.has(canonicalShopItemName(entry.name)),
       )
     : [];
   const allLots = [
@@ -1766,7 +1830,7 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
   if (errors.length > 0) {
     throw new Error(errors.join("\n"));
   }
-  if (gameCatalog && gameCatalog.schemaVersion !== 16) {
+  if (gameCatalog && gameCatalog.schemaVersion !== 17) {
     throw new Error(
       `Catalog schema ${gameCatalog.schemaVersion} is obsolete. ` +
         "Verify the clean game and import its data again.",
@@ -1843,7 +1907,7 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
               : "Enemy drops were preserved.",
             config.randomizeShops
               ? config.progressionLogic
-                ? "Shop inventory joined the enabled global item pool; arrows, bolts, and throwable stock stayed shop-only, while event-bound goods stayed protected."
+                ? "Shop inventory joined the enabled global item pool; arrows, bolts, and throwable stock stayed shop-only, selected event-bound goods were randomized, and the remaining progression stock stayed protected."
                 : "Shop inventory joined the enabled global item pool; arrows, bolts, and throwable stock stayed shop-only."
               : "Shops were preserved.",
           ]
