@@ -33,14 +33,17 @@ package before touching the game.
 - The first three Asylum enemies remain randomized and keep their replacement
   model's idle movement, but a persistent friendly-enemy allegiance prevents
   all three from attacking until the player damages them
+- The Kiln slot with entity ID `1800201` also remains randomized but stays
+  passive until the player damages it
 - Friendly NPCs, merchants, quest characters, and their spawns are protected
 - Boss encounters exchange only with true boss encounters; ordinary Anor Londo
   gargoyles and non-boss dragons cannot enter the boss pool
 - Boss replacements use complete terrain-safe X/Y/Z points. Event-staged Taurus
   Demon, Bell Gargoyle, Moonlight Butterfly, Ceaseless Discharge, and Asylum
   encounters begin directly inside their playable arenas
-- Dragons only exchange locations with other dragons; detachable tails, wings,
-  legs, and encounter variants move as linked groups
+- Dragons only exchange locations with other dragons; the ordinary Anor Londo
+  Gargoyles participate in the regular-dragon pool, while detachable tails,
+  wings, legs, and encounter variants move as linked groups
 - Hydra bodies and all seven heads also move as linked hydra-only groups
 - Sanctuary Guardian, Gargoyle, and Centipede Demon bodies and removable parts
   are randomized as inseparable boss groups

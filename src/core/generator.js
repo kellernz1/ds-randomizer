@@ -17,6 +17,7 @@ const dragonBodyModels = new Set([
   "c3421", // Bounding Demon / Undead Dragon legs
   "c3430", // Hellkite Drake
   "c3520", // Drake
+  "c5351", // Anor Londo Gargoyle (ordinary enemy)
   "c4510", // Black Dragon Kalameet
   "c5260", // Gaping Dragon
   "c5290", // Seath the Scaleless
@@ -59,6 +60,7 @@ const dragonNames = new Map([
   ["c3421", "Bounding Demon"],
   ["c3430", "Hellkite Drake"],
   ["c3520", "Drake"],
+  ["c5351", "Anor Londo Gargoyle"],
   ["c4510", "Black Dragon Kalameet"],
   ["c5260", "Gaping Dragon"],
   ["c5290", "Seath the Scaleless"],
@@ -100,6 +102,11 @@ const newLondoPassiveSlots = new Set(
       `m16_00_00_00:c2500_${String(index).padStart(4, "0")}`,
   ),
 );
+const additionalPassiveSlots = new Set([
+  // The second Black Knight in the Kiln should observe the destination's
+  // non-hostile opening behavior regardless of which enemy replaces it.
+  "m18_00_00_00:c2790_0002",
+]);
 const deferredBossActivationRegions = new Map([
   // The regions used by the vanilla battle events are beyond the fog gate and
   // below the collapsing Asylum floor respectively. Waiting on the event ID
@@ -272,6 +279,10 @@ function buildDragonPlan(config, catalog) {
     (body) => body !== hellkitePrimary,
   );
   const hellkiteParts = byModel("c3431", "m10_01_00_00");
+  const anorGargoyleBodies = byModel("c5351", "m15_01_00_00")
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const anorGargoyleParts = byModel("c5353", "m15_01_00_00")
+    .sort((left, right) => left.id.localeCompare(right.id));
   const hydras = ["m12_00_00_00", "m12_00_00_01", "m13_02_00_00"]
     .map((mapId) =>
       unit(
@@ -284,9 +295,6 @@ function buildDragonPlan(config, catalog) {
     .sort((left, right) => left.id.localeCompare(right.id));
   const isHydra = (entry) => entry.id.startsWith("hydra-");
   const simpleRegularDragons = [
-    ...(hellkitePrimary
-      ? [unit("hellkite-bridge", [hellkitePrimary])]
-      : []),
     unit(
       "valley-undead-dragon",
       byModel("c3420", "m16_00_00_00"),
@@ -297,6 +305,15 @@ function buildDragonPlan(config, catalog) {
   const boundingDragons = byModel("c3421", "m14_01_00_00").map((body) =>
     unit(`bounding-${body.id}`, [body]));
   const units = [
+    ...(hellkitePrimary && hellkiteParts.length === 1
+      ? [unit("hellkite-bridge", [hellkitePrimary], hellkiteParts)]
+      : []),
+    ...anorGargoyleBodies.map((body, index) =>
+      unit(
+        `anor-londo-gargoyle-${index}`,
+        [body],
+        anorGargoyleParts[index] ? [anorGargoyleParts[index]] : [],
+      )),
     unit(
       "priscilla",
       byModel("c2730", "m11_00_00_00"),
@@ -529,7 +546,7 @@ function buildDragonPlan(config, catalog) {
         });
       }
     });
-    for (const auxiliary of [...hellkiteAuxiliary, ...hellkiteParts]) {
+    for (const auxiliary of hellkiteAuxiliary) {
       result.reservedSlotIds.add(auxiliary.id);
       result.enemies.push(enemyPlacement(
         config,
@@ -592,9 +609,24 @@ function buildDragonPlan(config, catalog) {
             ...bossGrounding(targetBody, catalog),
             linkedDragonGroup: target.id,
           }
+        : target.id === "hellkite-bridge"
+        ? {
+            compatibility: "static-bridge-dragon-permutation",
+            linkedDragonGroup: target.id,
+            staticBridgeDragon: true,
+            groundX: staticBridgeDragonSpawn.x,
+            groundY: staticBridgeDragonSpawn.y,
+            groundZ: staticBridgeDragonSpawn.z,
+            targetCollisionName: staticBridgeDragonSpawn.collisionName,
+            forceCombatActivation: targetBody.entityId >= 0,
+            ...(config.randomizeEnemyDrops
+              ? { awardItemLotId: 34_310_000 }
+              : {}),
+          }
         : {
             compatibility: "dragon-only-group-permutation",
             linkedDragonGroup: target.id,
+            forceCombatActivation: targetBody.entityId >= 0,
           };
       const placement = enemyPlacement(
         config,
@@ -917,7 +949,8 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan, bossPlan) {
     const replacement = assignment.get(slot.id) ?? slot;
     const passiveUntilAttacked =
       asylumPassiveSlots.has(slot.id) ||
-      newLondoPassiveSlots.has(slot.id);
+      newLondoPassiveSlots.has(slot.id) ||
+      additionalPassiveSlots.has(slot.id);
     const replacementThinkParamId =
       activeReplacementThinkParams.get(replacement.modelName) ??
       replacement.thinkParamId;
@@ -978,7 +1011,9 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan, bossPlan) {
       compatibility: passiveUntilAttacked
         ? asylumPassiveSlots.has(slot.id)
           ? "passive-asylum-source-ai-permutation"
-          : "passive-new-londo-entrance-permutation"
+          : newLondoPassiveSlots.has(slot.id)
+            ? "passive-new-londo-entrance-permutation"
+            : "passive-until-attacked-permutation"
         : groundedGhostSpawn
           ? "grounded-new-londo-ghost-slot-permutation"
         : changed

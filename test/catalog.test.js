@@ -135,6 +135,7 @@ test("real catalog produces deterministic enemies with visibly different models"
         "count-preserving-fixed-point",
         "passive-asylum-source-ai-permutation",
         "passive-new-londo-entrance-permutation",
+        "passive-until-attacked-permutation",
         "grounded-new-londo-ghost-slot-permutation",
         "dragon-only-group-permutation",
         "static-bridge-dragon-permutation",
@@ -256,31 +257,29 @@ test("real catalog produces deterministic enemies with visibly different models"
     (placement) => placement.slot === "m10_01_00_00:c3430_0000",
   );
   assert.ok(hellkiteBridge);
-  assert.notEqual(hellkiteBridge.targetModelName, "c3430");
-  assert.ok(["c3420", "c3520"].includes(hellkiteBridge.targetModelName));
+  assert.equal(hellkiteBridge.targetModelName, "c5351");
   assert.equal(hellkiteBridge.staticBridgeDragon, true);
   assert.deepEqual(
     [hellkiteBridge.groundX, hellkiteBridge.groundY, hellkiteBridge.groundZ],
     [9.144, 9.55, -48.007],
   );
   assert.equal(hellkiteBridge.targetCollisionName, "h1113B1");
-  const bridgeCombatSources = {
-    c3420: ["m16_00_00_00:c3420_0000", 342002, 342002],
-    c3520: ["m16_00_00_00:c3520_0007", 352002, 352002],
-  };
-  assert.deepEqual(
-    [
-      hellkiteBridge.sourceSlot,
-      hellkiteBridge.targetNpcParamId,
-      hellkiteBridge.targetThinkParamId,
-    ],
-    bridgeCombatSources[hellkiteBridge.targetModelName],
+  assert.match(
+    hellkiteBridge.sourceSlot,
+    /^m15_01_00_00:c5351_000[01]$/u,
   );
+  assert.equal(hellkiteBridge.targetNpcParamId, 535100);
+  assert.equal(hellkiteBridge.targetThinkParamId, 535100);
+  assert.equal(hellkiteBridge.forceCombatActivation, true);
   const disabledHellkiteAuxiliaries = first.placements.enemies.filter(
     (placement) =>
       placement.compatibility === "disabled-hellkite-flight-auxiliary",
   );
-  assert.equal(disabledHellkiteAuxiliaries.length, 2);
+  assert.equal(disabledHellkiteAuxiliaries.length, 1);
+  assert.equal(
+    disabledHellkiteAuxiliaries[0].slot,
+    "m10_01_00_00:c3430_0001",
+  );
   assert.ok(
     disabledHellkiteAuxiliaries.every(
       (placement) => placement.disableEntity && placement.groundY === -1000,
@@ -334,6 +333,16 @@ test("real catalog produces deterministic enemies with visibly different models"
           "passive-new-londo-entrance-permutation",
     ),
   );
+  const kilnPassive = placementsBySlot.get("m18_00_00_00:c2790_0002");
+  assert.ok(kilnPassive);
+  assert.equal(kilnPassive.entityId, 1800201);
+  assert.equal(kilnPassive.passiveUntilAttacked, true);
+  assert.equal(kilnPassive.initialTeamType, 2);
+  assert.ok(kilnPassive.targetThinkParamId >= 9_600_000);
+  assert.equal(
+    kilnPassive.compatibility,
+    "passive-until-attacked-permutation",
+  );
   const activeMimics = ordinaryPlacements.filter(
     (placement) =>
       placement.targetModelName === "c2780" &&
@@ -385,6 +394,7 @@ test("real catalog produces deterministic enemies with visibly different models"
         [
           "passive-asylum-source-ai-permutation",
           "passive-new-londo-entrance-permutation",
+          "passive-until-attacked-permutation",
         ].includes(placement.compatibility),
       );
     } else {
@@ -431,7 +441,7 @@ test("real catalog produces deterministic enemies with visibly different models"
   const dragonModels = new Set([
     "c2730", "c2731", "c3420", "c3421", "c3422", "c3430", "c3431",
     "c3520", "c3530", "c3531", "c4510", "c4511", "c5260", "c5261",
-    "c5290", "c5291",
+    "c5290", "c5291", "c5351", "c5353",
   ]);
   assert.ok(
     first.placements.enemies
@@ -442,6 +452,35 @@ test("real catalog produces deterministic enemies with visibly different models"
           dragonModels.has(placement.targetModelName),
       ),
   );
+  const anorGargoyleBodies = first.placements.enemies.filter(
+    (placement) => placement.modelName === "c5351",
+  );
+  assert.equal(anorGargoyleBodies.length, 2);
+  assert.ok(anorGargoyleBodies.every(
+    (placement) =>
+      placement.linkedDragonGroup?.startsWith("anor-londo-gargoyle-") &&
+      ["c3430", "c5351"].includes(placement.targetModelName),
+  ));
+  assert.ok(anorGargoyleBodies.some(
+    (placement) => placement.targetModelName === "c3430",
+  ));
+  const hellkiteBody = first.placements.enemies.find(
+    (placement) =>
+      placement.slot === "m10_01_00_00:c3430_0000",
+  );
+  assert.equal(hellkiteBody?.targetModelName, "c5351");
+  for (const body of [...anorGargoyleBodies, hellkiteBody]) {
+    const tail = first.placements.enemies.find(
+      (placement) =>
+        placement.linkedDragonGroup === body.linkedDragonGroup &&
+        ["c3431", "c5353"].includes(placement.modelName),
+    );
+    assert.ok(tail);
+    assert.equal(
+      tail.targetModelName,
+      body.targetModelName === "c3430" ? "c3431" : "c5353",
+    );
+  }
   assert.ok(
     ordinaryPlacements.every(
       (placement) =>
