@@ -59,15 +59,24 @@ package before touching the game.
   position; Moonlight Butterfly replacements begin with their landing animation
 - 500+ world pickup and chest item lots
 - Starting-class stats and equipment
-- Unique, stat-compatible starting weapons collected in the Undead Asylum
+- Unique, stat-compatible starting weapons collected in the Undead Asylum;
+  the initial weapon pool includes equipment usable one-handed or two-handed
+  with the class's starting Strength
 - Randomized class armor shown on the creation screen and equipped at spawn
 - Starting equipment draws from every named base weapon and armor piece in the
   game data, including equipment that is not sold or placed in ordinary loot;
   character-creator, invisible, no-travel, transformation, reinforced, and
   infusion variants are excluded
-- NPC gifts, renewable enemy drops, and shops
+- NPC gifts, hostile and friendly NPC death drops, renewable enemy drops, and
+  shops, including the Dusk Crown Ring
 - World items, NPC gifts, enemy-drop lots, and shops are true permutations:
   existing contents trade locations without duplication or deletion
+- Weapons, armor, spells, and rings always appear as a single item; stackable
+  consumables preserve meaningful stack quantities
+- Arrows, bolts, throwable consumables, and other bulk merchant ammunition stay
+  in the shop pool. Generated stock keeps finite purchase limits: 99 for bulk
+  ammunition and throwables, 10 for ordinary consumables, and 1 for weapons,
+  armor, and spells
 - Independent deterministic RNG streams for every category
 - Progression-item protection, spoiler logs, and reproducible placement hashes
 - A `cheat-locations.txt` report with English item and boss names, original and
@@ -134,6 +143,10 @@ Create a new character when testing randomized starting classes or equipment.
 Use **Restore Vanilla** before importing again, changing seeds, verifying game
 files, or installing another data mod.
 
+When an update changes the catalog schema, restore any active package, verify
+the clean installation, and run **Import game data** again before generating a
+new seed. Extracted catalogs from older schemas are intentionally rejected.
+
 ## CLI
 
 Generate a dry-run package:
@@ -164,7 +177,10 @@ operation fails. Restore refuses to overwrite a game file changed after
 activation.
 
 Progression protection keeps recognized keys, embers, progression rings, and
-event-bound shop goods in their original locations. Boss replacement preserves
+unlisted event-bound shop goods in their original locations. Requested utility
+goods, consumables, covenant items, and spells—including smithboxes, the Crest
+of Artorias, Master Key, Dusk Crown Ring, and the documented spell list—remain
+eligible for randomization. Boss replacement preserves
 the original map entity IDs so map events continue to target the encounter and
 places the replacement at a known terrain-safe X/Y/Z coordinate.
 Area scaling creates a dedicated NPC parameter row for every replacement and
