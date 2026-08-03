@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using SoulsFormats;
 
-const int SchemaVersion = 15;
+const int SchemaVersion = 16;
 Console.OutputEncoding = new UTF8Encoding(false);
 Console.InputEncoding = new UTF8Encoding(false);
 
@@ -327,8 +327,8 @@ static GameCatalog ScanGame(string gameDirectory)
     var binderFiles = new List<BinderEntryRecord>();
     var startingClasses = new List<StartingClassRecord>();
     var startingItemLots = new List<StartingItemLotRecord>();
-    var gifts = new List<ParamRowRecord>();
-    var enemyDropLots = new List<ParamRowRecord>();
+    var gifts = new List<ItemLotRecord>();
+    var enemyDropLots = new List<ItemLotRecord>();
     var worldItemLots = new List<WorldItemLotRecord>();
     var shopEntries = new List<ShopEntryRecord>();
     var startingEquipmentPools = new StartingEquipmentPools(
@@ -444,6 +444,32 @@ static RandomizerParamData ReadRandomizerParamData(
             ? string.Join(" + ", names)
             : $"Item lot {row.ID}";
     }
+    List<ItemLotEntryRecord> ItemLotEntries(PARAM.Row row) =>
+        Enumerable.Range(1, 8)
+            .Select(slot =>
+            {
+                var suffix = slot.ToString("00");
+                var itemId = GetCellInt(row, $"lotItemId{suffix}");
+                var category = GetCellInt(row, $"lotItemCategory{suffix}");
+                var equipType = category switch
+                {
+                    0 => 0,
+                    0x10000000 => 1,
+                    0x20000000 => 2,
+                    0x40000000 when itemNames.Magic.ContainsKey(itemId) => 4,
+                    0x40000000 => 3,
+                    _ => -1,
+                };
+                return new ItemLotEntryRecord(
+                    slot,
+                    itemId,
+                    category,
+                    GetCellInt(row, $"lotItemNum{suffix}", 1),
+                    equipType,
+                    itemNames.GetName(category, itemId));
+            })
+            .Where(entry => entry.ItemId > 0 && entry.EquipType >= 0)
+            .ToList();
     var giftIds = new HashSet<int>
     {
         1010, 1040, 1050, 1060, 1090, 1100, 1110, 1140, 1150, 1190,
@@ -454,9 +480,10 @@ static RandomizerParamData ReadRandomizerParamData(
         .Where(row => row.Cells.Any(cell =>
             cell.Def.InternalName.StartsWith("lotItemId", StringComparison.Ordinal) &&
             Convert.ToInt32(cell.Value) > 0))
-        .Select(row => new ParamRowRecord(
+        .Select(row => new ItemLotRecord(
             row.ID,
-            DescribeItemLot(row)))
+            DescribeItemLot(row),
+            ItemLotEntries(row)))
         .OrderBy(row => row.RowId)
         .ToList();
 
@@ -493,9 +520,10 @@ static RandomizerParamData ReadRandomizerParamData(
         .Where(row => row.Cells.Any(cell =>
             cell.Def.InternalName.StartsWith("lotItemId", StringComparison.Ordinal) &&
             Convert.ToInt32(cell.Value) > 0))
-        .Select(row => new ParamRowRecord(
+        .Select(row => new ItemLotRecord(
             row.ID,
-            DescribeItemLot(row)))
+            DescribeItemLot(row),
+            ItemLotEntries(row)))
         .OrderBy(row => row.RowId)
         .ToList();
 
@@ -512,17 +540,7 @@ static RandomizerParamData ReadRandomizerParamData(
             Convert.ToInt32(cell.Value) > 0))
         .Select(row =>
         {
-            var entries = Enumerable.Range(1, 8)
-                .Select(slot =>
-                {
-                    var suffix = slot.ToString("00");
-                    return new ItemLotEntryRecord(
-                        GetCellInt(row, $"lotItemId{suffix}"),
-                        GetCellInt(row, $"lotItemCategory{suffix}"),
-                        GetCellInt(row, $"lotItemNum{suffix}", 1));
-                })
-                .Where(entry => entry.ItemId > 0)
-                .ToList();
+            var entries = ItemLotEntries(row);
             const int accessoryCategory = 0x20000000;
             const int goodsCategory = 0x40000000;
             var protectedProgression = entries.Any(entry =>
@@ -1131,6 +1149,7 @@ static PatchReport PatchEnemies(
         if (!placementsRoot.TryGetProperty(propertyName, out var element))
             return new List<RowPlacement>();
         return element.EnumerateArray()
+            .Where(row => !row.TryGetProperty("targetKind", out _))
             .Select(row => new RowPlacement(
                 row.GetProperty("rowId").GetInt32(),
                 row.GetProperty("sourceRowId").GetInt32()))
@@ -1140,6 +1159,22 @@ static PatchReport PatchEnemies(
     var enemyDropPlacements = ReadRowPlacements("enemyDrops");
     var worldItemPlacements = ReadRowPlacements("items");
     var shopPlacements = ReadRowPlacements("shops");
+    var itemAssignments = new[] { "items", "gifts", "enemyDrops", "shops" }
+        .Where(propertyName => placementsRoot.TryGetProperty(propertyName, out _))
+        .SelectMany(propertyName => placementsRoot.GetProperty(propertyName).EnumerateArray())
+        .Where(row => row.TryGetProperty("targetKind", out _))
+        .Select(row => new ItemAssignment(
+            row.GetProperty("targetKind").GetString()
+                ?? throw new InvalidDataException("Item assignment has no target kind."),
+            row.GetProperty("rowId").GetInt32(),
+            row.TryGetProperty("targetSlot", out var slot) &&
+                slot.ValueKind == JsonValueKind.Number
+                    ? slot.GetInt32()
+                    : null,
+            row.GetProperty("itemId").GetInt32(),
+            row.GetProperty("itemCategory").GetInt32(),
+            row.GetProperty("equipType").GetInt32()))
+        .ToList();
 
     Directory.CreateDirectory(outputDirectory);
     var patchedMaps = new List<PatchedMap>();
@@ -1437,7 +1472,8 @@ static PatchReport PatchEnemies(
         giftPlacements.Count > 0 ||
         enemyDropPlacements.Count > 0 ||
         worldItemPlacements.Count > 0 ||
-        shopPlacements.Count > 0
+        shopPlacements.Count > 0 ||
+        itemAssignments.Count > 0
         ? PatchGameParam(
             gameDirectory,
             outputDirectory,
@@ -1447,7 +1483,8 @@ static PatchReport PatchEnemies(
             giftPlacements,
             enemyDropPlacements,
             worldItemPlacements,
-            shopPlacements)
+            shopPlacements,
+            itemAssignments)
         : null;
 
     var report = new PatchReport(
@@ -3014,7 +3051,8 @@ static PatchedFile? PatchGameParam(
     List<RowPlacement> giftPlacements,
     List<RowPlacement> enemyDropPlacements,
     List<RowPlacement> worldItemPlacements,
-    List<RowPlacement> shopPlacements)
+    List<RowPlacement> shopPlacements,
+    List<ItemAssignment> itemAssignments)
 {
     if (!enemyPlacements.Any(placement => placement.ScaledNpcParamId.HasValue) &&
         !enemyPlacements.Any(placement => placement.BaseThinkParamId.HasValue) &&
@@ -3023,7 +3061,8 @@ static PatchedFile? PatchGameParam(
         giftPlacements.Count == 0 &&
         enemyDropPlacements.Count == 0 &&
         worldItemPlacements.Count == 0 &&
-        shopPlacements.Count == 0)
+        shopPlacements.Count == 0 &&
+        itemAssignments.Count == 0)
         return null;
 
     const string relativeSource = "param/GameParam/GameParam.parambnd.dcx";
@@ -3297,6 +3336,7 @@ static PatchedFile? PatchGameParam(
         shopPlacements,
         name => name.Equals("equipId", StringComparison.Ordinal),
         "shop");
+    ApplyItemAssignments(itemLotParam, shopParam, itemAssignments);
 
     charaFile.Bytes = charaParam.Write();
     itemLotFile.Bytes = itemLotParam.Write();
@@ -3326,6 +3366,8 @@ static PatchedFile? PatchGameParam(
     var verifiedShops = PARAM.Read(verifiedShopFile.Bytes);
     var verifiedNpcs = PARAM.Read(verifiedNpcFile.Bytes);
     var verifiedThinks = PARAM.Read(verifiedThinkFile.Bytes);
+    ApplyCompatibleParamdef(verifiedLots, paramdefs);
+    ApplyCompatibleParamdef(verifiedShops, paramdefs);
     ApplyCompatibleParamdef(verifiedNpcs, paramdefs);
     ApplyCompatibleParamdef(verifiedThinks, paramdefs);
     if (verifiedChara.Rows.Count != charaParam.Rows.Count ||
@@ -3339,6 +3381,22 @@ static PatchedFile? PatchGameParam(
         !verifiedNpcFile.Bytes.SequenceEqual(npcFile.Bytes) ||
         !verifiedThinkFile.Bytes.SequenceEqual(thinkFile.Bytes))
         throw new InvalidDataException("Invalid GameParam round-trip.");
+    foreach (var assignment in itemAssignments)
+    {
+        if (assignment.TargetKind == "lot")
+        {
+            var row = verifiedLots.Rows.Single(entry => entry.ID == assignment.RowId);
+            var suffix = assignment.TargetSlot!.Value.ToString("00");
+            AssertCell(row, $"lotItemId{suffix}", assignment.ItemId);
+            AssertCell(row, $"lotItemCategory{suffix}", assignment.ItemCategory);
+        }
+        else
+        {
+            var row = verifiedShops.Rows.Single(entry => entry.ID == assignment.RowId);
+            AssertCell(row, "equipId", assignment.ItemId);
+            AssertCell(row, "equipType", assignment.EquipType);
+        }
+    }
     foreach (var placement in enemyPlacements.Where(value => value.ScaledNpcParamId.HasValue))
     {
         var scaled = verifiedNpcs.Rows.Single(row => row.ID == placement.ScaledNpcParamId);
@@ -3960,6 +4018,53 @@ static HashSet<int> ReadEventModelLockedEntities(string eventPath)
     return result;
 }
 
+static void ApplyItemAssignments(
+    PARAM itemLotParam,
+    PARAM shopParam,
+    List<ItemAssignment> assignments)
+{
+    if (assignments.Count == 0)
+        return;
+    var duplicateTarget = assignments
+        .GroupBy(entry => (entry.TargetKind, entry.RowId, entry.TargetSlot))
+        .FirstOrDefault(group => group.Count() > 1);
+    if (duplicateTarget != null)
+        throw new InvalidDataException(
+            $"Duplicate randomized item target: {duplicateTarget.Key}.");
+    foreach (var assignment in assignments)
+    {
+        if (assignment.TargetKind == "lot")
+        {
+            if (!assignment.TargetSlot.HasValue ||
+                assignment.TargetSlot.Value is < 1 or > 8)
+                throw new InvalidDataException("Item-lot assignment has an invalid slot.");
+            var row = itemLotParam.Rows.SingleOrDefault(row => row.ID == assignment.RowId)
+                ?? throw new InvalidDataException(
+                    $"Item-lot row {assignment.RowId} is missing.");
+            var suffix = assignment.TargetSlot.Value.ToString("00");
+            SetCell(row, $"lotItemId{suffix}", assignment.ItemId);
+            SetCell(row, $"lotItemCategory{suffix}", assignment.ItemCategory);
+            AssertCell(row, $"lotItemId{suffix}", assignment.ItemId);
+            AssertCell(row, $"lotItemCategory{suffix}", assignment.ItemCategory);
+        }
+        else if (assignment.TargetKind == "shop")
+        {
+            var row = shopParam.Rows.SingleOrDefault(row => row.ID == assignment.RowId)
+                ?? throw new InvalidDataException(
+                    $"Shop row {assignment.RowId} is missing.");
+            SetCell(row, "equipId", assignment.ItemId);
+            SetCell(row, "equipType", assignment.EquipType);
+            AssertCell(row, "equipId", assignment.ItemId);
+            AssertCell(row, "equipType", assignment.EquipType);
+        }
+        else
+        {
+            throw new InvalidDataException(
+                $"Unknown randomized item target kind: {assignment.TargetKind}.");
+        }
+    }
+}
+
 static HashSet<int> ReadEventAwardItemLots(string eventPath)
 {
     var result = new HashSet<int>();
@@ -4101,8 +4206,8 @@ record GameCatalog(
     List<BinderEntryRecord> GameParamEntries,
     List<StartingClassRecord> StartingClasses,
     List<StartingItemLotRecord> StartingItemLots,
-    List<ParamRowRecord> Gifts,
-    List<ParamRowRecord> EnemyDropLots,
+    List<ItemLotRecord> Gifts,
+    List<ItemLotRecord> EnemyDropLots,
     List<WorldItemLotRecord> WorldItemLots,
     List<ShopEntryRecord> ShopEntries,
     StartingEquipmentPools StartingEquipmentPools,
@@ -4236,7 +4341,14 @@ record StartingData(
     List<StartingClassRecord> Classes,
     List<StartingItemLotRecord> ItemLots);
 record ParamRowRecord(int RowId, string Name);
-record ItemLotEntryRecord(int ItemId, int Category, int Quantity);
+record ItemLotRecord(int RowId, string Name, List<ItemLotEntryRecord> Entries);
+record ItemLotEntryRecord(
+    int Slot,
+    int ItemId,
+    int Category,
+    int Quantity,
+    int EquipType,
+    string Name);
 record ItemNameLookup(
     Dictionary<int, string> Goods,
     Dictionary<int, string> Weapons,
@@ -4300,8 +4412,8 @@ record StartingEquipmentPools(
     List<ItemCandidate> Gauntlets,
     List<ItemCandidate> Legs);
 record RandomizerParamData(
-    List<ParamRowRecord> Gifts,
-    List<ParamRowRecord> EnemyDropLots,
+    List<ItemLotRecord> Gifts,
+    List<ItemLotRecord> EnemyDropLots,
     List<WorldItemLotRecord> WorldItemLots,
     List<ShopEntryRecord> ShopEntries,
     StartingEquipmentPools StartingEquipmentPools);
@@ -4359,6 +4471,13 @@ record RandomStartingEquipment(
     int Gauntlets,
     int Legs);
 record RowPlacement(int RowId, int SourceRowId);
+record ItemAssignment(
+    string TargetKind,
+    int RowId,
+    int? TargetSlot,
+    int ItemId,
+    int ItemCategory,
+    int EquipType);
 record PatchedMap(
     string MapId,
     string Source,

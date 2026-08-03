@@ -11,7 +11,26 @@ import {
 
 async function catalog() {
   const data = JSON.parse(await readFile("data/dsr-catalog.json", "utf8"));
-  return { ...data, schemaVersion: 15 };
+  const hydrate = (lots, base) =>
+    lots.map((lot, lotIndex) => ({
+      ...lot,
+      entries: (lot.entries?.length
+        ? lot.entries
+        : [{ itemId: base + lotIndex, category: 0x40000000, quantity: 1 }]
+      ).map((entry, entryIndex) => ({
+        ...entry,
+        slot: entry.slot ?? entryIndex + 1,
+        equipType: entry.equipType ?? 3,
+        name: entry.name ?? lot.name,
+      })),
+    }));
+  return {
+    ...data,
+    schemaVersion: 16,
+    gifts: hydrate(data.gifts, 8_000_000),
+    enemyDropLots: hydrate(data.enemyDropLots, 8_100_000),
+    worldItemLots: hydrate(data.worldItemLots, 8_200_000),
+  };
 }
 
 test("shared seed reproduces placements without leaking local paths", async () => {

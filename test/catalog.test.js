@@ -6,9 +6,36 @@ import { defaultConfig } from "../src/core/config.js";
 
 async function catalog() {
   const data = JSON.parse(await readFile("data/dsr-catalog.json", "utf8"));
-  // The locally ignored fixture may have been extracted by an older tool;
-  // generator tests exercise the current catalog contract.
-  return { ...data, schemaVersion: 15 };
+  const equipType = (category, name) =>
+    category === 0
+      ? 0
+      : category === 0x10000000
+        ? 1
+        : category === 0x20000000
+          ? 2
+          : /^(Sorcery|Pyromancy|Miracle):/u.test(name)
+            ? 4
+            : 3;
+  const hydrate = (lots, base) =>
+    lots.map((lot, lotIndex) => ({
+      ...lot,
+      entries: (lot.entries?.length
+        ? lot.entries
+        : [{ itemId: base + lotIndex, category: 0x40000000, quantity: 1 }]
+      ).map((entry, entryIndex) => ({
+        ...entry,
+        slot: entry.slot ?? entryIndex + 1,
+        equipType: entry.equipType ?? equipType(entry.category, lot.name),
+        name: entry.name ?? lot.name,
+      })),
+    }));
+  return {
+    ...data,
+    schemaVersion: 16,
+    gifts: hydrate(data.gifts, 8_000_000),
+    enemyDropLots: hydrate(data.enemyDropLots, 8_100_000),
+    worldItemLots: hydrate(data.worldItemLots, 8_200_000),
+  };
 }
 
 function vanillaStartingIds(gameCatalog) {
@@ -467,7 +494,7 @@ test("real catalog produces deterministic enemies with visibly different models"
 
 test("friendly NPC and human-character slots are never randomized", async () => {
   const gameCatalog = await catalog();
-  assert.equal(gameCatalog.schemaVersion, 15);
+  assert.equal(gameCatalog.schemaVersion, 16);
   const protectedSlots = gameCatalog.enemySlots.filter(
     (slot) =>
       (slot.teamType >= 2 && slot.modelName !== "c5291") ||
@@ -943,7 +970,7 @@ test("every class receives a primary weapon as its first pickup", async () => {
   }
 });
 
-test("world items and enemy drops share one deterministic pool", async () => {
+test("world items, gifts, enemy drops, and shops share one deterministic pool", async () => {
   const gameCatalog = await catalog();
   const config = {
     ...defaultConfig,
@@ -995,29 +1022,18 @@ test("world items and enemy drops share one deterministic pool", async () => {
       ),
     );
   }
-  assert.deepEqual(
-    first.placements.gifts.map((entry) => entry.sourceRowId).sort((a, b) => a - b),
-    first.placements.gifts.map((entry) => entry.rowId).sort((a, b) => a - b),
-  );
   const sharedItemPlacements = [
     ...first.placements.items,
+    ...first.placements.gifts,
     ...first.placements.enemyDrops,
+    ...first.placements.shops,
   ];
   assert.deepEqual(
     sharedItemPlacements.map((entry) => entry.sourceRowId).sort((a, b) => a - b),
     sharedItemPlacements.map((entry) => entry.rowId).sort((a, b) => a - b),
   );
-  for (const equipType of new Set(
-    first.placements.shops.map((entry) => entry.equipType),
-  )) {
-    const placements = first.placements.shops.filter(
-      (entry) => entry.equipType === equipType,
-    );
-    assert.deepEqual(
-      placements.map((entry) => entry.sourceRowId).sort((a, b) => a - b),
-      placements.map((entry) => entry.rowId).sort((a, b) => a - b),
-    );
-  }
+  assert.ok(first.placements.gifts.some((entry) => entry.sourcePool !== "gift"));
+  assert.ok(first.placements.shops.some((entry) => entry.sourcePool !== "shop"));
 });
 
 test("progression protection fixes Lordvessel and Key to the Seal", async () => {

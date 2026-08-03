@@ -1083,32 +1083,95 @@ function randomizableWorldItemLots(config, catalog) {
 
 function randomizeExtractedItemLots(config, catalog) {
   const worldLots = randomizableWorldItemLots(config, catalog);
+  const protectedGiftRows = new Set([1090, 1100]);
+  const giftLots = config.randomizeGifts
+    ? (catalog?.gifts || []).filter(
+        (gift) =>
+          !config.progressionLogic || !protectedGiftRows.has(gift.rowId),
+      )
+    : [];
   const enemyLots = config.randomizeEnemyDrops
     ? catalog?.enemyDropLots || []
     : [];
-  const targets = [
+  const shopRows = config.randomizeShops
+    ? (catalog?.shopEntries || []).filter(
+        (entry) =>
+          !config.progressionLogic ||
+          entry.equipType !== 3 ||
+          entry.eventFlag < 0,
+      )
+    : [];
+  const allLots = [
     ...worldLots.map((lot) => ({ ...lot, pool: "world" })),
+    ...giftLots.map((lot) => ({ ...lot, pool: "gift" })),
     ...enemyLots.map((lot) => ({ ...lot, pool: "enemy" })),
   ];
-  const result = { items: [], enemyDrops: [] };
+  if (allLots.some((lot) => !Array.isArray(lot.entries))) {
+    throw new Error(
+      "The item catalog has no per-slot data. Verify the clean game and import its data again.",
+    );
+  }
+  const lotTargets = allLots.flatMap((lot) =>
+    lot.entries.map((entry) => ({
+      ...entry,
+      rowId: lot.rowId,
+      mapId: lot.mapId,
+      pool: lot.pool,
+      kind: "lot",
+      progression: Boolean(lot.protectedProgression),
+      name: entry.name || lot.name,
+    })),
+  );
+  const shopTargets = shopRows.map((entry) => ({
+    rowId: entry.rowId,
+    pool: "shop",
+    kind: "shop",
+    slot: null,
+    itemId: entry.equipId,
+    category:
+      entry.equipType === 0
+        ? 0
+        : entry.equipType === 1
+          ? 0x10000000
+          : entry.equipType === 2
+            ? 0x20000000
+            : 0x40000000,
+    equipType: entry.equipType,
+    name: entry.name,
+    progression: false,
+  }));
+  const targets = [...lotTargets, ...shopTargets];
+  const result = { items: [], gifts: [], enemyDrops: [], shops: [] };
   if (targets.length < 2) return result;
 
   const areaNames = new Map(
     (catalog.maps || []).map((map) => [map.id, map.name]),
   );
-  const describeLocation = (lot) =>
-    lot.pool === "world"
+  const describeLocation = (entry) =>
+    entry.pool === "world"
       ? {
-          area: areaNames.get(lot.mapId) || lot.mapId,
-          map: lot.mapId,
-          itemLot: lot.rowId,
+          area: areaNames.get(entry.mapId) || entry.mapId,
+          map: entry.mapId,
+          itemLot: entry.rowId,
         }
-      : {
-          area: `Enemy drop: ${lot.name}`,
-          map: "ItemLotParam",
-          itemLot: lot.rowId,
-        };
-  const rng = createStream(config.seed, "all-item-lots", config.version);
+      : entry.pool === "gift"
+        ? {
+            area: `NPC gift: ${entry.name}`,
+            map: "ItemLotParam",
+            itemLot: entry.rowId,
+          }
+        : entry.pool === "shop"
+          ? {
+              area: `Shop inventory: ${entry.name}`,
+              map: "ShopLineupParam",
+              itemLot: entry.rowId,
+            }
+          : {
+              area: `Enemy drop: ${entry.name}`,
+              map: "ItemLotParam",
+              itemLot: entry.rowId,
+            };
+  const rng = createStream(config.seed, "all-item-sources", config.version);
   const sources = shuffledWithoutFixedPoints(rng, targets);
 
   targets.forEach((target, index) => {
@@ -1116,6 +1179,12 @@ function randomizeExtractedItemLots(config, catalog) {
     const placement = {
       rowId: target.rowId,
       sourceRowId: source.rowId,
+      sourceSlot: source.slot,
+      targetKind: target.kind,
+      targetSlot: target.slot,
+      itemId: source.itemId,
+      itemCategory: source.category,
+      equipType: source.equipType,
       from: target.name,
       to: source.name,
       itemName: source.name,
@@ -1123,15 +1192,22 @@ function randomizeExtractedItemLots(config, catalog) {
       targetPool: target.pool,
       originalLocation: describeLocation(source),
       randomizedLocation: describeLocation(target),
-      progression: Boolean(source.protectedProgression),
-      preserved: target.rowId === source.rowId,
+      progression: source.progression,
+      preserved:
+        target.kind === source.kind &&
+        target.rowId === source.rowId &&
+        target.slot === source.slot,
     };
     if (target.pool === "world") {
       placement.location = `itemlot:${target.rowId}`;
       placement.map = target.mapId;
       result.items.push(placement);
-    } else {
+    } else if (target.pool === "gift") {
+      result.gifts.push(placement);
+    } else if (target.pool === "enemy") {
       result.enemyDrops.push(placement);
+    } else {
+      result.shops.push(placement);
     }
   });
   return result;
@@ -1455,53 +1531,6 @@ function randomizeStartingClasses(config, catalog) {
   });
 }
 
-function randomizeGifts(config, catalog) {
-  if (!config.randomizeGifts || !catalog?.gifts?.length) return [];
-  const rng = createStream(config.seed, "gifts", config.version);
-  // Lordvessel (Gwynevere) and Key to the Seal (Ingward) remain in place while
-  // progression protection is enabled.
-  const protectedGiftRows = new Set([1090, 1100]);
-  const gifts = config.progressionLogic
-    ? catalog.gifts.filter((gift) => !protectedGiftRows.has(gift.rowId))
-    : catalog.gifts;
-  const sources = shuffledWithoutFixedPoints(rng, gifts);
-  return gifts.map((target, index) => ({
-    rowId: target.rowId,
-    sourceRowId: sources[index].rowId,
-    from: target.name,
-    to: sources[index].name,
-  }));
-}
-
-function randomizeShops(config, catalog) {
-  if (!config.randomizeShops || !catalog?.shopEntries?.length) return [];
-  const rng = createStream(config.seed, "shops", config.version);
-  const groups = new Map();
-  for (const entry of catalog.shopEntries) {
-    // Protected mode keeps finite or event-bound goods at their original merchant.
-    if (config.progressionLogic && entry.equipType === 3 && entry.eventFlag >= 0) {
-      continue;
-    }
-    if (!groups.has(entry.equipType)) groups.set(entry.equipType, []);
-    groups.get(entry.equipType).push(entry);
-  }
-
-  const placements = [];
-  for (const entries of groups.values()) {
-    const sources = shuffledWithoutFixedPoints(rng, entries);
-    entries.forEach((target, index) => {
-      placements.push({
-        rowId: target.rowId,
-        sourceRowId: sources[index].rowId,
-        equipType: target.equipType,
-        from: target.name,
-        to: sources[index].name,
-      });
-    });
-  }
-  return placements;
-}
-
 function randomizeBosses(config) {
   if (!config.randomizeBosses) return [];
   const rng = createStream(config.seed, "bosses", config.version);
@@ -1626,7 +1655,7 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
   if (errors.length > 0) {
     throw new Error(errors.join("\n"));
   }
-  if (gameCatalog && gameCatalog.schemaVersion !== 15) {
+  if (gameCatalog && gameCatalog.schemaVersion !== 16) {
     throw new Error(
       `Catalog schema ${gameCatalog.schemaVersion} is obsolete. ` +
         "Verify the clean game and import its data again.",
@@ -1672,11 +1701,11 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
       startingClasses: extractedData
         ? randomizeStartingClasses(config, gameCatalog)
         : [],
-      gifts: extractedData ? randomizeGifts(config, gameCatalog) : [],
+      gifts: extractedData ? itemLotPlan.gifts : [],
       enemyDrops: extractedData
         ? itemLotPlan.enemyDrops
         : [],
-      shops: extractedData ? randomizeShops(config, gameCatalog) : [],
+      shops: extractedData ? itemLotPlan.shops : [],
     },
     validation: {
       valid: true,
@@ -1696,17 +1725,15 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
               ? "Asylum pickups were selected for each class's final stats."
               : "Starting loadouts were preserved.",
             config.randomizeGifts
-              ? "Items granted by NPCs were redistributed."
+              ? "Items granted by NPCs joined the enabled global item pool."
               : "NPC gifts were preserved.",
             config.randomizeEnemyDrops
-              ? config.randomizeItems || config.randomizeProtectedItems
-                ? "Enemy drops and enabled world items were redistributed together in one global pool."
-                : "Renewable enemy drops were redistributed."
+              ? "Enemy drops joined the enabled global item pool."
               : "Enemy drops were preserved.",
             config.randomizeShops
               ? config.progressionLogic
-                ? "Shops were redistributed by type; finite and event-bound goods stayed protected."
-                : "Shops were redistributed by item type."
+                ? "Shop inventory joined the enabled global item pool; finite and event-bound goods stayed protected."
+                : "Shop inventory joined the enabled global item pool."
               : "Shops were preserved.",
           ]
         : config.randomizeProtectedItems
