@@ -12,6 +12,7 @@ import {
 
 const byId = (values) => new Map(values.map((value) => [value.id, value]));
 const dragonBodyModels = new Set([
+  "c2300", // Titanite Demon
   "c2730", // Crossbreed Priscilla
   "c3420", // Undead Dragon
   "c3421", // Bounding Demon / Undead Dragon legs
@@ -51,10 +52,12 @@ const staticBridgeDragonSpawn = Object.freeze({
   collisionName: "h1113B1",
 });
 const staticBridgeCombatSourceByModel = new Map([
+  ["c2300", "m13_00_00_00:c2300_0000"],
   ["c3420", "m16_00_00_00:c3420_0000"],
   ["c3520", "m16_00_00_00:c3520_0007"],
 ]);
 const dragonNames = new Map([
+  ["c2300", "Titanite Demon"],
   ["c2730", "Crossbreed Priscilla"],
   ["c3420", "Undead Dragon"],
   ["c3421", "Bounding Demon"],
@@ -88,7 +91,9 @@ const activeReplacementThinkParams = new Map([
   ["c2300", 230000], // Titanite Demon (portable combat brain)
   ["c2780", 278000], // Mimic (awake combat brain; chest variants are event-bound)
 ]);
-const forceCombatActivationModels = new Set(["c2280", "c2300", "c2780"]);
+const forceCombatActivationModels = new Set([
+  "c2280", "c2300", "c2670", "c2680", "c2780",
+]);
 const tangibleGhostModels = new Set(["c2670", "c2680"]);
 const asylumPassiveSlots = new Set([
   "m18_01_00_00:c2500_0000",
@@ -106,6 +111,11 @@ const additionalPassiveSlots = new Set([
   // The second Black Knight in the Kiln should observe the destination's
   // non-hostile opening behavior regardless of which enemy replaces it.
   "m18_00_00_00:c2790_0002",
+]);
+const parishBonfirePassiveSlots = new Set([
+  // The Titanite Demon chamber is directly below the Undead Parish bonfire.
+  // Replacements must not acquire the player through the floor or stairwell.
+  "m10_01_00_00:c2300_0000",
 ]);
 const deferredBossActivationRegions = new Map([
   // The regions used by the vanilla battle events are beyond the fog gate and
@@ -295,6 +305,8 @@ function buildDragonPlan(config, catalog) {
     .sort((left, right) => left.id.localeCompare(right.id));
   const isHydra = (entry) => entry.id.startsWith("hydra-");
   const simpleRegularDragons = [
+    ...byModel("c2300").map((body) =>
+      unit(`titanite-demon-${body.id}`, [body])),
     unit(
       "valley-undead-dragon",
       byModel("c3420", "m16_00_00_00"),
@@ -390,33 +402,27 @@ function buildDragonPlan(config, catalog) {
         ? staticBridgeDragonSpawn
         : targetBody.position;
       const portableHydraEntityBase = 9_650_000 + index * 10;
-      result.reservedSlotIds.add(targetBody.id);
-      result.enemies.push(enemyPlacement(
-        config,
-        targetBody,
-        sourceBody,
-        9_150_000 + enemyIndex++,
-        sourceIsHydra && !targetIsHydra
-          ? {
-              compatibility: "portable-hydra-dragon-permutation",
-              linkedDragonGroup: target.id,
-              portableHydraGroup: true,
-              entityId: portableHydraEntityBase,
-              groundX: targetPosition.x,
-              groundY: targetPosition.y,
-              groundZ: targetPosition.z,
-              targetCollisionName: targetBody.collisionName,
-              forceCombatActivation: true,
-              ...(target.id === "hellkite-bridge"
-                ? {
-                    staticBridgeDragon: true,
-                    ...(config.randomizeEnemyDrops
-                      ? { awardItemLotId: 34_310_000 }
-                      : {}),
-                  }
-                : {}),
-            }
-          : sourceIsHydra && targetIsHydra
+      const placementExtra = sourceIsHydra && !targetIsHydra
+        ? {
+            compatibility: "portable-hydra-dragon-permutation",
+            linkedDragonGroup: target.id,
+            portableHydraGroup: true,
+            entityId: portableHydraEntityBase,
+            groundX: targetPosition.x,
+            groundY: targetPosition.y,
+            groundZ: targetPosition.z,
+            targetCollisionName: targetBody.collisionName,
+            forceCombatActivation: true,
+            ...(target.id === "hellkite-bridge"
+              ? {
+                  staticBridgeDragon: true,
+                  ...(config.randomizeEnemyDrops
+                    ? { awardItemLotId: 34_310_000 }
+                    : {}),
+                }
+              : {}),
+          }
+        : sourceIsHydra && targetIsHydra
           ? {
               compatibility: "linked-hydra-dragon-permutation",
               linkedDragonGroup: target.id,
@@ -429,22 +435,45 @@ function buildDragonPlan(config, catalog) {
               forceCombatActivation: targetBody.entityId >= 0,
             }
           : target.id === "hellkite-bridge"
-          ? {
-              compatibility: "static-bridge-dragon-permutation",
-              linkedDragonGroup: target.id,
-              staticBridgeDragon: true,
-              groundX: staticBridgeDragonSpawn.x,
-              groundY: staticBridgeDragonSpawn.y,
-              groundZ: staticBridgeDragonSpawn.z,
-              targetCollisionName: staticBridgeDragonSpawn.collisionName,
-              ...(config.randomizeEnemyDrops
-                ? { awardItemLotId: 34_310_000 }
-                : {}),
-            }
-          : {
-              compatibility: "dragon-only-group-permutation",
-              linkedDragonGroup: target.id,
-            },
+            ? {
+                compatibility: "static-bridge-dragon-permutation",
+                linkedDragonGroup: target.id,
+                staticBridgeDragon: true,
+                groundX: staticBridgeDragonSpawn.x,
+                groundY: staticBridgeDragonSpawn.y,
+                groundZ: staticBridgeDragonSpawn.z,
+                targetCollisionName: staticBridgeDragonSpawn.collisionName,
+                ...(config.randomizeEnemyDrops
+                  ? { awardItemLotId: 34_310_000 }
+                  : {}),
+              }
+            : {
+                compatibility: "dragon-only-group-permutation",
+                linkedDragonGroup: target.id,
+                ...(forceCombatActivationModels.has(sourceBody.modelName) &&
+                targetBody.entityId >= 0
+                  ? { forceCombatActivation: true }
+                  : {}),
+              };
+      if (parishBonfirePassiveSlots.has(targetBody.id)) {
+        Object.assign(placementExtra, {
+          compatibility: "passive-parish-bonfire-permutation",
+          passiveUntilAttacked: true,
+          initialTeamType: 2,
+          baseThinkParamId: sourceBody.thinkParamId,
+          destinationThinkParamId: targetBody.thinkParamId,
+          targetThinkParamId: 9_700_000 + enemyIndex,
+          preserveDestinationPerception: true,
+        });
+        delete placementExtra.forceCombatActivation;
+      }
+      result.reservedSlotIds.add(targetBody.id);
+      result.enemies.push(enemyPlacement(
+        config,
+        targetBody,
+        sourceBody,
+        9_150_000 + enemyIndex++,
+        placementExtra,
       ));
 
       if (targetIsHydra) {
@@ -700,6 +729,7 @@ function buildDragonPlan(config, catalog) {
               compatibility: "disabled-extra-bell-gargoyle-body",
               linkedEnemyGroup: target.id,
               disableEntity: true,
+              killDisabledEntity: true,
             },
           ));
           return;
@@ -1253,6 +1283,12 @@ function isBulkShopConsumable(entry) {
 function shopPurchaseLimit(entry) {
   if (isBulkShopConsumable(entry)) return 99;
   if (
+    /^(?:Large )?Soul of /u.test(entry.name) ||
+    entry.name === "Fire Keeper Soul"
+  ) {
+    return 1;
+  }
+  if (
     entry.equipType === 0 ||
     entry.equipType === 1 ||
     entry.equipType === 4 ||
@@ -1409,10 +1445,54 @@ function randomizeExtractedItemLots(config, catalog) {
   ]) {
     if (targets.length === 0) continue;
     const rng = createStream(config.seed, stream, config.version);
-    const sources = shuffledWithoutFixedPoints(rng, targets);
+    const sources = stream === "all-item-sources"
+      ? shuffledWithoutDlcRestrictedItems(rng, targets)
+      : shuffledWithoutFixedPoints(rng, targets);
     targets.forEach((target, index) => addPlacement(target, sources[index]));
   }
   return result;
+}
+
+function isDlcRestrictedItem(entry) {
+  return (
+    entry.progression === true ||
+    /(?:Titanite|\bEmber\b)/iu.test(entry.name)
+  );
+}
+
+function shuffledWithoutDlcRestrictedItems(rng, values) {
+  if (values.length < 2) return [...values];
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    const shuffled = shuffledWithoutFixedPoints(rng, values);
+    const badTargets = values
+      .map((target, index) => ({ target, index }))
+      .filter(
+        ({ target, index }) =>
+          target.mapId === "m12_01_00_00" &&
+          isDlcRestrictedItem(shuffled[index]),
+      );
+    let repaired = true;
+    for (const { index: dlcIndex } of badTargets) {
+      const restrictedSource = shuffled[dlcIndex];
+      const donorIndex = values.findIndex(
+        (target, index) =>
+          target.mapId !== "m12_01_00_00" &&
+          !isDlcRestrictedItem(shuffled[index]) &&
+          shuffled[index] !== values[dlcIndex] &&
+          restrictedSource !== target,
+      );
+      if (donorIndex < 0) {
+        repaired = false;
+        break;
+      }
+      [shuffled[dlcIndex], shuffled[donorIndex]] =
+        [shuffled[donorIndex], shuffled[dlcIndex]];
+    }
+    if (repaired) return shuffled;
+  }
+  throw new Error(
+    "Could not keep progression items, Embers, and Titanite out of DLC locations.",
+  );
 }
 
 function shuffledWithoutFixedPoints(rng, values) {

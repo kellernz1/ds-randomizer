@@ -1047,6 +1047,9 @@ static PatchReport PatchEnemies(
                     staticBridge.ValueKind == JsonValueKind.True,
                 element.TryGetProperty("disableEntity", out var disableEntity) &&
                     disableEntity.ValueKind == JsonValueKind.True,
+                element.TryGetProperty(
+                        "killDisabledEntity", out var killDisabledEntity) &&
+                    killDisabledEntity.ValueKind == JsonValueKind.True,
                 element.TryGetProperty("syntheticEnemy", out var syntheticEnemy) &&
                     syntheticEnemy.ValueKind == JsonValueKind.True,
                 element.TryGetProperty(
@@ -2501,6 +2504,13 @@ static List<PatchedFile> PatchBossNames(
                     2004,
                     1,
                     new object[] { placement.EntityId, 0 }));
+                if (placement.KillDisabledEntity)
+                {
+                    disableEvent.Instructions.Add(new EMEVD.Instruction(
+                        2004,
+                        4,
+                        new object[] { placement.EntityId, 0 }));
+                }
                 RegisterCustomEvent(disableEvent);
             }
             foreach (var placement in forceCombatMapPlacements
@@ -2537,6 +2547,15 @@ static List<PatchedFile> PatchBossNames(
                     instruction.ArgData.Length != 12)
                     continue;
                 var entityId = BitConverter.ToInt32(instruction.ArgData, 4);
+                var disabledPlacement = disabledMapPlacements.FirstOrDefault(
+                    placement => placement.EntityId == entityId);
+                if (disabledPlacement != null)
+                {
+                    RemoveEventInstruction(entry, index);
+                    index--;
+                    changed++;
+                    continue;
+                }
                 if (!namesByEntity.TryGetValue(entityId, out var nameId))
                     continue;
                 var nameBytes = BitConverter.GetBytes(nameId);
@@ -2890,13 +2909,21 @@ static List<PatchedFile> PatchBossNames(
                 var eventId = nextCustomEventId++;
                 var disableEvent = verification.Events.Single(entry =>
                     entry.ID == eventId);
+                var expectedInstructionCount =
+                    placement.KillDisabledEntity ? 3 : 2;
                 if (disableEvent.RestBehavior !=
                         EMEVD.Event.RestBehaviorType.Restart ||
-                    disableEvent.Instructions.Count != 2 ||
-                    disableEvent.Instructions.Any(instruction =>
+                    disableEvent.Instructions.Count != expectedInstructionCount ||
+                    disableEvent.Instructions.Take(2).Any(instruction =>
                         instruction.Bank != 2004 ||
                         instruction.ID is not (1 or 5) ||
                         BitConverter.ToInt32(instruction.ArgData, 4) != 0) ||
+                    (placement.KillDisabledEntity &&
+                     (disableEvent.Instructions[2].Bank != 2004 ||
+                      disableEvent.Instructions[2].ID != 4 ||
+                      BitConverter.ToInt32(
+                          disableEvent.Instructions[2].ArgData, 0) !=
+                          placement.EntityId)) ||
                     !IsInitialized(eventId))
                 {
                     throw new InvalidDataException(
@@ -2972,6 +2999,11 @@ static List<PatchedFile> PatchBossNames(
                          value.ArgData.Length == 12))
         {
             var entityId = BitConverter.ToInt32(instruction.ArgData, 4);
+            if (disabledMapPlacements.Any(
+                    placement => placement.EntityId == entityId))
+                throw new InvalidDataException(
+                    $"Disabled entity retained a boss health bar: " +
+                    $"{entityId} in {mapId}.");
             if (namesByEntity.TryGetValue(entityId, out var expectedNameId) &&
                 BitConverter.ToInt16(instruction.ArgData, 10) != expectedNameId)
                 throw new InvalidDataException(
@@ -3441,7 +3473,11 @@ static PatchedFile? PatchGameParam(
             placement.InitialTeamType ?? GetCellInt(source, "teamType"));
         AssertCells(RowCells(source), scaled, IsNpcItemLotField);
         if (placement.MakeTangible)
+        {
             AssertCell(scaled, "isGhost", 0);
+            AssertCell(scaled, "isChangeWanderGhost", 0);
+            AssertCell(scaled, "ghostModelId", -1);
+        }
     }
     foreach (var placement in enemyPlacements.Where(value =>
                  value.BaseThinkParamId.HasValue))
@@ -3532,7 +3568,14 @@ static void AddScaledNpcRows(PARAM npcParam, List<PatchPlacement> placements)
         CopyCells(RowCells(source), scaled, IsNpcItemLotField);
         AssertCells(RowCells(source), scaled, IsNpcItemLotField);
         if (placement.MakeTangible)
+        {
+            // Disable both collision phasing and the wandering-ghost model
+            // transition. The latter can make a combat-active replacement
+            // completely invisible outside New Londo.
             SetCell(scaled, "isGhost", 0);
+            SetCell(scaled, "isChangeWanderGhost", 0);
+            SetCell(scaled, "ghostModelId", -1);
+        }
         // A replacement may use a neutral/friendly PARAM team in its vanilla
         // arena (Gwyndolin is the important example). Preserve the destination
         // encounter's allegiance unless a passive slot explicitly overrides it.
@@ -3547,13 +3590,18 @@ static void AddScaledNpcRows(PARAM npcParam, List<PatchPlacement> placements)
                 !combatFields.Contains(name) &&
                 name != "teamType" &&
                 !IsNpcItemLotField(name) &&
-                !(placement.MakeTangible && name == "isGhost"));
+                !(placement.MakeTangible &&
+                  name is "isGhost" or "isChangeWanderGhost" or "ghostModelId"));
         AssertCell(
             scaled,
             "teamType",
             placement.InitialTeamType ?? GetCellInt(source, "teamType"));
         if (placement.MakeTangible)
+        {
             AssertCell(scaled, "isGhost", 0);
+            AssertCell(scaled, "isChangeWanderGhost", 0);
+            AssertCell(scaled, "ghostModelId", -1);
+        }
         npcParam.Rows.Add(scaled);
     }
     npcParam.Rows.Sort((left, right) => left.ID.CompareTo(right.ID));
@@ -4490,6 +4538,7 @@ record PatchPlacement(
     int? CombatExitRegionId,
     bool StaticBridgeDragon,
     bool DisableEntity,
+    bool KillDisabledEntity,
     bool SyntheticEnemy,
     bool PortableHydraGroup,
     int? AwardItemLotId)

@@ -136,6 +136,7 @@ test("real catalog produces deterministic enemies with visibly different models"
         "passive-asylum-source-ai-permutation",
         "passive-new-londo-entrance-permutation",
         "passive-until-attacked-permutation",
+        "passive-parish-bonfire-permutation",
         "grounded-new-londo-ghost-slot-permutation",
         "dragon-only-group-permutation",
         "static-bridge-dragon-permutation",
@@ -294,7 +295,8 @@ test("real catalog produces deterministic enemies with visibly different models"
       (placement) =>
         placement.sourceSlot === "m16_00_00_00:c3520_0007" &&
         placement.targetNpcParamId === 352002 &&
-        placement.targetThinkParamId === 352002 &&
+        (placement.compatibility === "passive-parish-bonfire-permutation" ||
+          placement.targetThinkParamId === 352002) &&
         placement.targetBattleGoalId === 352002,
     ),
   );
@@ -343,6 +345,18 @@ test("real catalog produces deterministic enemies with visibly different models"
     kilnPassive.compatibility,
     "passive-until-attacked-permutation",
   );
+  const parishPassive = first.placements.enemies.find(
+    (placement) => placement.slot === "m10_01_00_00:c2300_0000",
+  );
+  assert.ok(parishPassive);
+  assert.equal(parishPassive.entityId, 1010340);
+  assert.equal(parishPassive.passiveUntilAttacked, true);
+  assert.equal(parishPassive.initialTeamType, 2);
+  assert.equal(
+    parishPassive.compatibility,
+    "passive-parish-bonfire-permutation",
+  );
+  assert.equal(parishPassive.forceCombatActivation, undefined);
   const activeMimics = ordinaryPlacements.filter(
     (placement) =>
       placement.targetModelName === "c2780" &&
@@ -395,6 +409,7 @@ test("real catalog produces deterministic enemies with visibly different models"
           "passive-asylum-source-ai-permutation",
           "passive-new-londo-entrance-permutation",
           "passive-until-attacked-permutation",
+          "passive-parish-bonfire-permutation",
         ].includes(placement.compatibility),
       );
     } else {
@@ -439,7 +454,7 @@ test("real catalog produces deterministic enemies with visibly different models"
     ).length > 50,
   );
   const dragonModels = new Set([
-    "c2730", "c2731", "c3420", "c3421", "c3422", "c3430", "c3431",
+    "c2300", "c2730", "c2731", "c3420", "c3421", "c3422", "c3430", "c3431",
     "c3520", "c3530", "c3531", "c4510", "c4511", "c5260", "c5261",
     "c5290", "c5291", "c5351", "c5353",
   ]);
@@ -452,6 +467,17 @@ test("real catalog produces deterministic enemies with visibly different models"
           dragonModels.has(placement.targetModelName),
       ),
   );
+  const titaniteDemonBodies = first.placements.enemies.filter(
+    (placement) => placement.modelName === "c2300",
+  );
+  assert.equal(titaniteDemonBodies.length, 8);
+  assert.ok(titaniteDemonBodies.every(
+    (placement) =>
+      placement.linkedDragonGroup?.startsWith("titanite-demon-") &&
+      ["c2300", "c3420", "c3520", "c3530"].includes(
+        placement.targetModelName,
+      ),
+  ));
   const anorGargoyleBodies = first.placements.enemies.filter(
     (placement) => placement.modelName === "c5351",
   );
@@ -821,10 +847,12 @@ test("real catalog produces real boss and world-item placements", async () => {
     (entry) => entry.slot === "m10_01_00_00:c5350_0001",
   );
   assert.equal(stagedGargoyle.disableEntity, true);
+  assert.equal(stagedGargoyle.killDisabledEntity, true);
   const secondGargoyle = result.placements.enemies.find(
     (entry) => entry.slot === "m10_01_00_00:c5350_0002",
   );
   assert.equal(secondGargoyle.disableEntity, true);
+  assert.equal(secondGargoyle.killDisabledEntity, true);
   for (const [primary, linked] of [["c5270", "c5271"]]) {
     assert.equal(
       assignmentsByVanillaModel.get(linked).targetModelName,
@@ -938,6 +966,15 @@ test("protected world items join the global pool except both Asylum keys", async
         !protectedRowIds.has(entry.rowId),
     ),
   );
+  const dlcPlacements = result.placements.items.filter(
+    (entry) => entry.map === "m12_01_00_00",
+  );
+  assert.ok(dlcPlacements.length > 0);
+  assert.ok(dlcPlacements.every(
+    (entry) =>
+      entry.progression !== true &&
+      !/(?:Titanite|\bEmber\b)/iu.test(entry.itemName),
+  ));
 });
 
 test("classes use deterministic stats and general-catalog equipment", async () => {
@@ -1115,6 +1152,10 @@ test("world items, gifts, enemy drops, and shops share one deterministic pool", 
   const isBulk = (entry) =>
     (entry.equipType === 0 && /(?:Arrow|Bolt)$/u.test(entry.name ?? entry.to)) ||
     (entry.equipType === 3 && bulkGoods.has(entry.name ?? entry.to));
+  const isConsumableSoul = (entry) =>
+    /^(?:Large )?Soul of /u.test(entry.name ?? entry.to) ||
+    (entry.name ?? entry.to) === "Fire Keeper Soul";
+  assert.ok(first.placements.shops.some(isConsumableSoul));
   const restrictedShopRows = new Set(
     gameCatalog.shopEntries.filter(isBulk).map((entry) => entry.rowId),
   );
@@ -1134,6 +1175,8 @@ test("world items, gifts, enemy drops, and shops share one deterministic pool", 
         /^(?:Sorcery|Pyromancy|Miracle):/u.test(entry.to);
       const expected = isBulk(entry)
         ? 99
+        : isConsumableSoul(entry)
+          ? 1
         : entry.equipType === 0 || entry.equipType === 1 || magic
           ? 1
           : 10;

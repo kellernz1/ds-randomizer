@@ -35,15 +35,17 @@ package before touching the game.
   all three from attacking until the player damages them
 - The Kiln slot with entity ID `1800201` also remains randomized but stays
   passive until the player damages it
+- The Titanite Demon chamber directly below the Undead Parish bonfire keeps
+  the destination's passive-until-attacked behavior after randomization
 - Friendly NPCs, merchants, quest characters, and their spawns are protected
 - Boss encounters exchange only with true boss encounters; ordinary Anor Londo
   gargoyles and non-boss dragons cannot enter the boss pool
 - Boss replacements use complete terrain-safe X/Y/Z points. Event-staged Taurus
   Demon, Bell Gargoyle, Moonlight Butterfly, Ceaseless Discharge, and Asylum
   encounters begin directly inside their playable arenas
-- Dragons only exchange locations with other dragons; the ordinary Anor Londo
-  Gargoyles participate in the regular-dragon pool, while detachable tails,
-  wings, legs, and encounter variants move as linked groups
+- Dragons only exchange locations with other dragons; ordinary Anor Londo
+  Gargoyles and Titanite Demons participate in the regular-dragon pool, while
+  detachable tails, wings, legs, and encounter variants move as linked groups
 - Hydra bodies and all seven heads also move as linked hydra-only groups
 - Sanctuary Guardian, Gargoyle, and Centipede Demon bodies and removable parts
   are randomized as inseparable boss groups
@@ -58,6 +60,8 @@ package before touching the game.
   native encounter except the script-bound Bed of Chaos; multi-part encounters
   share one linked body/part assignment
 - Randomized boss AI explicitly activated when the encounter health bar appears
+- Single-body Bell Gargoyle replacements remove and kill the unused staged
+  secondary entities and suppress their orphaned boss bars
 - The rooftop Asylum encounter is moved to the lower arena's full X/Y/Z
   position; Moonlight Butterfly replacements begin with their landing animation
 - 500+ world pickup and chest item lots
@@ -72,6 +76,8 @@ package before touching the game.
   infusion variants are excluded
 - NPC gifts, hostile and friendly NPC death drops, renewable enemy drops, and
   shops, including the Dusk Crown Ring
+- Randomized New Londo ghosts have both ghost-state flags and the alternate
+  ghost model disabled, keeping them visible and directly damageable in combat
 - World items, NPC gifts, enemy-drop lots, and shops are true permutations:
   existing contents trade locations without duplication or deletion
 - Weapons, armor, spells, and rings always appear as a single item; stackable
@@ -79,7 +85,9 @@ package before touching the game.
 - Arrows, bolts, throwable consumables, and other bulk merchant ammunition stay
   in the shop pool. Generated stock keeps finite purchase limits: 99 for bulk
   ammunition and throwables, 10 for ordinary consumables, and 1 for weapons,
-  armor, and spells
+  armor, spells, and consumable souls. A purchased soul therefore leaves stock
+- DLC world locations never receive progression items, Embers, or Titanite;
+  those items remain in the shared permutation but are assigned outside the DLC
 - Independent deterministic RNG streams for every category
 - Progression-item protection, spoiler logs, and reproducible placement hashes
 - A `cheat-locations.txt` report with English item and boss names, original and
