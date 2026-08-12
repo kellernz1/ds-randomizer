@@ -73,17 +73,16 @@ files; source hashes prevent applying it to a different installation state.
   and Asylum slots use explicit playable-arena points
 - Dragons are isolated into boss-dragon and regular-dragon permutation groups;
   detachable parts and alternate encounter bodies follow their parent group
-- Hydras use linked hydra-only body/head groups, and Moonlight Butterfly,
-  Ceaseless Discharge, and Gwyndolin are included as boss destination
-  encounters. Moonlight Butterfly, Gwyndolin, Bed of Chaos, and Four Kings are
-  excluded as portable replacement sources because their AI or spawn lifecycle
-  is arena-script dependent
+- Hydras use linked hydra-only body/head groups. Moonlight Butterfly,
+  Ceaseless Discharge, Gwyndolin, Bed of Chaos, Four Kings, Super Ornstein, and
+  Super Smough are distinct portable boss sources and destinations
 - All 45 Humanity enemy slots participate in the regular permutation
 - Sanctuary Guardian tails, both Gargoyle tail types, and all Centipede Demon
   removable parts follow their linked boss assignment
 - Bed of Chaos body, core, and bug are reserved out of the regular-enemy
-  permutation. The destination receives one grounded boss replacement while the
-  original scripted helper entities are disabled
+  permutation. Its victory-tracked core receives one grounded boss replacement,
+  the original helper entities are disabled, the floor-break event registrations
+  are removed, and all floor objects are restored and made invulnerable
 - First Asylum boss rooftop animation is replaced by a floor spawn
 - Adapted Asylum intro explicitly enables replacement AI after arena entry
 - The first three regular Asylum slots receive cloned replacement
@@ -123,8 +122,9 @@ files; source hashes prevent applying it to a different installation state.
   Other invisible `c3501` helper variants are excluded from ordinary slots.
   Arbitrary full-sized enemies can no longer occupy the low item tunnel, and
   Wisps can no longer turn into twelve stacked unrelated enemies.
-- Internal boss forms such as Super Smough are excluded from regular-enemy
-  sources. The Hellkite bridge uses a full regular-dragon replacement at the
+- Internal boss forms such as Super Ornstein and Super Smough are excluded from
+  regular-enemy sources and enter the boss-only archetype permutation instead.
+  The Hellkite bridge uses a full regular-dragon replacement at the
   bridge combat point and loading sector, removes the fly-in lifecycle and
   disables and stages its obsolete auxiliary body/tail entities below the map.
   Drake replacements use a ground-combat AI instead of a patrol-flight brain.
@@ -190,8 +190,9 @@ redistributed within its item type.
 - Boss replacement remains experimental. Replacements are grounded and the
   first Asylum encounter bypasses its model-specific rooftop animation, but
   some later arenas still contain bespoke cutscenes or geometry.
-- Four Kings remains script-protected because the encounter controls additional
-  kings independently of the MSB boss body.
+- Four Kings now contributes its main body to the boss permutation; its four
+  event-created extra bodies are disabled so the encounter remains a single
+  randomized boss lifecycle.
 - Protected-item randomization is intentionally unrestricted and can produce
   progression softlocks; only the two Asylum escape keys are permanently fixed.
 - Area and progressive modes currently use the same slot-relative combat-stat

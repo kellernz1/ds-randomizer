@@ -49,20 +49,21 @@ package before touching the game.
 - Hydra bodies and all seven heads also move as linked hydra-only groups
 - Sanctuary Guardian, Gargoyle, and Centipede Demon bodies and removable parts
   are randomized as inseparable boss groups
-- Bed of Chaos keeps its scripted destination arena, but its main body is
-  replaced by a grounded boss while the original scripted side entities are
-  disabled
+- Bed of Chaos is a portable boss source. Its destination receives one grounded
+  randomized boss, disables the original scripted side entities, and restores,
+  activates, and protects every arena-floor object from destruction
 - Large, medium, and small Humanity enemies participate in the global
   regular-enemy permutation
-- Moonlight Butterfly, Ceaseless Discharge, and Dark Sun Gwyndolin destination
-  encounters are included in the boss pool. Moonlight Butterfly, Gwyndolin, Bed
-  of Chaos, and Four Kings are not used as portable replacement sources because
-  their combat logic depends on bespoke arena scripts
+- Moonlight Butterfly, Ceaseless Discharge, Dark Sun Gwyndolin, Bed of Chaos,
+  and Four Kings are both destinations and portable sources in the boss pool.
+  Super Ornstein and Super Smough are distinct boss archetypes rather than
+  aliases of their first phases
 - Boss health bars updated to the randomized boss name
-- Boss assignments are a strict derangement for supported boss destinations:
-  no portable vanilla boss remains in its native encounter. Multi-part
-  encounters share one linked body/part assignment, while Four Kings remains
-  script-protected until its multi-king event can be modeled safely
+- Boss assignments are a strict archetype derangement: no portable vanilla
+  boss or powered Ornstein/Smough phase remains in its native encounter.
+  Multi-part encounters share one linked body/part assignment; Four Kings uses
+  one randomized encounter body while its four scripted extra bodies are
+  disabled
 - Randomized boss AI is explicitly enabled/replanned either when the destination
   arena event fires or, for ordinary always-loaded boss slots, when the map
   constructor starts

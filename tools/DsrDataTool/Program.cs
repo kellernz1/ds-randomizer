@@ -1010,6 +1010,12 @@ static PatchReport PatchEnemies(
                 element.TryGetProperty(
                         "forceCombatActivation", out var forceCombat) &&
                     forceCombat.ValueKind == JsonValueKind.True,
+                element.TryGetProperty(
+                        "portableBossSanitization", out var portableBoss) &&
+                    portableBoss.ValueKind == JsonValueKind.True,
+                element.TryGetProperty(
+                        "preserveBedOfChaosFloor", out var preserveBedFloor) &&
+                    preserveBedFloor.ValueKind == JsonValueKind.True,
                 element.TryGetProperty("initialTeamType", out var initialTeamType) &&
                     initialTeamType.ValueKind == JsonValueKind.Number
                         ? initialTeamType.GetInt32()
@@ -1105,6 +1111,12 @@ static PatchReport PatchEnemies(
             IsBossModel(slot.ModelName) && IsPrimaryBossSlot(slot)))
         .Select(slot => slot.Id)
         .ToHashSet();
+    // These are intentional boss destinations that cannot be inferred solely
+    // from the model's primary NPC row: Super Smough has distinct phase-two
+    // params, and the Bed destination uses the core entity watched by its
+    // vanilla victory event.
+    bossSlotIds.Add("m15_01_00_00:c2360_0001");
+    bossSlotIds.Add("m14_01_00_00:c5401_0000");
     if (bossPlacements.Any(placement => !bossSlotIds.Contains(placement.SlotId)))
         throw new InvalidDataException("A boss placement targets a protected slot.");
     var allEnemyPlacements = regularEnemyPlacements
@@ -2007,6 +2019,12 @@ static bool IsModelSpecificEnemyInstruction(EMEVD.Instruction instruction)
         (instruction.Bank == 2004 && instruction.ID is 8 or 9 or 17 or 21 or 41);
 }
 
+static bool IsPortableBossSpecificInstruction(EMEVD.Instruction instruction)
+{
+    return IsModelSpecificEnemyInstruction(instruction) ||
+        (instruction.Bank == 2004 && instruction.ID is 22 or 27 or 28 or 29 or 30 or 31 or 32 or 35 or 36 or 40 or 42);
+}
+
 static bool IsStaticEnemyLifecycleInstruction(EMEVD.Instruction instruction)
 {
     return
@@ -2074,6 +2092,14 @@ static List<PatchedFile> PatchBossNames(
             slot.EventModelLocked &&
             slot.ModelName != placement.TargetModelName)
         .ToList();
+    var portableBossPlacements = allEnemyPlacements
+        .Where(placement =>
+            placement.PortableBossSanitization &&
+            placement.EntityId >= 0)
+        .ToList();
+    var preserveBedFloor = allEnemyPlacements.Any(placement =>
+        placement.MapId == "m14_01_00_00" &&
+        placement.PreserveBedOfChaosFloor);
     var eventMapIds = namedBossPlacements
         .Select(placement => placement.MapId)
         .Concat(passivePlacements.Select(placement => placement.MapId))
@@ -2083,6 +2109,8 @@ static List<PatchedFile> PatchBossNames(
         .Concat(disabledPlacements.Select(placement => placement.MapId))
         .Concat(forceCombatPlacements.Select(placement => placement.MapId))
         .Concat(modelSpecificPlacements.Select(placement => placement.MapId))
+        .Concat(portableBossPlacements.Select(placement => placement.MapId))
+        .Concat(preserveBedFloor ? new[] { "m14_01_00_00" } : Array.Empty<string>())
         .Distinct(StringComparer.Ordinal)
         .Order(StringComparer.Ordinal);
     foreach (var mapId in eventMapIds)
@@ -2109,6 +2137,10 @@ static List<PatchedFile> PatchBossNames(
             .Where(placement => placement.MapId == mapId)
             .ToList();
         var modelSpecificEntityIds = modelSpecificPlacements
+            .Where(placement => placement.MapId == mapId)
+            .Select(placement => placement.EntityId)
+            .ToHashSet();
+        var portableBossEntityIds = portableBossPlacements
             .Where(placement => placement.MapId == mapId)
             .Select(placement => placement.EntityId)
             .ToHashSet();
@@ -2243,6 +2275,72 @@ static List<PatchedFile> PatchBossNames(
                     changed++;
                 }
             }
+        }
+        if (portableBossEntityIds.Count > 0)
+        {
+            foreach (var entry in emevd.Events)
+            {
+                for (var index = entry.Instructions.Count - 1; index >= 0; index--)
+                {
+                    var instruction = entry.Instructions[index];
+                    if (!IsPortableBossSpecificInstruction(instruction) ||
+                        instruction.ArgData.Length < 4 ||
+                        !portableBossEntityIds.Contains(
+                            BitConverter.ToInt32(instruction.ArgData, 0)))
+                        continue;
+                    RemoveEventInstruction(
+                        entry,
+                        index,
+                        removeInstructionParameters: true);
+                    changed++;
+                }
+            }
+        }
+        if (preserveBedFloor && mapId == "m14_01_00_00")
+        {
+            var constructor = emevd.Events.Single(entry => entry.ID == 0);
+            for (var index = constructor.Instructions.Count - 1; index >= 0; index--)
+            {
+                var instruction = constructor.Instructions[index];
+                if (instruction.Bank != 2000 || instruction.ID != 0 ||
+                    instruction.ArgData.Length < 8)
+                    continue;
+                var initializedEvent = BitConverter.ToInt32(instruction.ArgData, 4);
+                if (initializedEvent is not (11410200 or 11410201 or 11410250))
+                    continue;
+                RemoveEventInstruction(
+                    constructor,
+                    index,
+                    removeInstructionParameters: true);
+                changed++;
+            }
+            var floorEventId = FindFreeCustomEventRange(emevd, 11419980, 1);
+            var floorEvent = new EMEVD.Event(
+                floorEventId,
+                EMEVD.Event.RestBehaviorType.Restart);
+            foreach (var entityId in Enumerable.Range(1411200, 5)
+                         .Concat(Enumerable.Range(1411210, 13))
+                         .Concat(Enumerable.Range(1411250, 48)))
+            {
+                floorEvent.Instructions.Add(new EMEVD.Instruction(
+                    2005,
+                    2,
+                    new object[] { entityId }));
+                floorEvent.Instructions.Add(new EMEVD.Instruction(
+                    2005,
+                    3,
+                    new object[] { entityId, 1 }));
+                floorEvent.Instructions.Add(new EMEVD.Instruction(
+                    2005,
+                    13,
+                    new object[] { entityId, 1 }));
+            }
+            emevd.Events.Add(floorEvent);
+            constructor.Instructions.Add(new EMEVD.Instruction(
+                2000,
+                0,
+                new object[] { 0, floorEventId, 0 }));
+            changed++;
         }
         if (patchAsylumIntro)
         {
@@ -2697,6 +2795,47 @@ static List<PatchedFile> PatchBossNames(
                 }
             }
         }
+        if (preserveBedFloor && mapId == "m14_01_00_00")
+        {
+            var constructor = verification.Events.Single(entry => entry.ID == 0);
+            var obsoleteFloorEvents = new HashSet<int>
+            {
+                11410200, 11410201, 11410250,
+            };
+            if (constructor.Instructions.Any(instruction =>
+                    instruction.Bank == 2000 &&
+                    instruction.ID == 0 &&
+                    instruction.ArgData.Length >= 8 &&
+                    obsoleteFloorEvents.Contains(
+                        BitConverter.ToInt32(instruction.ArgData, 4))))
+            {
+                throw new InvalidDataException(
+                    "Bed of Chaos floor-break events remained initialized.");
+            }
+            var floorObjectIds = Enumerable.Range(1411200, 5)
+                .Concat(Enumerable.Range(1411210, 13))
+                .Concat(Enumerable.Range(1411250, 48))
+                .ToHashSet();
+            var floorEvent = verification.Events.SingleOrDefault(entry =>
+                entry.Instructions.Count == floorObjectIds.Count * 3 &&
+                floorObjectIds.All(entityId =>
+                    entry.Instructions.Any(instruction =>
+                        instruction.Bank == 2005 &&
+                        instruction.ID == 13 &&
+                        instruction.ArgData.Length >= 8 &&
+                        BitConverter.ToInt32(instruction.ArgData, 0) == entityId &&
+                        BitConverter.ToInt32(instruction.ArgData, 4) == 1)));
+            if (floorEvent == null ||
+                !constructor.Instructions.Any(instruction =>
+                    instruction.Bank == 2000 &&
+                    instruction.ID == 0 &&
+                    instruction.ArgData.Length >= 8 &&
+                    BitConverter.ToInt32(instruction.ArgData, 4) == floorEvent.ID))
+            {
+                throw new InvalidDataException(
+                    "The protected Bed of Chaos floor event did not persist.");
+            }
+        }
         if (passiveMapPlacements.Count > 0 ||
             deferredMapPlacements.Count > 0 ||
             containedMapPlacements.Count > 0 ||
@@ -2986,6 +3125,30 @@ static List<PatchedFile> PatchBossNames(
                 {
                     throw new InvalidDataException(
                         $"Model-specific event action remained for randomized " +
+                        $"entity {BitConverter.ToInt32(instruction.ArgData, 0)} " +
+                        $"in {mapId}.");
+                }
+            }
+        }
+        if (portableBossEntityIds.Count > 0)
+        {
+            foreach (var instruction in verification.Events
+                         .SelectMany(entry => entry.Instructions))
+            {
+                if (IsPortableBossSpecificInstruction(instruction) &&
+                    instruction.ArgData.Length >= 4 &&
+                    portableBossEntityIds.Contains(
+                        BitConverter.ToInt32(instruction.ArgData, 0)) &&
+                    !IsDeferredWarpInstruction(instruction) &&
+                    !(instruction.Bank == 2003 &&
+                      instruction.ID == 18 &&
+                      instruction.ArgData.Length >= 8 &&
+                      butterflyEntityIds.Contains(
+                          BitConverter.ToInt32(instruction.ArgData, 0)) &&
+                      BitConverter.ToInt32(instruction.ArgData, 4) == 3020))
+                {
+                    throw new InvalidDataException(
+                        $"Boss-specific event action remained for portable " +
                         $"entity {BitConverter.ToInt32(instruction.ArgData, 0)} " +
                         $"in {mapId}.");
                 }
@@ -4528,6 +4691,8 @@ record PatchPlacement(
     bool PreserveDestinationPerception,
     bool PassiveUntilAttacked,
     bool ForceCombatActivation,
+    bool PortableBossSanitization,
+    bool PreserveBedOfChaosFloor,
     int? InitialTeamType,
     bool LinkedEnemyGroup,
     bool MakeTangible,

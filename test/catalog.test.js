@@ -152,6 +152,7 @@ test("real catalog produces deterministic enemies with visibly different models"
         "grounded-linked-boss-auxiliary",
         "linked-boss-part-permutation",
         "disabled-bed-of-chaos-script-part",
+        "disabled-extra-four-kings-body",
       ].includes(placement.compatibility),
     ),
   );
@@ -719,12 +720,7 @@ test("real catalog produces real boss and world-item placements", async () => {
     gameCatalog.worldItemLots.filter((lot) => lot.protectedProgression).length,
     13,
   );
-  assert.ok(
-    result.placements.bosses.every(
-      (entry) =>
-        entry.changed || entry.linkedEnemyGroup === "bed-of-chaos",
-    ),
-  );
+  assert.ok(result.placements.bosses.every((entry) => entry.changed));
   assert.ok(
     result.placements.bosses.every(
       (entry) =>
@@ -740,7 +736,7 @@ test("real catalog produces real boss and world-item placements", async () => {
         Number.isFinite(entry.groundZ),
     ),
   );
-  for (const modelName of ["c3230", "c5250", "c5320"]) {
+  for (const modelName of ["c3230", "c5250", "c5271", "c5320", "c5390"]) {
     assert.ok(
       result.placements.bosses.some((entry) => entry.modelName === modelName),
       `${modelName} must be included in the boss permutation`,
@@ -768,29 +764,23 @@ test("real catalog produces real boss and world-item placements", async () => {
     [3.31, 100, -19],
   );
   assert.ok(
-    result.placements.bosses.every(
-      (entry) => entry.targetModelName !== "c5320",
-    ),
-    "Gwyndolin must not leave its hallway as a replacement boss",
-  );
-  assert.equal(
     result.placements.bosses.some(
-      (entry) => entry.slot === "m16_00_00_00:c5390_0000",
+      (entry) => entry.slot === "m16_00_00_00:c5390_0000" && entry.changed,
     ),
-    false,
-    "Four Kings must not create a false randomized placement",
+    "Four Kings must be a real randomized boss destination",
   );
   const assignmentsByVanillaModel = new Map();
   for (const entry of result.placements.bosses.filter(
     (placement) =>
       !placement.linkedDragonGroup && !placement.linkedEnemyGroup,
   )) {
-    const previous = assignmentsByVanillaModel.get(entry.modelName);
+    const archetype = `${entry.modelName}:${entry.sourceNpcParamId}`;
+    const previous = assignmentsByVanillaModel.get(archetype);
     if (previous) {
       assert.equal(entry.targetModelName, previous.targetModelName);
       assert.equal(entry.targetThinkParamId, previous.targetThinkParamId);
     } else {
-      assignmentsByVanillaModel.set(entry.modelName, entry);
+      assignmentsByVanillaModel.set(archetype, entry);
     }
   }
   const dragonModels = new Set([
@@ -810,8 +800,8 @@ test("real catalog produces real boss and world-item placements", async () => {
   assert.ok(
     result.placements.bosses.every(
       (placement) =>
-        placement.linkedEnemyGroup === "bed-of-chaos" ||
-        trueBossModels.has(placement.targetModelName),
+        trueBossModels.has(placement.targetModelName) ||
+        placement.targetModelName === "c5230",
     ),
     "boss encounters must only receive boss replacements",
   );
@@ -821,12 +811,23 @@ test("real catalog produces real boss and world-item placements", async () => {
     ),
     "ordinary Anor Londo gargoyles must not enter the boss pool",
   );
-  assert.ok(
-    result.placements.bosses.every(
-      (placement) => placement.targetModelName !== "c3230",
-    ),
-    "Moonlight Butterfly must not leave its arena as a replacement boss",
-  );
+  for (const [modelName, npcParamId, label] of [
+    ["c2360", 236001, "Super Smough"],
+    ["c3230", 323000, "Moonlight Butterfly"],
+    ["c5230", 523000, "Bed of Chaos"],
+    ["c5271", 527100, "Super Ornstein"],
+    ["c5320", 532000, "Gwyndolin"],
+    ["c5390", 539000, "Four Kings"],
+  ]) {
+    assert.ok(
+      result.placements.bosses.some(
+        (placement) =>
+          placement.targetModelName === modelName &&
+          placement.targetNpcParamId === npcParamId,
+      ),
+      `${label} must be available as a portable replacement boss`,
+    );
+  }
   assert.ok(
     result.placements.bosses
       .filter(
@@ -878,12 +879,11 @@ test("real catalog produces real boss and world-item placements", async () => {
   );
   assert.equal(secondGargoyle.disableEntity, true);
   assert.equal(secondGargoyle.killDisabledEntity, true);
-  for (const [primary, linked] of [["c5270", "c5271"]]) {
-    assert.equal(
-      assignmentsByVanillaModel.get(linked).targetModelName,
-      assignmentsByVanillaModel.get(primary).targetModelName,
-    );
-  }
+  assert.notEqual(
+    assignmentsByVanillaModel.get("c5270:527000").targetNpcParamId,
+    assignmentsByVanillaModel.get("c5271:527100").targetNpcParamId,
+    "Ornstein and Super Ornstein must be distinct boss assignments",
+  );
   const linkedBossFamilies = new Map([
     ["sanctuary-guardian", new Set(["c3471", "c3472"])],
     ["bell-gargoyles", new Set(["c5350", "c5352"])],
@@ -914,10 +914,11 @@ test("real catalog produces real boss and world-item placements", async () => {
     );
   }
   const bed = result.placements.bosses.find(
-    (entry) => entry.linkedEnemyGroup === "bed-of-chaos",
+    (entry) => entry.slot === "m14_01_00_00:c5401_0000",
   );
   assert.ok(bed?.changed);
-  assert.equal(bed.compatibility, "grounded-script-bound-bed-of-chaos");
+  assert.equal(bed.compatibility, "grounded-flat-floor-bed-of-chaos");
+  assert.equal(bed.preserveBedOfChaosFloor, true);
   assert.notEqual(bed.targetModelName, "c5230");
   assert.equal(
     result.placements.enemies.filter(
@@ -929,6 +930,15 @@ test("real catalog produces real boss and world-item placements", async () => {
     result.placements.enemies
       .filter((entry) => entry.linkedEnemyGroup === "bed-of-chaos")
       .every((entry) => entry.disableEntity && entry.killDisabledEntity),
+  );
+  const extraFourKings = result.placements.enemies.filter(
+    (entry) => entry.compatibility === "disabled-extra-four-kings-body",
+  );
+  assert.equal(extraFourKings.length, 4);
+  assert.ok(
+    extraFourKings.every(
+      (entry) => entry.disableEntity && entry.killDisabledEntity,
+    ),
   );
   assert.ok(result.placements.items.every((entry) => !entry.preserved));
   assert.ok(

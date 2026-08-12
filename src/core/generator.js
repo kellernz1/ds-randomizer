@@ -74,6 +74,10 @@ const additionalBossNames = new Map([
   ["c5250", "Ceaseless Discharge"],
   ["c5320", "Dark Sun Gwyndolin"],
 ]);
+const bossArchetypeNames = new Map([
+  ["c2360:236001", "Super Smough"],
+  ["c5271:527100", "Super Ornstein"],
+]);
 const additionalBossModels = new Set(additionalBossNames.keys());
 const nonBossEncounterSlots = new Set([
   // The Anor Londo gargoyles reuse a boss model/parameter family but are
@@ -86,11 +90,10 @@ const nonBossEncounterSlots = new Set([
   "m17_00_00_00:c3230_0001",
   "m17_00_00_00:c3230_0002",
 ]);
-const scriptBoundBossSlots = new Set([
-  // The Four Kings encounter creates/controls kings through encounter script.
-  // Changing only the MSB body creates a false boss bar while vanilla kings
-  // still spawn, so keep this destination native until the event is modeled.
-  "m16_00_00_00:c5390_0000",
+const additionalBossSlots = new Set([
+  // Super Smough uses the phase-one model with distinct second-phase params,
+  // so model-based boss detection alone cannot discover it.
+  "m15_01_00_00:c2360_0001",
 ]);
 const activeReplacementThinkParams = new Map([
   // Ambush/defensive variants depend on their vanilla area setup. Use each
@@ -191,6 +194,13 @@ const bedOfChaosSafeSpawn = Object.freeze({
   rotationY: 180,
 });
 
+const bossArchetypeKey = (slot) => {
+  // The Bed destination uses the core entity watched by the vanilla victory
+  // event, while its portable archetype remains the visible c5230 boss body.
+  if (slot.id === "m14_01_00_00:c5401_0000") return "c5230:523000";
+  return `${slot.modelName}:${slot.npcParamId}`;
+};
+
 function effectiveBossSlots(catalog) {
   const result = new Map(
     (catalog.bossSlots || [])
@@ -200,15 +210,20 @@ function effectiveBossSlots(catalog) {
   for (const slot of catalog.enemySlots) {
     const modelId = Number(slot.modelName.slice(1));
     if (
-      additionalBossModels.has(slot.modelName) &&
+      (additionalBossModels.has(slot.modelName) ||
+        additionalBossSlots.has(slot.id)) &&
       !nonBossEncounterSlots.has(slot.id) &&
       !slot.dummy &&
-      slot.npcParamId === modelId * 100 &&
+      (slot.npcParamId === modelId * 100 || additionalBossSlots.has(slot.id)) &&
       slot.thinkParamId > 1000
     ) {
       result.set(slot.id, slot);
     }
   }
+  const bedCore = catalog.enemySlots.find(
+    (slot) => slot.id === "m14_01_00_00:c5401_0000",
+  );
+  if (bedCore) result.set(bedCore.id, bedCore);
   return [...result.values()];
 }
 
@@ -820,47 +835,13 @@ function buildDragonPlan(config, catalog) {
       });
     });
 
-    const bedBodies = byModel("c5230", "m14_01_00_00");
-    const bedParts = [
-      ...byModel("c5400", "m14_01_00_00"),
-      ...byModel("c5401", "m14_01_00_00"),
-    ];
-    [...bedBodies, ...bedParts].forEach((slot) =>
+    const bedVisualBodies = byModel("c5230", "m14_01_00_00");
+    const bedArmBodies = byModel("c5400", "m14_01_00_00");
+    const bedCoreBodies = byModel("c5401", "m14_01_00_00");
+    [...bedVisualBodies, ...bedArmBodies].forEach((slot) =>
       result.reservedSlotIds.add(slot.id),
     );
-    const bedSourcePool = effectiveBossSlots(catalog).filter(
-      (slot) =>
-        !result.reservedSlotIds.has(slot.id) &&
-        !scriptBoundBossSlots.has(slot.id) &&
-        slot.modelName !== "c5230" &&
-        !nonPortableBossReplacementModels.has(slot.modelName),
-    );
-    const bedReplacement = bedSourcePool.length > 0
-      ? bedSourcePool[linkedBossRng.int(bedSourcePool.length)]
-      : null;
-    for (const body of bedBodies) {
-      const source = bedReplacement ?? body;
-      result.bosses.push(enemyPlacement(config, body, source, 9_300_000 + bossIndex++, {
-        originalBossName: "Bed of Chaos",
-        randomizedBossName:
-          bossNames[source.modelName] ||
-          additionalBossNames.get(source.modelName) ||
-          source.modelName,
-        encounterLocation: {
-          area: areaNames.get(body.mapId) || body.mapId,
-          map: body.mapId,
-          slot: body.name,
-        },
-        compatibility: "grounded-script-bound-bed-of-chaos",
-        groundX: bedOfChaosSafeSpawn.x,
-        groundY: bedOfChaosSafeSpawn.y,
-        groundZ: bedOfChaosSafeSpawn.z,
-        groundRotationY: bedOfChaosSafeSpawn.rotationY,
-        linkedEnemyGroup: "bed-of-chaos",
-        forceCombatActivation: body.entityId >= 0,
-      }));
-    }
-    for (const part of bedParts) {
+    for (const part of [...bedVisualBodies, ...bedArmBodies]) {
       result.enemies.push(enemyPlacement(config, part, part, null, {
         compatibility: "disabled-bed-of-chaos-script-part",
         linkedEnemyGroup: "bed-of-chaos",
@@ -868,6 +849,21 @@ function buildDragonPlan(config, catalog) {
         killDisabledEntity: true,
       }));
     }
+
+    const fourKingBodies = byModel("c5390", "m16_00_00_00")
+      .sort((left, right) => left.id.localeCompare(right.id));
+    for (const part of fourKingBodies.slice(1)) {
+      result.reservedSlotIds.add(part.id);
+      result.enemies.push(enemyPlacement(config, part, part, null, {
+        compatibility: "disabled-extra-four-kings-body",
+        linkedEnemyGroup: "four-kings",
+        disableEntity: true,
+        killDisabledEntity: true,
+      }));
+    }
+    // The core entity (1410802) is retained as the Bed destination because the
+    // vanilla victory event watches it. The general boss planner replaces its
+    // model and parameters and places it on the intact arena floor.
   }
   return result;
 }
@@ -1104,24 +1100,11 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan, bossPlan) {
 }
 
 const canonicalBossModel = new Map([
-  ["c5271", "c5270"],
   ["c5351", "c5350"],
 ]);
-const nonPortableBossReplacementModels = new Set([
-  // Its battle AI follows arena-specific flight rails. Outside the original
-  // arena it can remain below the floor or permanently outside melee range.
-  "c3230", // Moonlight Butterfly
-  // Gwyndolin's combat loop heavily favors teleport anchors from the hallway.
-  // In compact arenas it can teleport in place forever instead of attacking.
-  "c5320", // Dark Sun Gwyndolin
-  // The encounter script spawns additional kings independently from the MSB
-  // body, so it is not a portable replacement source.
-  "c5390", // Four Kings
-  // The three-entity script cannot be represented safely as a portable source.
-  "c5230", // Bed of Chaos
-]);
+const nonPortableBossReplacementModels = new Set();
 
-function shuffledPortableBosses(rng, modelNames, archetypes) {
+function shuffledPortableBosses(rng, archetypeKeys, archetypes) {
   const portable = archetypes.filter(
     (archetype) =>
       !nonPortableBossReplacementModels.has(archetype.modelName),
@@ -1136,9 +1119,11 @@ function shuffledPortableBosses(rng, modelNames, archetypes) {
     if (shuffled.every((replacement, index) => {
       const replacementModel =
         canonicalBossModel.get(replacement.modelName) || replacement.modelName;
-      const targetModel = modelNames[index];
+      const replacementKey = bossArchetypeKey(replacement);
+      const targetKey = archetypeKeys[index];
+      const targetModel = targetKey.split(":")[0];
       return (
-        replacementModel !== targetModel &&
+        replacementKey !== targetKey &&
         // Ceaseless Discharge's retreat/navigation logic walks into the
         // Taurus tower walls on the narrow Undead Burg bridge.
         !(targetModel === "c2250" && replacementModel === "c5250")
@@ -1157,44 +1142,45 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
     (catalog.maps || []).map((map) => [map.id, map.name]),
   );
   const bossNames = catalog.bossNames || {};
-  const sources = effectiveBossSlots(catalog).filter(
+  const effectiveSlots = effectiveBossSlots(catalog);
+  const sources = effectiveSlots.filter(
     (slot) =>
       !dragonPlan.reservedSlotIds.has(slot.id) &&
-      !scriptBoundBossSlots.has(slot.id) &&
+      slot.id !== "m14_01_00_00:c5230_0000" &&
       slot.npcParamId >= 0 &&
       slot.thinkParamId >= 0,
   );
-  const modelNames = [
-    ...new Set(sources.map(
-      (slot) => canonicalBossModel.get(slot.modelName) || slot.modelName,
-    )),
+  const bedSource = catalog.enemySlots.find(
+    (slot) => slot.id === "m14_01_00_00:c5230_0000",
+  );
+  const archetypeSources = bedSource
+    ? [...sources, bedSource]
+    : sources;
+  const archetypeKeys = [
+    ...new Set(sources.map((slot) => bossArchetypeKey(slot))),
   ];
-  const archetypes = modelNames.map((modelName) =>
-    sources.find(
-      (slot) =>
-        (canonicalBossModel.get(slot.modelName) || slot.modelName) ===
-          modelName &&
-        slot.modelName === modelName,
-    ) ?? sources.find(
-      (slot) =>
-        (canonicalBossModel.get(slot.modelName) || slot.modelName) ===
-        modelName,
+  const archetypes = archetypeKeys.map((archetypeKey) =>
+    (archetypeKey === "c5230:523000" ? bedSource : null) ??
+    archetypeSources.find(
+      (slot) => bossArchetypeKey(slot) === archetypeKey,
     ),
   );
-  const shuffled = shuffledPortableBosses(rng, modelNames, archetypes);
+  const shuffled = shuffledPortableBosses(rng, archetypeKeys, archetypes);
   const replacementsByModel = new Map();
-  modelNames.forEach((modelName, index) =>
-    replacementsByModel.set(modelName, shuffled[index]),
+  archetypeKeys.forEach((archetypeKey, index) =>
+    replacementsByModel.set(archetypeKey, shuffled[index]),
   );
   const placements = sources.map((slot, index) => {
-    const sourceModelName =
-      canonicalBossModel.get(slot.modelName) || slot.modelName;
-    const replacement = replacementsByModel.get(sourceModelName);
+    const sourceArchetypeKey = bossArchetypeKey(slot);
+    const sourceModelName = sourceArchetypeKey.split(":")[0];
+    const replacement = replacementsByModel.get(sourceArchetypeKey);
     const originalBossName =
+      bossArchetypeNames.get(sourceArchetypeKey) ||
       bossNames[sourceModelName] ||
       additionalBossNames.get(sourceModelName) ||
       `${sourceModelName} [NPC ${slot.npcParamId}]`;
     const randomizedBossName =
+      bossArchetypeNames.get(bossArchetypeKey(replacement)) ||
       bossNames[replacement.modelName] ||
       additionalBossNames.get(replacement.modelName) ||
       `${replacement.modelName} [NPC ${replacement.npcParamId}]`;
@@ -1206,7 +1192,9 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
         map: slot.mapId,
         slot: slot.name,
       },
-      compatibility: canonicalBossModel.has(slot.modelName)
+      compatibility: slot.id === "m14_01_00_00:c5401_0000"
+        ? "grounded-flat-floor-bed-of-chaos"
+        : canonicalBossModel.has(slot.modelName)
         ? "linked-boss-form"
         : "grounded-unrestricted-boss-permutation",
       ...(deferredBossActivationRegions.has(slot.id)
@@ -1236,7 +1224,17 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
       // combat event that enables AI and replans goals as soon as the map
       // constructor runs.
       ...(slot.entityId >= 0 ? { forceCombatActivation: true } : {}),
-      ...bossGrounding(slot, catalog),
+      portableBossSanitization: slot.modelName !== replacement.modelName ||
+        slot.npcParamId !== replacement.npcParamId,
+      ...(slot.id === "m14_01_00_00:c5401_0000"
+        ? {
+            groundX: bedOfChaosSafeSpawn.x,
+            groundY: bedOfChaosSafeSpawn.y,
+            groundZ: bedOfChaosSafeSpawn.z,
+            groundRotationY: bedOfChaosSafeSpawn.rotationY,
+            preserveBedOfChaosFloor: true,
+          }
+        : bossGrounding(slot, catalog)),
     });
   });
   return placements.concat(dragonPlan.bosses);
