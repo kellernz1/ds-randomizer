@@ -189,6 +189,9 @@ Tower Giant Door Key are permanently excluded as both sources and destinations.
 Shop rows
 preserve price, stock, flags, and conditions while only the item ID is
 redistributed within its item type.
+The unfinished `Escape Death` miracle (Magic ID 5200) is excluded when
+importing retail data and when generating from older compatible catalogs, so
+it cannot appear as the in-game `?MagicName?` placeholder.
 
 ## Known limitations
 

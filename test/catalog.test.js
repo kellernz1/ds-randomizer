@@ -1374,3 +1374,38 @@ test("requested event-bound shop goods randomize while the remainder stay protec
   assert.ok(explicitlyRandomizable.every((entry) => protectedRows.has(entry.rowId)));
   assert.ok(unprotectedResult.placements.shops.length > protectedResult.placements.shops.length);
 });
+
+test("unfinished Escape Death miracle never enters the item pool", async () => {
+  const gameCatalog = await catalog();
+  assert.ok(
+    gameCatalog.shopEntries.some(
+      (entry) => entry.equipType === 4 && entry.equipId === 5200,
+    ),
+    "the compatibility test requires the obsolete catalog row",
+  );
+  const result = generate(
+    {
+      ...defaultConfig,
+      seed: "exclude-cut-miracle-5200",
+      randomizeItems: true,
+      randomizeGifts: true,
+      randomizeEnemyDrops: true,
+      randomizeShops: true,
+    },
+    { gameCatalog },
+  );
+  const placements = [
+    ...result.placements.items,
+    ...result.placements.gifts,
+    ...result.placements.enemyDrops,
+    ...result.placements.shops,
+  ];
+  assert.ok(
+    placements.every(
+      (entry) =>
+        !(entry.equipType === 4 && entry.itemId === 5200) &&
+        entry.sourceRowId !== 10055 &&
+        entry.rowId !== 10055,
+    ),
+  );
+});

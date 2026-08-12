@@ -1359,6 +1359,13 @@ function isConsumableSoul(entry) {
   );
 }
 
+function isUnsupportedCutItem(entry) {
+  // Escape Death is an unfinished miracle. It remains in ShopLineupParam and
+  // has residual English metadata, but retail localized Magic_name tables do
+  // not provide a usable player-facing name for ID 5200.
+  return entry.equipType === 4 && entry.itemId === 5200;
+}
+
 function shopPurchaseLimit(entry) {
   if (isBulkShopConsumable(entry)) return 99;
   if (isConsumableSoul(entry)) return 1;
@@ -1388,10 +1395,11 @@ function randomizeExtractedItemLots(config, catalog) {
   const shopRows = config.randomizeShops
     ? (catalog?.shopEntries || []).filter(
         (entry) =>
-          !config.progressionLogic ||
-          entry.equipType !== 3 ||
-          entry.eventFlag < 0 ||
-          randomizableProtectedShopItems.has(canonicalShopItemName(entry.name)),
+          !(entry.equipType === 4 && entry.equipId === 5200) &&
+          (!config.progressionLogic ||
+            entry.equipType !== 3 ||
+            entry.eventFlag < 0 ||
+            randomizableProtectedShopItems.has(canonicalShopItemName(entry.name))),
       )
     : [];
   const allLots = [
@@ -1413,7 +1421,7 @@ function randomizeExtractedItemLots(config, catalog) {
       kind: "lot",
       progression: Boolean(lot.protectedProgression),
       name: entry.name || lot.name,
-    })),
+    })).filter((entry) => !isUnsupportedCutItem(entry)),
   );
   const shopTargets = shopRows.map((entry) => ({
     rowId: entry.rowId,

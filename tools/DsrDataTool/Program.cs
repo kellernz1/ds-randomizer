@@ -588,6 +588,10 @@ static RandomizerParamData ReadRandomizerParamData(
                 GetCellInt(row, "eventFlag", -1));
         })
         .Where(row => row.EquipId >= 0 && row.EquipType is >= 0 and <= 4)
+        // Escape Death is a cut miracle left in the shop PARAM. Its residual
+        // English text is not a usable localized Magic_name entry in retail
+        // DSR, so awarding it produces ?MagicName? ID: 5200.
+        .Where(row => row.EquipType != 4 || row.EquipId != 5200)
         .OrderBy(row => row.RowId)
         .ToList();
 
