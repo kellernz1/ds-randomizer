@@ -135,6 +135,9 @@ files; source hashes prevent applying it to a different installation state.
   Drake replacements use a ground-combat AI instead of a patrol-flight brain.
 - Both transport-crow models and all zero-parameter dummy character slots are
   protected from the ordinary enemy permutation.
+- Translucent Black Knight memory actors (`c2791`) are treated as technical
+  scenery rather than enemies. They remain in their vanilla Kiln sequence and
+  cannot replace combatants or be replaced in ordinary enemy locations.
 - The first Asylum boss starts directly on its actual encounter floor and its
   vanilla rooftop warp is removed, preventing pre-fight fall damage. A
   Moonlight Butterfly replacement has AI held while landing animation 3020

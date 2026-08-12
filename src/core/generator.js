@@ -40,6 +40,9 @@ const linkedPartModels = new Set([
 const internalHelperModels = new Set([
   "c3510", // Asylum transport crow
   "c3511", // Alternate transport-crow dummy
+  // Translucent Black Knight memories in the Kiln are scenery-only actors.
+  // Their NPC/AI parameter IDs look valid, but they have no combat lifecycle.
+  "c2791",
   // Invisible Mass of Souls wisps are moved only by their explicit linked
   // group; standalone variants must never occupy an ordinary enemy slot.
   "c3501",

@@ -89,6 +89,14 @@ test("real catalog produces deterministic enemies with visibly different models"
     ),
   );
   assert.ok(
+    first.placements.enemies.every(
+      (placement) =>
+        placement.modelName !== "c2791" &&
+        placement.targetModelName !== "c2791",
+    ),
+    "translucent Kiln Black Knight memories must remain scenery-only helpers",
+  );
+  assert.ok(
     first.placements.enemies.filter(
       (placement) =>
         placement.map === "m18_01_00_00" &&
