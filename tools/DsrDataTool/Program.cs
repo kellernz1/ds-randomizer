@@ -870,6 +870,10 @@ static bool IsBossModel(string modelName) => modelName is
     "c5260" or "c5270" or "c5271" or "c5280" or "c5290" or "c5320" or
     "c5350" or "c5351" or "c5370" or "c5390";
 
+static bool IsLinkedDragonPartModel(string modelName) => modelName is
+    "c2731" or "c3422" or "c3431" or "c3531" or "c4511" or "c5261" or
+    "c5291" or "c5352" or "c5353";
+
 static short? GetBossNameId(string modelName) => modelName switch
 {
     "c2230" => 2231,
@@ -1084,19 +1088,20 @@ static PatchReport PatchEnemies(
     var slotsById = catalog.EnemySlots.ToDictionary(slot => slot.Id);
     foreach (var placement in regularEnemyPlacements)
     {
-        var validSyntheticHydraHead =
+        var validSyntheticDragonPart =
             placement.SyntheticEnemy &&
-            placement.PortableHydraGroup &&
-            placement.TargetModelName == "c3531" &&
+            placement.LinkedEnemyGroup &&
             placement.EntityId >= 0 &&
             placement.SourceSlotId != null &&
             slotsById.TryGetValue(placement.SourceSlotId, out var sourceSlot) &&
-            sourceSlot.ModelName == "c3531";
+            sourceSlot.ModelName == placement.TargetModelName &&
+            (placement.TargetModelName == "c3531" ||
+             IsLinkedDragonPartModel(placement.TargetModelName));
         var hasTargetSlot = slotsById.TryGetValue(
             placement.SlotId,
             out var targetSlot);
-        if ((!hasTargetSlot && !validSyntheticHydraHead) ||
-            (placement.SyntheticEnemy && !validSyntheticHydraHead) ||
+        if ((!hasTargetSlot && !validSyntheticDragonPart) ||
+            (placement.SyntheticEnemy && !validSyntheticDragonPart) ||
             (hasTargetSlot && targetSlot!.TeamType != 0 &&
              !placement.LinkedEnemyGroup) ||
             (hasTargetSlot && targetSlot!.ModelName == "c0000") ||
@@ -1324,6 +1329,7 @@ static PatchReport PatchEnemies(
             {
                 if (enemy.EntityID >= 0 &&
                     enemy.EntityID != placement.EntityId &&
+                    !placement.SyntheticEnemy &&
                     !placement.PortableHydraGroup)
                     throw new InvalidDataException(
                         $"Cannot replace existing entity ID for {placement.SlotId}.");

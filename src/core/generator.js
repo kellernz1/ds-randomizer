@@ -342,19 +342,7 @@ function buildDragonPlan(config, catalog) {
     .sort((left, right) => left.id.localeCompare(right.id));
   const isHydra = (entry) => entry.id.startsWith("hydra-");
   const simpleRegularDragons = [
-    ...byModel("c2300").map((body) =>
-      unit(`titanite-demon-${body.id}`, [body])),
-    unit(
-      "valley-undead-dragon",
-      byModel("c3420", "m16_00_00_00"),
-    ),
-    ...byModel("c3520").map((body) => unit(`drake-${body.id}`, [body])),
-    ...hydras,
-  ].filter((entry) => entry.bodies.length > 0);
-  const boundingDragons = byModel("c3421", "m14_01_00_00").map((body) =>
-    unit(`bounding-${body.id}`, [body]));
-  const units = [
-    ...(hellkitePrimary && hellkiteParts.length === 1
+    ...(hellkitePrimary
       ? [unit("hellkite-bridge", [hellkitePrimary], hellkiteParts)]
       : []),
     ...anorGargoyleBodies.map((body, index) =>
@@ -363,6 +351,18 @@ function buildDragonPlan(config, catalog) {
         [body],
         anorGargoyleParts[index] ? [anorGargoyleParts[index]] : [],
       )),
+    ...byModel("c2300").map((body) =>
+      unit(`titanite-demon-${body.id}`, [body])),
+    unit(
+      "valley-undead-dragon",
+      byModel("c3420", "m16_00_00_00"),
+    ),
+    ...byModel("c3520").map((body) => unit(`drake-${body.id}`, [body])),
+    ...hydras,
+    ...byModel("c3421", "m14_01_00_00").map((body) =>
+      unit(`bounding-${body.id}`, [body])),
+  ].filter((entry) => entry.bodies.length > 0);
+  const units = [
     unit(
       "priscilla",
       byModel("c2730", "m11_00_00_00"),
@@ -616,6 +616,96 @@ function buildDragonPlan(config, catalog) {
             sourceMap: hydraHeadTemplate[partIndex].mapId,
           });
         });
+      } else {
+        target.parts.forEach((targetPart, partIndex) => {
+          result.reservedSlotIds.add(targetPart.id);
+          const sourcePart = source.parts[partIndex];
+          if (sourcePart) {
+            result.enemies.push(enemyPlacement(
+              config,
+              targetPart,
+              sourcePart,
+              9_150_000 + enemyIndex++,
+              {
+                compatibility: "linked-dragon-part-permutation",
+                linkedDragonGroup: target.id,
+              },
+            ));
+          } else {
+            result.enemies.push(enemyPlacement(
+              config,
+              targetPart,
+              targetPart,
+              null,
+              {
+                compatibility: "disabled-unmatched-dragon-part",
+                linkedDragonGroup: target.id,
+                disableEntity: true,
+                groundX: targetPart.position.x,
+                groundY: -1000,
+                groundZ: targetPart.position.z,
+              },
+            ));
+          }
+        });
+        if (source.parts.length > target.parts.length) {
+          const sourceBodyTemplate = source.bodies[0];
+          source.parts.slice(target.parts.length).forEach(
+            (sourcePart, sourcePartIndex) => {
+              const partIndex = target.parts.length + sourcePartIndex;
+              const offsetX = sourcePart.position.x - sourceBodyTemplate.position.x;
+              const offsetY = sourcePart.position.y - sourceBodyTemplate.position.y;
+              const offsetZ = sourcePart.position.z - sourceBodyTemplate.position.z;
+              const yawDelta =
+                (targetBody.rotation.y - sourceBodyTemplate.rotation.y) * Math.PI / 180;
+              const rotatedX =
+                offsetX * Math.cos(yawDelta) - offsetZ * Math.sin(yawDelta);
+              const rotatedZ =
+                offsetX * Math.sin(yawDelta) + offsetZ * Math.cos(yawDelta);
+              const syntheticEntityId = 9_660_000 + index * 10 + partIndex;
+              const syntheticName = `dsr_dragon_part_${index}_${partIndex}`;
+              result.enemies.push({
+                ...enemyPlacement(
+                  config,
+                  {
+                    ...sourcePart,
+                    id: `${targetBody.mapId}:${syntheticName}`,
+                    mapId: targetBody.mapId,
+                    name: syntheticName,
+                    entityId: syntheticEntityId,
+                    collisionName: targetBody.collisionName,
+                    position: {
+                      x: targetPosition.x + rotatedX,
+                      y: targetPosition.y + offsetY,
+                      z: targetPosition.z + rotatedZ,
+                    },
+                    rotation: {
+                      ...sourcePart.rotation,
+                      y: targetBody.rotation.y +
+                        (sourcePart.rotation.y - sourceBodyTemplate.rotation.y),
+                    },
+                  },
+                  sourcePart,
+                  9_150_000 + enemyIndex++,
+                  {
+                    compatibility: "synthetic-linked-dragon-part",
+                    linkedDragonGroup: target.id,
+                    syntheticEnemy: true,
+                    entityId: syntheticEntityId,
+                    groundX: targetPosition.x + rotatedX,
+                    groundY: targetPosition.y + offsetY,
+                    groundZ: targetPosition.z + rotatedZ,
+                    groundRotationY: targetBody.rotation.y +
+                      (sourcePart.rotation.y - sourceBodyTemplate.rotation.y),
+                    targetCollisionName: targetBody.collisionName,
+                  },
+                ),
+                sourceSlot: sourcePart.id,
+                sourceMap: sourcePart.mapId,
+              });
+            },
+          );
+        }
       }
     });
     for (const auxiliary of hellkiteAuxiliary) {
@@ -635,24 +725,6 @@ function buildDragonPlan(config, catalog) {
         },
       ));
     }
-  }
-  if (config.randomizeEnemies && boundingDragons.length > 1) {
-    const boundingSources = shuffledWithoutFixedPoints(rng, boundingDragons);
-    boundingDragons.forEach((target, index) => {
-      const targetBody = target.bodies[0];
-      const sourceBody = boundingSources[index].bodies[0];
-      result.reservedSlotIds.add(targetBody.id);
-      result.enemies.push(enemyPlacement(
-        config,
-        targetBody,
-        sourceBody,
-        9_150_000 + enemyIndex++,
-        {
-          compatibility: "dragon-only-group-permutation",
-          linkedDragonGroup: target.id,
-        },
-      ));
-    });
   }
   for (const target of enabled) {
     const source = assignments.get(target.id);

@@ -129,7 +129,7 @@ files; source hashes prevent applying it to a different installation state.
   Wisps can no longer turn into twelve stacked unrelated enemies.
 - Internal boss forms such as Super Ornstein and Super Smough are excluded from
   regular-enemy sources and enter the boss-only archetype permutation instead.
-  The Hellkite bridge uses a full regular-dragon replacement at the
+  The Hellkite bridge uses any non-boss member of the regular dragon pool at the
   bridge combat point and loading sector, removes the fly-in lifecycle and
   disables and stages its obsolete auxiliary body/tail entities below the map.
   Drake replacements use a ground-combat AI instead of a patrol-flight brain.
