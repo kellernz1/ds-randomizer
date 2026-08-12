@@ -1007,6 +1007,8 @@ static PatchReport PatchEnemies(
                     perception.ValueKind == JsonValueKind.True,
                 element.TryGetProperty("passiveUntilAttacked", out var passive) &&
                     passive.ValueKind == JsonValueKind.True,
+                element.TryGetProperty("holdAiUntilAttacked", out var holdAi) &&
+                    holdAi.ValueKind == JsonValueKind.True,
                 element.TryGetProperty(
                         "forceCombatActivation", out var forceCombat) &&
                     forceCombat.ValueKind == JsonValueKind.True,
@@ -2012,6 +2014,19 @@ static EMEVD.Instruction ForceAnimationInstruction(
     return new EMEVD.Instruction(2003, 18, args);
 }
 
+static EMEVD.Instruction ClearSpecialStandbyInstruction(int entityId) =>
+    new(
+        2004,
+        9,
+        new object[] { entityId, -1, -1, -1, -1, -1 });
+
+static bool IsClearSpecialStandbyInstruction(EMEVD.Instruction instruction) =>
+    instruction.Bank == 2004 &&
+    instruction.ID == 9 &&
+    instruction.ArgData.Length >= 24 &&
+    Enumerable.Range(1, 5).All(index =>
+        BitConverter.ToInt32(instruction.ArgData, index * 4) == -1);
+
 static bool IsModelSpecificEnemyInstruction(EMEVD.Instruction instruction)
 {
     return
@@ -2421,10 +2436,13 @@ static List<PatchedFile> PatchBossNames(
                     2004,
                     20,
                     new object[] { placement.EntityId }));
-                passiveEvent.Instructions.Add(new EMEVD.Instruction(
-                    2004,
-                    1,
-                    new object[] { placement.EntityId, 1 }));
+                if (!placement.HoldAiUntilAttacked)
+                {
+                    passiveEvent.Instructions.Add(new EMEVD.Instruction(
+                        2004,
+                        1,
+                        new object[] { placement.EntityId, 1 }));
+                }
                 passiveEvent.Instructions.Add(IfAttackedInstruction(
                     0,
                     placement.EntityId,
@@ -2433,10 +2451,16 @@ static List<PatchedFile> PatchBossNames(
                     2004,
                     2,
                     new object[] { placement.EntityId, 6 }));
+                passiveEvent.Instructions.Add(ClearSpecialStandbyInstruction(
+                    placement.EntityId));
                 passiveEvent.Instructions.Add(new EMEVD.Instruction(
                     2004,
                     16,
                     new object[] { placement.EntityId }));
+                passiveEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    1,
+                    new object[] { placement.EntityId, 1 }));
                 passiveEvent.Instructions.Add(new EMEVD.Instruction(
                     2004,
                     20,
@@ -2488,6 +2512,12 @@ static List<PatchedFile> PatchBossNames(
                             placement.ActivationWarpRegionId.Value,
                         }));
                 }
+                activationEvent.Instructions.Add(ClearSpecialStandbyInstruction(
+                    placement.EntityId));
+                activationEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    2,
+                    new object[] { placement.EntityId, 6 }));
                 activationEvent.Instructions.Add(new EMEVD.Instruction(
                     2004,
                     5,
@@ -2529,10 +2559,20 @@ static List<PatchedFile> PatchBossNames(
                 combatEvent.Instructions.Add(IfCharacterInsideRegionInstruction(
                     0,
                     placement.CombatRegionId!.Value));
+                combatEvent.Instructions.Add(ClearSpecialStandbyInstruction(
+                    placement.EntityId));
+                combatEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    2,
+                    new object[] { placement.EntityId, 6 }));
                 combatEvent.Instructions.Add(new EMEVD.Instruction(
                     2004,
                     1,
                     new object[] { placement.EntityId, 1 }));
+                combatEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    20,
+                    new object[] { placement.EntityId }));
                 combatEvent.Instructions.Add(IfCharacterInsideRegionInstruction(
                     0,
                     placement.CombatExitRegionId!.Value));
@@ -2617,6 +2657,12 @@ static List<PatchedFile> PatchBossNames(
                 var combatEvent = new EMEVD.Event(
                     nextCustomEventId++,
                     EMEVD.Event.RestBehaviorType.Restart);
+                combatEvent.Instructions.Add(ClearSpecialStandbyInstruction(
+                    placement.EntityId));
+                combatEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    2,
+                    new object[] { placement.EntityId, 6 }));
                 combatEvent.Instructions.Add(new EMEVD.Instruction(
                     2004,
                     1,
@@ -2857,9 +2903,16 @@ static List<PatchedFile> PatchBossNames(
                 var eventId = nextCustomEventId++;
                 var passiveEvent = verification.Events.Single(entry =>
                     entry.ID == eventId);
+                var attackedIndex = placement.HoldAiUntilAttacked ? 3 : 4;
+                var allegianceIndex = attackedIndex + 1;
+                var standbyIndex = attackedIndex + 2;
+                var clearTargetIndex = attackedIndex + 3;
+                var enableAiIndex = attackedIndex + 4;
+                var replanIndex = attackedIndex + 5;
+                var deadIndex = attackedIndex + 6;
                 if (passiveEvent.RestBehavior !=
                         EMEVD.Event.RestBehaviorType.Restart ||
-                    passiveEvent.Instructions.Count != 9 ||
+                    passiveEvent.Instructions.Count != deadIndex + 1 ||
                     passiveEvent.Instructions[0].Bank != 2004 ||
                     passiveEvent.Instructions[0].ID != 1 ||
                     BitConverter.ToInt32(
@@ -2877,37 +2930,44 @@ static List<PatchedFile> PatchBossNames(
                     BitConverter.ToInt32(
                         passiveEvent.Instructions[2].ArgData, 0) !=
                         placement.EntityId ||
-                    passiveEvent.Instructions[3].Bank != 2004 ||
-                    passiveEvent.Instructions[3].ID != 1 ||
+                    (!placement.HoldAiUntilAttacked &&
+                     (passiveEvent.Instructions[3].Bank != 2004 ||
+                      passiveEvent.Instructions[3].ID != 1 ||
+                      BitConverter.ToInt32(
+                          passiveEvent.Instructions[3].ArgData, 0) !=
+                          placement.EntityId ||
+                      BitConverter.ToInt32(
+                          passiveEvent.Instructions[3].ArgData, 4) != 1)) ||
+                    passiveEvent.Instructions[attackedIndex].Bank != 4 ||
+                    passiveEvent.Instructions[attackedIndex].ID != 1 ||
                     BitConverter.ToInt32(
-                        passiveEvent.Instructions[3].ArgData, 0) !=
+                        passiveEvent.Instructions[attackedIndex].ArgData, 4) !=
                         placement.EntityId ||
                     BitConverter.ToInt32(
-                        passiveEvent.Instructions[3].ArgData, 4) != 1 ||
-                    passiveEvent.Instructions[4].Bank != 4 ||
-                    passiveEvent.Instructions[4].ID != 1 ||
+                        passiveEvent.Instructions[attackedIndex].ArgData, 8) != 10_000 ||
+                    passiveEvent.Instructions[allegianceIndex].Bank != 2004 ||
+                    passiveEvent.Instructions[allegianceIndex].ID != 2 ||
                     BitConverter.ToInt32(
-                        passiveEvent.Instructions[4].ArgData, 4) !=
+                        passiveEvent.Instructions[allegianceIndex].ArgData, 0) !=
                         placement.EntityId ||
                     BitConverter.ToInt32(
-                        passiveEvent.Instructions[4].ArgData, 8) != 10_000 ||
-                    passiveEvent.Instructions[5].Bank != 2004 ||
-                    passiveEvent.Instructions[5].ID != 2 ||
+                        passiveEvent.Instructions[allegianceIndex].ArgData, 4) != 6 ||
+                    passiveEvent.Instructions[standbyIndex].Bank != 2004 ||
+                    passiveEvent.Instructions[standbyIndex].ID != 9 ||
+                    passiveEvent.Instructions[clearTargetIndex].Bank != 2004 ||
+                    passiveEvent.Instructions[clearTargetIndex].ID != 16 ||
+                    passiveEvent.Instructions[enableAiIndex].Bank != 2004 ||
+                    passiveEvent.Instructions[enableAiIndex].ID != 1 ||
                     BitConverter.ToInt32(
-                        passiveEvent.Instructions[5].ArgData, 0) !=
+                        passiveEvent.Instructions[enableAiIndex].ArgData, 4) != 1 ||
+                    passiveEvent.Instructions[replanIndex].Bank != 2004 ||
+                    passiveEvent.Instructions[replanIndex].ID != 20 ||
+                    passiveEvent.Instructions[deadIndex].Bank != 4 ||
+                    passiveEvent.Instructions[deadIndex].ID != 0 ||
+                    BitConverter.ToInt32(
+                        passiveEvent.Instructions[deadIndex].ArgData, 4) !=
                         placement.EntityId ||
-                    BitConverter.ToInt32(
-                        passiveEvent.Instructions[5].ArgData, 4) != 6 ||
-                    passiveEvent.Instructions[6].Bank != 2004 ||
-                    passiveEvent.Instructions[6].ID != 16 ||
-                    passiveEvent.Instructions[7].Bank != 2004 ||
-                    passiveEvent.Instructions[7].ID != 20 ||
-                    passiveEvent.Instructions[8].Bank != 4 ||
-                    passiveEvent.Instructions[8].ID != 0 ||
-                    BitConverter.ToInt32(
-                        passiveEvent.Instructions[8].ArgData, 4) !=
-                        placement.EntityId ||
-                    passiveEvent.Instructions[8].ArgData[8] != 1 ||
+                    passiveEvent.Instructions[deadIndex].ArgData[8] != 1 ||
                     !IsInitialized(eventId))
                 {
                     throw new InvalidDataException(
@@ -2922,13 +2982,15 @@ static List<PatchedFile> PatchBossNames(
                 var activation = verification.Events.Single(entry =>
                     entry.ID == eventId);
                 var warpOffset = placement.ActivationWarpRegionId.HasValue ? 2 : 0;
-                var enableCharacterIndex = 4 + warpOffset;
-                var enableAiIndex = 5 + warpOffset;
-                var replanIndex = 6 + warpOffset;
-                var deadIndex = 7 + warpOffset;
+                var standbyIndex = 4 + warpOffset;
+                var allegianceIndex = 5 + warpOffset;
+                var enableCharacterIndex = 6 + warpOffset;
+                var enableAiIndex = 7 + warpOffset;
+                var replanIndex = 8 + warpOffset;
+                var deadIndex = 9 + warpOffset;
                 if (activation.RestBehavior !=
                         EMEVD.Event.RestBehaviorType.Restart ||
-                    activation.Instructions.Count != 8 + warpOffset ||
+                    activation.Instructions.Count != 10 + warpOffset ||
                     activation.Instructions[0].Bank != 2004 ||
                     activation.Instructions[0].ID != 5 ||
                     BitConverter.ToInt32(
@@ -2955,6 +3017,12 @@ static List<PatchedFile> PatchBossNames(
                       BitConverter.ToInt32(
                           activation.Instructions[5].ArgData, 4) !=
                           placement.ActivationWarpRegionId)) ||
+                    activation.Instructions[standbyIndex].Bank != 2004 ||
+                    activation.Instructions[standbyIndex].ID != 9 ||
+                    activation.Instructions[allegianceIndex].Bank != 2004 ||
+                    activation.Instructions[allegianceIndex].ID != 2 ||
+                    BitConverter.ToInt32(
+                        activation.Instructions[allegianceIndex].ArgData, 4) != 6 ||
                     activation.Instructions[enableCharacterIndex].Bank != 2004 ||
                     activation.Instructions[enableCharacterIndex].ID != 5 ||
                     BitConverter.ToInt32(
@@ -2983,7 +3051,7 @@ static List<PatchedFile> PatchBossNames(
                     entry.ID == eventId);
                 if (combatEvent.RestBehavior !=
                         EMEVD.Event.RestBehaviorType.Restart ||
-                    combatEvent.Instructions.Count != 6 ||
+                    combatEvent.Instructions.Count != 9 ||
                     combatEvent.Instructions[0].Bank != 2004 ||
                     combatEvent.Instructions[0].ID != 1 ||
                     BitConverter.ToInt32(
@@ -2995,14 +3063,22 @@ static List<PatchedFile> PatchBossNames(
                         combatEvent.Instructions[3].ArgData, 8) !=
                         placement.CombatRegionId ||
                     combatEvent.Instructions[4].Bank != 2004 ||
-                    combatEvent.Instructions[4].ID != 1 ||
-                    BitConverter.ToInt32(
-                        combatEvent.Instructions[4].ArgData, 4) != 1 ||
-                    combatEvent.Instructions[5].Bank != 3 ||
+                    combatEvent.Instructions[4].ID != 9 ||
+                    combatEvent.Instructions[5].Bank != 2004 ||
                     combatEvent.Instructions[5].ID != 2 ||
-                    combatEvent.Instructions[5].ArgData[1] != 1 ||
                     BitConverter.ToInt32(
-                        combatEvent.Instructions[5].ArgData, 8) !=
+                        combatEvent.Instructions[5].ArgData, 4) != 6 ||
+                    combatEvent.Instructions[6].Bank != 2004 ||
+                    combatEvent.Instructions[6].ID != 1 ||
+                    BitConverter.ToInt32(
+                        combatEvent.Instructions[6].ArgData, 4) != 1 ||
+                    combatEvent.Instructions[7].Bank != 2004 ||
+                    combatEvent.Instructions[7].ID != 20 ||
+                    combatEvent.Instructions[8].Bank != 3 ||
+                    combatEvent.Instructions[8].ID != 2 ||
+                    combatEvent.Instructions[8].ArgData[1] != 1 ||
+                    BitConverter.ToInt32(
+                        combatEvent.Instructions[8].ArgData, 8) !=
                         placement.CombatExitRegionId ||
                     !IsInitialized(eventId))
                 {
@@ -3078,20 +3154,24 @@ static List<PatchedFile> PatchBossNames(
                     entry.ID == eventId);
                 if (combatEvent.RestBehavior !=
                         EMEVD.Event.RestBehaviorType.Restart ||
-                    combatEvent.Instructions.Count != 4 ||
+                    combatEvent.Instructions.Count != 6 ||
                     combatEvent.Instructions[0].Bank != 2004 ||
-                    combatEvent.Instructions[0].ID != 1 ||
+                    combatEvent.Instructions[0].ID != 9 ||
                     BitConverter.ToInt32(
                         combatEvent.Instructions[0].ArgData, 0) !=
                         placement.EntityId ||
-                    BitConverter.ToInt32(
-                        combatEvent.Instructions[0].ArgData, 4) != 1 ||
                     combatEvent.Instructions[1].Bank != 2004 ||
-                    combatEvent.Instructions[1].ID != 16 ||
+                    combatEvent.Instructions[1].ID != 2 ||
                     combatEvent.Instructions[2].Bank != 2004 ||
-                    combatEvent.Instructions[2].ID != 20 ||
-                    combatEvent.Instructions[3].Bank != 4 ||
-                    combatEvent.Instructions[3].ID != 0 ||
+                    combatEvent.Instructions[2].ID != 1 ||
+                    BitConverter.ToInt32(
+                        combatEvent.Instructions[2].ArgData, 4) != 1 ||
+                    combatEvent.Instructions[3].Bank != 2004 ||
+                    combatEvent.Instructions[3].ID != 16 ||
+                    combatEvent.Instructions[4].Bank != 2004 ||
+                    combatEvent.Instructions[4].ID != 20 ||
+                    combatEvent.Instructions[5].Bank != 4 ||
+                    combatEvent.Instructions[5].ID != 0 ||
                     !IsInitialized(eventId))
                 {
                     throw new InvalidDataException(
@@ -3109,6 +3189,7 @@ static List<PatchedFile> PatchBossNames(
                     instruction.ArgData.Length >= 4 &&
                     generallyPatchedEntityIds.Contains(
                         BitConverter.ToInt32(instruction.ArgData, 0)) &&
+                    !IsClearSpecialStandbyInstruction(instruction) &&
                     !(instruction.Bank == 2004 &&
                       instruction.ID == 5 &&
                       instruction.ArgData.Length >= 8 &&
@@ -3139,6 +3220,7 @@ static List<PatchedFile> PatchBossNames(
                     instruction.ArgData.Length >= 4 &&
                     portableBossEntityIds.Contains(
                         BitConverter.ToInt32(instruction.ArgData, 0)) &&
+                    !IsClearSpecialStandbyInstruction(instruction) &&
                     !IsDeferredWarpInstruction(instruction) &&
                     !(instruction.Bank == 2003 &&
                       instruction.ID == 18 &&
@@ -4304,7 +4386,11 @@ static void ApplyItemAssignments(
                 assignment.ShopQuantity
                     ?? throw new InvalidDataException(
                         "Shop assignment has no purchase limit."));
-            SetCell(row, "eventFlag", StockFlagFor(row));
+            var existingStockFlag = GetCellInt(row, "eventFlag", -1);
+            SetCell(
+                row,
+                "eventFlag",
+                existingStockFlag >= 0 ? existingStockFlag : StockFlagFor(row));
             AssertCell(row, "equipId", assignment.ItemId);
             AssertCell(row, "equipType", assignment.EquipType);
             AssertCell(row, "sellQuantity", assignment.ShopQuantity.Value);
@@ -4690,6 +4776,7 @@ record PatchPlacement(
     int? DestinationThinkParamId,
     bool PreserveDestinationPerception,
     bool PassiveUntilAttacked,
+    bool HoldAiUntilAttacked,
     bool ForceCombatActivation,
     bool PortableBossSanitization,
     bool PreserveBedOfChaosFloor,

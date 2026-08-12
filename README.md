@@ -92,7 +92,8 @@ package before touching the game.
 - Arrows, bolts, throwable consumables, and other bulk merchant ammunition stay
   in the shop pool. Generated stock keeps finite purchase limits: 99 for bulk
   ammunition and throwables, 10 for ordinary consumables, and 1 for weapons,
-  armor, spells, and consumable souls. A purchased soul therefore leaves stock
+  armor and spells. Consumable souls only use rows with a native persistent
+  stock flag and disappear after their single purchase, preventing soul farming
 - DLC world locations never receive progression items, Embers, Titanite, or
   Havel's Ring; those items remain in the shared permutation but are assigned
   outside the DLC

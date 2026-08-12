@@ -114,6 +114,11 @@ files; source hashes prevent applying it to a different installation state.
 - Per-placement boss `NpcParam` rows inherit the destination encounter's team.
   Bosses whose vanilla PARAM is neutral, especially Gwyndolin, therefore
   become hostile and run their combat AI when moved to another arena.
+- Boss activation clears model-specific standby state, forces enemy allegiance,
+  enables AI, clears stale targets, and replans when the destination encounter
+  begins. This covers Asylum Demon-family brains and Gwyn on the Butterfly bridge.
+- The randomized occupant beside the Undead Parish bonfire keeps AI disabled
+  until it is actually damaged, then clears standby state and becomes hostile.
 - Portable boss bodies also emit a small EMEVD combat-activation event unless
   the destination already has deferred arena activation. The event enables AI
   and replans goals for replacements that otherwise spawn visible but idle.

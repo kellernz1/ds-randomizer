@@ -353,6 +353,7 @@ test("real catalog produces deterministic enemies with visibly different models"
   assert.ok(parishPassive.entityId >= 0);
   assert.notEqual(parishPassive.targetModelName, "c2300");
   assert.equal(parishPassive.passiveUntilAttacked, true);
+  assert.equal(parishPassive.holdAiUntilAttacked, true);
   assert.equal(parishPassive.initialTeamType, 2);
   assert.equal(
     parishPassive.compatibility,
@@ -1205,6 +1206,17 @@ test("world items, gifts, enemy drops, and shops share one deterministic pool", 
     /^(?:Large )?Soul of /u.test(entry.name ?? entry.to) ||
     (entry.name ?? entry.to) === "Fire Keeper Soul";
   assert.ok(first.placements.shops.some(isConsumableSoul));
+  assert.ok(
+    first.placements.shops
+      .filter(isConsumableSoul)
+      .every((entry) => {
+        const target = gameCatalog.shopEntries.find(
+          (shop) => shop.rowId === entry.rowId,
+        );
+        return entry.shopQuantity === 1 && target.eventFlag >= 0;
+      }),
+    "consumable souls must only use shop rows with persistent finite stock",
+  );
   const restrictedShopRows = new Set(
     gameCatalog.shopEntries.filter(isBulk).map((entry) => entry.rowId),
   );

@@ -497,6 +497,7 @@ function buildDragonPlan(config, catalog) {
         Object.assign(placementExtra, {
           compatibility: "passive-parish-bonfire-permutation",
           passiveUntilAttacked: true,
+          holdAiUntilAttacked: true,
           initialTeamType: 2,
           baseThinkParamId: sourceBody.thinkParamId,
           destinationThinkParamId: targetBody.thinkParamId,
@@ -1347,14 +1348,16 @@ function isBulkShopConsumable(entry) {
   );
 }
 
-function shopPurchaseLimit(entry) {
-  if (isBulkShopConsumable(entry)) return 99;
-  if (
+function isConsumableSoul(entry) {
+  return (
     /^(?:Large )?Soul of /u.test(entry.name) ||
     entry.name === "Fire Keeper Soul"
-  ) {
-    return 1;
-  }
+  );
+}
+
+function shopPurchaseLimit(entry) {
+  if (isBulkShopConsumable(entry)) return 99;
+  if (isConsumableSoul(entry)) return 1;
   if (
     entry.equipType === 0 ||
     entry.equipType === 1 ||
@@ -1425,6 +1428,7 @@ function randomizeExtractedItemLots(config, catalog) {
     equipType: entry.equipType,
     quantity: 1,
     name: entry.name,
+    eventFlag: entry.eventFlag,
     progression: false,
   }));
   const shopOnlyTargets = shopTargets.filter(isBulkShopConsumable);
@@ -1512,12 +1516,41 @@ function randomizeExtractedItemLots(config, catalog) {
   ]) {
     if (targets.length === 0) continue;
     const rng = createStream(config.seed, stream, config.version);
-    const sources = stream === "all-item-sources"
+    let sources = stream === "all-item-sources"
       ? shuffledWithoutDlcRestrictedItems(rng, targets)
       : shuffledWithoutFixedPoints(rng, targets);
+    if (stream === "all-item-sources") {
+      sources = keepConsumableSoulsInFiniteShops(targets, sources);
+    }
     targets.forEach((target, index) => addPlacement(target, sources[index]));
   }
   return result;
+}
+
+function keepConsumableSoulsInFiniteShops(targets, initialSources) {
+  const sources = [...initialSources];
+  const invalid = () => targets
+    .map((target, index) => ({ target, index }))
+    .filter(({ target, index }) =>
+      target.kind === "shop" &&
+      target.eventFlag < 0 &&
+      isConsumableSoul(sources[index]));
+  for (const { index: soulIndex } of invalid()) {
+    const donorIndex = targets.findIndex((target, index) =>
+      target.kind === "shop" &&
+      target.eventFlag >= 0 &&
+      !isConsumableSoul(sources[index]) &&
+      sources[index] !== targets[soulIndex] &&
+      sources[soulIndex] !== target);
+    if (donorIndex < 0) {
+      throw new Error(
+        "Could not assign consumable souls to finite shop stock.",
+      );
+    }
+    [sources[soulIndex], sources[donorIndex]] =
+      [sources[donorIndex], sources[soulIndex]];
+  }
+  return sources;
 }
 
 function isDlcRestrictedItem(entry) {
