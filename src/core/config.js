@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 
-export const RANDOMIZER_VERSION = "0.5.52";
+export const RANDOMIZER_VERSION = "0.5.53";
 
 export const defaultConfig = Object.freeze({
   version: RANDOMIZER_VERSION,
@@ -24,7 +24,6 @@ export const defaultConfig = Object.freeze({
   includeDlc: true,
   generateSpoilerLog: true,
   useExtractedData: true,
-  offlineAcknowledged: false,
   dryRun: true,
 });
 
@@ -44,7 +43,6 @@ const booleanKeys = [
   "includeDlc",
   "generateSpoilerLog",
   "useExtractedData",
-  "offlineAcknowledged",
   "dryRun",
 ];
 
@@ -81,9 +79,6 @@ export function validateConfig(config, { requireGame = false } = {}) {
   }
   if (requireGame && !config.gameDirectory) {
     errors.push("Select the Dark Souls Remastered game directory.");
-  }
-  if (!config.dryRun && !config.offlineAcknowledged) {
-    errors.push("Confirm that you will play offline before installing files.");
   }
   if (
     !config.randomizeEnemies &&

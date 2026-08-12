@@ -272,11 +272,6 @@ async function api(request, response, pathname) {
       return json(response, 400, { error: "Select the game directory." });
     }
     if (pathname === "/api/install") {
-      if (!config.offlineAcknowledged) {
-        return json(response, 400, {
-          error: "Confirm that you will play offline before installing.",
-        });
-      }
       const detection = await detectGame(gameDirectory);
       if (!detection.supported) {
         return json(response, 400, { error: detection.reason });

@@ -31,9 +31,6 @@ async function configFromArgs() {
     seed: flag("seed", fileConfig.seed || generateSeed()),
     outputDirectory: flag("output", fileConfig.outputDirectory || "output"),
     gameDirectory: flag("game", fileConfig.gameDirectory || ""),
-    offlineAcknowledged: Boolean(
-      flag("offline", fileConfig.offlineAcknowledged || false),
-    ),
     dryRun: flag("apply", false) ? false : true,
   });
 }

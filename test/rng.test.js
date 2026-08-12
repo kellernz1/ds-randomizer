@@ -1,16 +1,32 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { generate } from "../src/core/generator.js";
-import { defaultConfig, normalizeConfig } from "../src/core/config.js";
+import {
+  defaultConfig,
+  normalizeConfig,
+  validateConfig,
+} from "../src/core/config.js";
 
 test("unknown configuration fields are discarded", () => {
   const config = normalizeConfig({
     unusedOption: true,
+    offlineAcknowledged: true,
     randomizeBosses: false,
   });
   assert.equal(Object.hasOwn(config, "unusedOption"), false);
+  assert.equal(Object.hasOwn(config, "offlineAcknowledged"), false);
   assert.equal(config.randomizeBosses, false);
   assert.equal(config.randomizeStartingClass, defaultConfig.randomizeStartingClass);
+});
+
+test("installable packages do not require an offline confirmation field", () => {
+  const config = normalizeConfig({
+    ...defaultConfig,
+    dryRun: false,
+    offlineAcknowledged: false,
+  });
+  assert.equal(Object.hasOwn(config, "offlineAcknowledged"), false);
+  assert.deepEqual(validateConfig(config), []);
 });
 
 test("the same seed and configuration produce the same hash", () => {

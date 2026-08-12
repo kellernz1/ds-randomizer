@@ -140,7 +140,7 @@ In the configurator:
 1. Select the `DARK SOULS REMASTERED` directory.
 2. Click **Verify**, then **Import game data**.
 3. Enable the categories you want to randomize.
-4. Enter a seed, disable **Safe simulation**, and confirm offline play.
+4. Enter a seed and disable **Safe simulation** to build an installable package.
 5. Click **Generate Randomizer**.
 6. Click **Activate in Game**, then launch the game normally.
 
@@ -178,7 +178,7 @@ node src/cli.js generate --seed example --output output
 Generate a real patch package from an imported catalog:
 
 ```powershell
-node src/cli.js generate --config config.json --apply --offline
+node src/cli.js generate --config config.json --apply
 ```
 
 Run the automated suite and deterministic seed stress test:
