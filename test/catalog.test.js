@@ -151,7 +151,7 @@ test("real catalog produces deterministic enemies with visibly different models"
         "linked-mass-of-souls-group-permutation",
         "grounded-linked-boss-auxiliary",
         "linked-boss-part-permutation",
-        "vanilla-preserved-linked-bed-of-chaos-part",
+        "disabled-bed-of-chaos-script-part",
       ].includes(placement.compatibility),
     ),
   );
@@ -349,7 +349,8 @@ test("real catalog produces deterministic enemies with visibly different models"
     (placement) => placement.slot === "m10_01_00_00:c2300_0000",
   );
   assert.ok(parishPassive);
-  assert.equal(parishPassive.entityId, 1010340);
+  assert.ok(parishPassive.entityId >= 0);
+  assert.notEqual(parishPassive.targetModelName, "c2300");
   assert.equal(parishPassive.passiveUntilAttacked, true);
   assert.equal(parishPassive.initialTeamType, 2);
   assert.equal(
@@ -474,10 +475,16 @@ test("real catalog produces deterministic enemies with visibly different models"
   assert.ok(titaniteDemonBodies.every(
     (placement) =>
       placement.linkedDragonGroup?.startsWith("titanite-demon-") &&
-      ["c2300", "c3420", "c3520", "c3530"].includes(
+      placement.targetModelName !== "c2300" &&
+      ["c3420", "c3520", "c3530"].includes(
         placement.targetModelName,
       ),
   ));
+  const crystalButterflies = first.placements.enemies.filter(
+    (placement) => placement.slot.startsWith("m17_00_00_00:c3230_"),
+  );
+  assert.equal(crystalButterflies.length, 3);
+  assert.ok(crystalButterflies.every((placement) => placement.changed));
   const anorGargoyleBodies = first.placements.enemies.filter(
     (placement) => placement.modelName === "c5351",
   );
@@ -760,12 +767,19 @@ test("real catalog produces real boss and world-item placements", async () => {
     [stray.groundX, stray.groundY, stray.groundZ],
     [3.31, 100, -19],
   );
-  const gwyndolinReplacement = result.placements.bosses.find(
-    (entry) => entry.targetModelName === "c5320",
+  assert.ok(
+    result.placements.bosses.every(
+      (entry) => entry.targetModelName !== "c5320",
+    ),
+    "Gwyndolin must not leave its hallway as a replacement boss",
   );
-  assert.ok(gwyndolinReplacement);
-  assert.ok(gwyndolinReplacement.scaledNpcParamId !== null);
-  assert.ok([0, 1].includes(gwyndolinReplacement.initialTeamType));
+  assert.equal(
+    result.placements.bosses.some(
+      (entry) => entry.slot === "m16_00_00_00:c5390_0000",
+    ),
+    false,
+    "Four Kings must not create a false randomized placement",
+  );
   const assignmentsByVanillaModel = new Map();
   for (const entry of result.placements.bosses.filter(
     (placement) =>
@@ -812,6 +826,17 @@ test("real catalog produces real boss and world-item placements", async () => {
       (placement) => placement.targetModelName !== "c3230",
     ),
     "Moonlight Butterfly must not leave its arena as a replacement boss",
+  );
+  assert.ok(
+    result.placements.bosses
+      .filter(
+        (placement) =>
+          !placement.activationRegionId &&
+          !placement.combatRegionId &&
+          placement.entityId >= 0,
+      )
+      .every((placement) => placement.forceCombatActivation === true),
+    "portable boss replacements must force AI activation unless an arena event already does it",
   );
   assert.ok(
     result.placements.bosses
@@ -891,12 +916,19 @@ test("real catalog produces real boss and world-item placements", async () => {
   const bed = result.placements.bosses.find(
     (entry) => entry.linkedEnemyGroup === "bed-of-chaos",
   );
-  assert.equal(bed?.changed, false);
+  assert.ok(bed?.changed);
+  assert.equal(bed.compatibility, "grounded-script-bound-bed-of-chaos");
+  assert.notEqual(bed.targetModelName, "c5230");
   assert.equal(
     result.placements.enemies.filter(
       (entry) => entry.linkedEnemyGroup === "bed-of-chaos",
     ).length,
     2,
+  );
+  assert.ok(
+    result.placements.enemies
+      .filter((entry) => entry.linkedEnemyGroup === "bed-of-chaos")
+      .every((entry) => entry.disableEntity && entry.killDisabledEntity),
   );
   assert.ok(result.placements.items.every((entry) => !entry.preserved));
   assert.ok(
@@ -933,7 +965,13 @@ test("protected world items join the global pool except both Asylum keys", async
     },
     { gameCatalog: catalogWithEastKey },
   );
-  const fixedRowIds = new Set([1_810_000, eastKeyRowId]);
+  const fixedRowIds = new Set([
+    1_810_000,
+    1_700_210,
+    1_700_590,
+    1_700_630,
+    eastKeyRowId,
+  ]);
   assert.ok(
     result.placements.items.every(
       (entry) =>
@@ -973,7 +1011,8 @@ test("protected world items join the global pool except both Asylum keys", async
   assert.ok(dlcPlacements.every(
     (entry) =>
       entry.progression !== true &&
-      !/(?:Titanite|\bEmber\b)/iu.test(entry.itemName),
+      !/(?:Titanite|\bEmber\b)/iu.test(entry.itemName) &&
+      entry.itemName !== "Havel's Ring",
   ));
 });
 

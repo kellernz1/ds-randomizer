@@ -89,8 +89,23 @@ function spoilerText(result) {
     `Hash: ${result.placementHash}`,
     `Version: ${result.randomizerVersion}`,
     "",
-    "=== ENEMIES ===",
+    "=== GLOBAL ITEM LOCATIONS ===",
   ];
+  for (const placement of [
+    ...result.placements.items,
+    ...(result.placements.gifts || []),
+    ...(result.placements.enemyDrops || []),
+    ...(result.placements.shops || []),
+  ].sort(
+    (left, right) =>
+      (left.itemName || left.to).localeCompare(right.itemName || right.to) ||
+      (left.sourceRowId ?? 0) - (right.sourceRowId ?? 0),
+  )) {
+    lines.push(itemPlacementLine(placement), "");
+  }
+  lines.push(
+    "=== ENEMIES ===",
+  );
   for (const placement of result.placements.enemies) {
     const sourceLocation = placement.sourceSlot
       ? `; source location: ${placement.sourceMap} / ${placement.sourceSlot}`

@@ -35,8 +35,8 @@ package before touching the game.
   all three from attacking until the player damages them
 - The Kiln slot with entity ID `1800201` also remains randomized but stays
   passive until the player damages it
-- The Titanite Demon chamber directly below the Undead Parish bonfire keeps
-  the destination's passive-until-attacked behavior after randomization
+- Titanite Demons participate in the regular-dragon pool, but never occupy
+  their native Titanite Demon slots
 - Friendly NPCs, merchants, quest characters, and their spawns are protected
 - Boss encounters exchange only with true boss encounters; ordinary Anor Londo
   gargoyles and non-boss dragons cannot enter the boss pool
@@ -49,17 +49,23 @@ package before touching the game.
 - Hydra bodies and all seven heads also move as linked hydra-only groups
 - Sanctuary Guardian, Gargoyle, and Centipede Demon bodies and removable parts
   are randomized as inseparable boss groups
-- The three Bed of Chaos entities are kept together in their native scripted
-  encounter instead of entering the regular-enemy pool
+- Bed of Chaos keeps its scripted destination arena, but its main body is
+  replaced by a grounded boss while the original scripted side entities are
+  disabled
 - Large, medium, and small Humanity enemies participate in the global
   regular-enemy permutation
-- Moonlight Butterfly, Ceaseless Discharge, and Dark Sun Gwyndolin are included
-  in the boss pool
+- Moonlight Butterfly, Ceaseless Discharge, and Dark Sun Gwyndolin destination
+  encounters are included in the boss pool. Moonlight Butterfly, Gwyndolin, Bed
+  of Chaos, and Four Kings are not used as portable replacement sources because
+  their combat logic depends on bespoke arena scripts
 - Boss health bars updated to the randomized boss name
-- Boss assignments are a strict derangement: no vanilla boss remains in its
-  native encounter except the script-bound Bed of Chaos; multi-part encounters
-  share one linked body/part assignment
-- Randomized boss AI explicitly activated when the encounter health bar appears
+- Boss assignments are a strict derangement for supported boss destinations:
+  no portable vanilla boss remains in its native encounter. Multi-part
+  encounters share one linked body/part assignment, while Four Kings remains
+  script-protected until its multi-king event can be modeled safely
+- Randomized boss AI is explicitly enabled/replanned either when the destination
+  arena event fires or, for ordinary always-loaded boss slots, when the map
+  constructor starts
 - Single-body Bell Gargoyle replacements remove and kill the unused staged
   secondary entities and suppress their orphaned boss bars
 - The rooftop Asylum encounter is moved to the lower arena's full X/Y/Z
@@ -86,14 +92,16 @@ package before touching the game.
   in the shop pool. Generated stock keeps finite purchase limits: 99 for bulk
   ammunition and throwables, 10 for ordinary consumables, and 1 for weapons,
   armor, spells, and consumable souls. A purchased soul therefore leaves stock
-- DLC world locations never receive progression items, Embers, or Titanite;
-  those items remain in the shared permutation but are assigned outside the DLC
+- DLC world locations never receive progression items, Embers, Titanite, or
+  Havel's Ring; those items remain in the shared permutation but are assigned
+  outside the DLC
 - Independent deterministic RNG streams for every category
 - Progression-item protection, spoiler logs, and reproducible placement hashes
 - A `cheat-locations.txt` report with English item and boss names, original and
   randomized item areas, exact Item Lot IDs, and each encounter's assigned boss
-- Full spoiler reports use English FMG names for gifts, drops, shops, and
-  starting equipment instead of internal Japanese parameter labels
+- Full spoiler reports include the same global item-location section as
+  `cheat-locations.txt`, so items such as the Peculiar Doll are visible by
+  source item even when randomized into gifts, drops, or shops
 - Enemy spoiler entries include the original source map and spawn slot for
   every permutation assignment
 - Portable seed files with version and clean-catalog compatibility checks

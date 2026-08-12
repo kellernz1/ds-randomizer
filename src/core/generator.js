@@ -80,6 +80,17 @@ const nonBossEncounterSlots = new Set([
   // ordinary enemies without an encounter health bar.
   "m15_01_00_00:c5351_0000",
   "m15_01_00_00:c5351_0001",
+  // Crystal Cave butterflies share the Moonlight Butterfly model family, but
+  // they are ordinary patrol enemies and should remain in the enemy pool.
+  "m17_00_00_00:c3230_0000",
+  "m17_00_00_00:c3230_0001",
+  "m17_00_00_00:c3230_0002",
+]);
+const scriptBoundBossSlots = new Set([
+  // The Four Kings encounter creates/controls kings through encounter script.
+  // Changing only the MSB body creates a false boss bar while vanilla kings
+  // still spawn, so keep this destination native until the event is modeled.
+  "m16_00_00_00:c5390_0000",
 ]);
 const activeReplacementThinkParams = new Map([
   // Ambush/defensive variants depend on their vanilla area setup. Use each
@@ -172,6 +183,13 @@ const safeBossSpawnPositions = new Map([
     { x: 396.14, y: -278.14, z: 74.56, rotationY: 130.84 },
   ],
 ]);
+
+const bedOfChaosSafeSpawn = Object.freeze({
+  x: 105.3,
+  y: -51.6,
+  z: 570.2,
+  rotationY: 180,
+});
 
 function effectiveBossSlots(catalog) {
   const result = new Map(
@@ -351,7 +369,9 @@ function buildDragonPlan(config, catalog) {
     ),
     unit(
       "seath",
-      byModel("c5290", "m17_00_00_00"),
+      byModel("c5290", "m17_00_00_00").filter(
+        (body) => body.id === "m17_00_00_00:c5290_0001",
+      ),
       byModel("c5291", "m17_00_00_00"),
     ),
   ].filter((entry) => entry.bodies.length > 0);
@@ -385,7 +405,10 @@ function buildDragonPlan(config, catalog) {
   let enemyIndex = 0;
   let bossIndex = 0;
   if (config.randomizeEnemies && simpleRegularDragons.length > 1) {
-    const simpleSources = shuffledWithoutFixedPoints(rng, simpleRegularDragons);
+    const simpleSources = shuffledWithoutNativeTitaniteDemon(
+      rng,
+      simpleRegularDragons,
+    );
     simpleRegularDragons.forEach((target, index) => {
       const source = simpleSources[index];
       const targetBody = target.bodies[0];
@@ -637,6 +660,7 @@ function buildDragonPlan(config, catalog) {
             compatibility: "grounded-dragon-group-permutation",
             ...bossGrounding(targetBody, catalog),
             linkedDragonGroup: target.id,
+            forceCombatActivation: targetBody.entityId >= 0,
           }
         : target.id === "hellkite-bridge"
         ? {
@@ -757,6 +781,7 @@ function buildDragonPlan(config, catalog) {
                 compatibility: "grounded-linked-boss-group-permutation",
                 ...bossGrounding(targetBody, catalog),
                 linkedEnemyGroup: target.id,
+                forceCombatActivation: targetBody.entityId >= 0,
               }
             : {
                 compatibility: "grounded-linked-boss-auxiliary",
@@ -803,24 +828,44 @@ function buildDragonPlan(config, catalog) {
     [...bedBodies, ...bedParts].forEach((slot) =>
       result.reservedSlotIds.add(slot.id),
     );
+    const bedSourcePool = effectiveBossSlots(catalog).filter(
+      (slot) =>
+        !result.reservedSlotIds.has(slot.id) &&
+        !scriptBoundBossSlots.has(slot.id) &&
+        slot.modelName !== "c5230" &&
+        !nonPortableBossReplacementModels.has(slot.modelName),
+    );
+    const bedReplacement = bedSourcePool.length > 0
+      ? bedSourcePool[linkedBossRng.int(bedSourcePool.length)]
+      : null;
     for (const body of bedBodies) {
-      result.bosses.push(enemyPlacement(config, body, body, null, {
+      const source = bedReplacement ?? body;
+      result.bosses.push(enemyPlacement(config, body, source, 9_300_000 + bossIndex++, {
         originalBossName: "Bed of Chaos",
-        randomizedBossName: "Bed of Chaos",
+        randomizedBossName:
+          bossNames[source.modelName] ||
+          additionalBossNames.get(source.modelName) ||
+          source.modelName,
         encounterLocation: {
           area: areaNames.get(body.mapId) || body.mapId,
           map: body.mapId,
           slot: body.name,
         },
-        compatibility: "vanilla-preserved-linked-bed-of-chaos",
-        ...bossGrounding(body, catalog),
+        compatibility: "grounded-script-bound-bed-of-chaos",
+        groundX: bedOfChaosSafeSpawn.x,
+        groundY: bedOfChaosSafeSpawn.y,
+        groundZ: bedOfChaosSafeSpawn.z,
+        groundRotationY: bedOfChaosSafeSpawn.rotationY,
         linkedEnemyGroup: "bed-of-chaos",
+        forceCombatActivation: body.entityId >= 0,
       }));
     }
     for (const part of bedParts) {
       result.enemies.push(enemyPlacement(config, part, part, null, {
-        compatibility: "vanilla-preserved-linked-bed-of-chaos-part",
+        compatibility: "disabled-bed-of-chaos-script-part",
         linkedEnemyGroup: "bed-of-chaos",
+        disableEntity: true,
+        killDisabledEntity: true,
       }));
     }
   }
@@ -1066,6 +1111,14 @@ const nonPortableBossReplacementModels = new Set([
   // Its battle AI follows arena-specific flight rails. Outside the original
   // arena it can remain below the floor or permanently outside melee range.
   "c3230", // Moonlight Butterfly
+  // Gwyndolin's combat loop heavily favors teleport anchors from the hallway.
+  // In compact arenas it can teleport in place forever instead of attacking.
+  "c5320", // Dark Sun Gwyndolin
+  // The encounter script spawns additional kings independently from the MSB
+  // body, so it is not a portable replacement source.
+  "c5390", // Four Kings
+  // The three-entity script cannot be represented safely as a portable source.
+  "c5230", // Bed of Chaos
 ]);
 
 function shuffledPortableBosses(rng, modelNames, archetypes) {
@@ -1107,6 +1160,7 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
   const sources = effectiveBossSlots(catalog).filter(
     (slot) =>
       !dragonPlan.reservedSlotIds.has(slot.id) &&
+      !scriptBoundBossSlots.has(slot.id) &&
       slot.npcParamId >= 0 &&
       slot.thinkParamId >= 0,
   );
@@ -1167,12 +1221,21 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
               : {}),
           }
         : {}),
+      ...(slot.id === "m15_00_00_00:c2320_0000"
+        ? { activationRegionId: 1502996 }
+        : {}),
       ...(containedBossCombatRegions.has(slot.id)
         ? {
             combatRegionId: containedBossCombatRegions.get(slot.id).enter,
             combatExitRegionId: containedBossCombatRegions.get(slot.id).exit,
           }
         : {}),
+      // Some portable boss brains start in a neutral/waiting state when they
+      // are transplanted into another encounter. If the destination does not
+      // already use a deferred or contained activation event, add a small
+      // combat event that enables AI and replans goals as soon as the map
+      // constructor runs.
+      ...(slot.entityId >= 0 ? { forceCombatActivation: true } : {}),
       ...bossGrounding(slot, catalog),
     });
   });
@@ -1182,6 +1245,11 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
 function randomizableWorldItemLots(config, catalog) {
   if (!catalog?.worldItemLots?.length) return [];
   const permanentlyFixedGoods = new Set([2010, 2015]);
+  const permanentlyFixedNames = new Set([
+    "Archive Prison Extra Key",
+    "Archive Tower Giant Cell Key",
+    "Archive Tower Giant Door Key",
+  ]);
   const isPermanentlyFixed = (lot) =>
     lot.entries?.some(
       (entry) =>
@@ -1189,7 +1257,8 @@ function randomizableWorldItemLots(config, catalog) {
         permanentlyFixedGoods.has(entry.itemId),
     ) ||
     lot.name === "Dungeon Cell Key" ||
-    lot.name === "Undead Asylum F2 East Key";
+    lot.name === "Undead Asylum F2 East Key" ||
+    permanentlyFixedNames.has(lot.name);
   return catalog.worldItemLots.filter(
     (lot) =>
       !isPermanentlyFixed(lot) &&
@@ -1456,8 +1525,24 @@ function randomizeExtractedItemLots(config, catalog) {
 function isDlcRestrictedItem(entry) {
   return (
     entry.progression === true ||
-    /(?:Titanite|\bEmber\b)/iu.test(entry.name)
+    /(?:Titanite|\bEmber\b)/iu.test(entry.name) ||
+    entry.name === "Havel's Ring"
   );
+}
+
+function shuffledWithoutNativeTitaniteDemon(rng, values) {
+  if (values.length < 2) return [...values];
+  for (let attempt = 0; attempt < 256; attempt += 1) {
+    const shuffled = shuffledWithoutFixedPoints(rng, values);
+    if (shuffled.every((value, index) => {
+      const targetModel = values[index].bodies[0]?.modelName;
+      const sourceModel = value.bodies[0]?.modelName;
+      return targetModel !== "c2300" || sourceModel !== "c2300";
+    })) {
+      return shuffled;
+    }
+  }
+  throw new Error("Could not keep Titanite Demons out of native Titanite Demon slots.");
 }
 
 function shuffledWithoutDlcRestrictedItems(rng, values) {

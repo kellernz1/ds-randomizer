@@ -74,12 +74,16 @@ files; source hashes prevent applying it to a different installation state.
 - Dragons are isolated into boss-dragon and regular-dragon permutation groups;
   detachable parts and alternate encounter bodies follow their parent group
 - Hydras use linked hydra-only body/head groups, and Moonlight Butterfly,
-  Ceaseless Discharge, and Gwyndolin are included as boss encounters
+  Ceaseless Discharge, and Gwyndolin are included as boss destination
+  encounters. Moonlight Butterfly, Gwyndolin, Bed of Chaos, and Four Kings are
+  excluded as portable replacement sources because their AI or spawn lifecycle
+  is arena-script dependent
 - All 45 Humanity enemy slots participate in the regular permutation
 - Sanctuary Guardian tails, both Gargoyle tail types, and all Centipede Demon
   removable parts follow their linked boss assignment
-- Bed of Chaos body, core, and bug are reserved as one native scripted group
-  and never leak into the regular-enemy permutation
+- Bed of Chaos body, core, and bug are reserved out of the regular-enemy
+  permutation. The destination receives one grounded boss replacement while the
+  original scripted helper entities are disabled
 - First Asylum boss rooftop animation is replaced by a floor spawn
 - Adapted Asylum intro explicitly enables replacement AI after arena entry
 - The first three regular Asylum slots receive cloned replacement
@@ -111,6 +115,9 @@ files; source hashes prevent applying it to a different installation state.
 - Per-placement boss `NpcParam` rows inherit the destination encounter's team.
   Bosses whose vanilla PARAM is neutral, especially Gwyndolin, therefore
   become hostile and run their combat AI when moved to another arena.
+- Portable boss bodies also emit a small EMEVD combat-activation event unless
+  the destination already has deferred arena activation. The event enables AI
+  and replans goals for replacements that otherwise spawn visible but idle.
 - New Londo's two Masses of Souls and their twelve overlapping Wisp entities
   are treated as two inseparable groups and exchange only with each other.
   Other invisible `c3501` helper variants are excluded from ordinary slots.
@@ -169,9 +176,12 @@ World-item payload fields are copied while each destination keeps its
 acquisition flag. Progression protection recognizes key goods plus the
 Covenant of Artorias and Orange Charred Ring. Embers, the Peculiar Doll,
 Darkmoon Seance Ring, and ordinary accessories remain in the world-item
-permutation. The optional protected-item mode merges ordinary and protected
-world lots into one global permutation. Dungeon Cell Key and Undead Asylum F2
-East Key are permanently excluded as both sources and destinations. Shop rows
+permutation. Havel's Ring is allowed in the shared pool but cannot land in DLC
+world locations. The optional protected-item mode merges ordinary and protected
+world lots into one global permutation. Dungeon Cell Key, Undead Asylum F2
+East Key, Archive Prison Extra Key, Archive Tower Giant Cell Key, and Archive
+Tower Giant Door Key are permanently excluded as both sources and destinations.
+Shop rows
 preserve price, stock, flags, and conditions while only the item ID is
 redistributed within its item type.
 
@@ -180,8 +190,8 @@ redistributed within its item type.
 - Boss replacement remains experimental. Replacements are grounded and the
   first Asylum encounter bypasses its model-specific rooftop animation, but
   some later arenas still contain bespoke cutscenes or geometry.
-- Bed of Chaos remains vanilla because its three entities and progression
-  events cannot be represented safely by a single ordinary boss slot.
+- Four Kings remains script-protected because the encounter controls additional
+  kings independently of the MSB boss body.
 - Protected-item randomization is intentionally unrestricted and can produce
   progression softlocks; only the two Asylum escape keys are permanently fixed.
 - Area and progressive modes currently use the same slot-relative combat-stat

@@ -86,6 +86,16 @@ test("item and boss report is written independently of the full spoiler log", as
       readFile(path.join(outputDirectory, "item-locations.txt")),
     );
     await assert.rejects(readFile(path.join(outputDirectory, "spoiler.txt")));
+
+    result.config.generateSpoilerLog = true;
+    await writeOutput(result, temporaryDirectory);
+    const spoiler = await readFile(
+      path.join(outputDirectory, "spoiler.txt"),
+      "utf8",
+    );
+    assert.match(spoiler, /=== GLOBAL ITEM LOCATIONS ===/u);
+    assert.match(spoiler, /Avelyn/u);
+    assert.match(spoiler, /Randomized: Painted World of Ariamis/u);
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true });
   }
