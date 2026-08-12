@@ -141,7 +141,8 @@ files; source hashes prevent applying it to a different installation state.
   completes, then resumes its native battle AI.
 - The first Asylum boss AI is enabled by the vanilla arena-entry region and
   disabled by the dedicated boss-room escape region. Crossing the side door
-  clears its target immediately; returning to the arena enables combat again.
+  disables AI, clears its target, and replans immediately; returning to the
+  arena enables combat again.
 - Portable seed files contain deterministic options, version, catalog fingerprint, and verified placement hash
 - English-only launcher status, dependency, and failure messages
 - Cross-map enemy model declarations and validated MSB round trips

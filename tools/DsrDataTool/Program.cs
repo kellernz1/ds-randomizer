@@ -2576,6 +2576,18 @@ static List<PatchedFile> PatchBossNames(
                 combatEvent.Instructions.Add(IfCharacterInsideRegionInstruction(
                     0,
                     placement.CombatExitRegionId!.Value));
+                combatEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    1,
+                    new object[] { placement.EntityId, 0 }));
+                combatEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    16,
+                    new object[] { placement.EntityId }));
+                combatEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    20,
+                    new object[] { placement.EntityId }));
                 RegisterCustomEvent(combatEvent);
             }
             foreach (var placement in staticBridgeMapPlacements
@@ -3051,7 +3063,7 @@ static List<PatchedFile> PatchBossNames(
                     entry.ID == eventId);
                 if (combatEvent.RestBehavior !=
                         EMEVD.Event.RestBehaviorType.Restart ||
-                    combatEvent.Instructions.Count != 9 ||
+                    combatEvent.Instructions.Count != 12 ||
                     combatEvent.Instructions[0].Bank != 2004 ||
                     combatEvent.Instructions[0].ID != 1 ||
                     BitConverter.ToInt32(
@@ -3080,6 +3092,14 @@ static List<PatchedFile> PatchBossNames(
                     BitConverter.ToInt32(
                         combatEvent.Instructions[8].ArgData, 8) !=
                         placement.CombatExitRegionId ||
+                    combatEvent.Instructions[9].Bank != 2004 ||
+                    combatEvent.Instructions[9].ID != 1 ||
+                    BitConverter.ToInt32(
+                        combatEvent.Instructions[9].ArgData, 4) != 0 ||
+                    combatEvent.Instructions[10].Bank != 2004 ||
+                    combatEvent.Instructions[10].ID != 16 ||
+                    combatEvent.Instructions[11].Bank != 2004 ||
+                    combatEvent.Instructions[11].ID != 20 ||
                     !IsInitialized(eventId))
                 {
                     throw new InvalidDataException(
