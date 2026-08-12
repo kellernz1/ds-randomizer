@@ -139,10 +139,9 @@ files; source hashes prevent applying it to a different installation state.
   vanilla rooftop warp is removed, preventing pre-fight fall damage. A
   Moonlight Butterfly replacement has AI held while landing animation 3020
   completes, then resumes its native battle AI.
-- The first Asylum boss AI is enabled by the vanilla arena-entry region and
-  disabled by the dedicated boss-room escape region. Crossing the side door
-  disables AI, clears its target, and replans immediately; returning to the
-  arena enables combat again.
+- The first Asylum boss AI is enabled for the opening encounter, paused and
+  stripped of its target by the vanilla side-gate closing flag, then enabled
+  again only after the player traverses the upper boss fog gate.
 - Portable seed files contain deterministic options, version, catalog fingerprint, and verified placement hash
 - English-only launcher status, dependency, and failure messages
 - Cross-map enemy model declarations and validated MSB round trips

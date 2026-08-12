@@ -1046,9 +1046,14 @@ static PatchReport PatchEnemies(
                         ? combatRegion.GetInt32()
                         : null,
                 element.TryGetProperty(
-                        "combatExitRegionId", out var combatExitRegion) &&
-                    combatExitRegion.ValueKind == JsonValueKind.Number
-                        ? combatExitRegion.GetInt32()
+                        "combatPauseFlagId", out var combatPauseFlag) &&
+                    combatPauseFlag.ValueKind == JsonValueKind.Number
+                        ? combatPauseFlag.GetInt32()
+                        : null,
+                element.TryGetProperty(
+                        "combatReentryFlagId", out var combatReentryFlag) &&
+                    combatReentryFlag.ValueKind == JsonValueKind.Number
+                        ? combatReentryFlag.GetInt32()
                         : null,
                 element.TryGetProperty(
                         "staticBridgeDragon", out var staticBridge) &&
@@ -2000,6 +2005,16 @@ static EMEVD.Instruction IfCharacterInsideRegionInstruction(
     return new EMEVD.Instruction(3, 2, args);
 }
 
+static EMEVD.Instruction IfEventFlagEnabledInstruction(
+    int conditionGroup,
+    int flagId)
+{
+    var args = new byte[8];
+    args[0] = unchecked((byte)(sbyte)conditionGroup);
+    BitConverter.GetBytes(flagId).CopyTo(args, 4);
+    return new EMEVD.Instruction(3, 0, args);
+}
+
 static EMEVD.Instruction ForceAnimationInstruction(
     int entityId,
     int animationId,
@@ -2076,6 +2091,8 @@ static List<PatchedFile> PatchBossNames(
     var containedCombatPlacements = allEnemyPlacements
         .Where(placement =>
             placement.CombatRegionId.HasValue &&
+            placement.CombatPauseFlagId.HasValue &&
+            placement.CombatReentryFlagId.HasValue &&
             placement.EntityId >= 0)
         .ToList();
     var staticBridgePlacements = allEnemyPlacements
@@ -2573,9 +2590,9 @@ static List<PatchedFile> PatchBossNames(
                     2004,
                     20,
                     new object[] { placement.EntityId }));
-                combatEvent.Instructions.Add(IfCharacterInsideRegionInstruction(
+                combatEvent.Instructions.Add(IfEventFlagEnabledInstruction(
                     0,
-                    placement.CombatExitRegionId!.Value));
+                    placement.CombatPauseFlagId!.Value));
                 combatEvent.Instructions.Add(new EMEVD.Instruction(
                     2004,
                     1,
@@ -2588,6 +2605,26 @@ static List<PatchedFile> PatchBossNames(
                     2004,
                     20,
                     new object[] { placement.EntityId }));
+                combatEvent.Instructions.Add(IfEventFlagEnabledInstruction(
+                    0,
+                    placement.CombatReentryFlagId!.Value));
+                combatEvent.Instructions.Add(ClearSpecialStandbyInstruction(
+                    placement.EntityId));
+                combatEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    2,
+                    new object[] { placement.EntityId, 6 }));
+                combatEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    1,
+                    new object[] { placement.EntityId, 1 }));
+                combatEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    20,
+                    new object[] { placement.EntityId }));
+                combatEvent.Instructions.Add(IfDeadInstruction(
+                    0,
+                    placement.EntityId));
                 RegisterCustomEvent(combatEvent);
             }
             foreach (var placement in staticBridgeMapPlacements
@@ -3063,7 +3100,7 @@ static List<PatchedFile> PatchBossNames(
                     entry.ID == eventId);
                 if (combatEvent.RestBehavior !=
                         EMEVD.Event.RestBehaviorType.Restart ||
-                    combatEvent.Instructions.Count != 12 ||
+                    combatEvent.Instructions.Count != 18 ||
                     combatEvent.Instructions[0].Bank != 2004 ||
                     combatEvent.Instructions[0].ID != 1 ||
                     BitConverter.ToInt32(
@@ -3087,11 +3124,10 @@ static List<PatchedFile> PatchBossNames(
                     combatEvent.Instructions[7].Bank != 2004 ||
                     combatEvent.Instructions[7].ID != 20 ||
                     combatEvent.Instructions[8].Bank != 3 ||
-                    combatEvent.Instructions[8].ID != 2 ||
-                    combatEvent.Instructions[8].ArgData[1] != 1 ||
+                    combatEvent.Instructions[8].ID != 0 ||
                     BitConverter.ToInt32(
-                        combatEvent.Instructions[8].ArgData, 8) !=
-                        placement.CombatExitRegionId ||
+                        combatEvent.Instructions[8].ArgData, 4) !=
+                        placement.CombatPauseFlagId ||
                     combatEvent.Instructions[9].Bank != 2004 ||
                     combatEvent.Instructions[9].ID != 1 ||
                     BitConverter.ToInt32(
@@ -3100,6 +3136,25 @@ static List<PatchedFile> PatchBossNames(
                     combatEvent.Instructions[10].ID != 16 ||
                     combatEvent.Instructions[11].Bank != 2004 ||
                     combatEvent.Instructions[11].ID != 20 ||
+                    combatEvent.Instructions[12].Bank != 3 ||
+                    combatEvent.Instructions[12].ID != 0 ||
+                    BitConverter.ToInt32(
+                        combatEvent.Instructions[12].ArgData, 4) !=
+                        placement.CombatReentryFlagId ||
+                    combatEvent.Instructions[13].Bank != 2004 ||
+                    combatEvent.Instructions[13].ID != 9 ||
+                    combatEvent.Instructions[14].Bank != 2004 ||
+                    combatEvent.Instructions[14].ID != 2 ||
+                    BitConverter.ToInt32(
+                        combatEvent.Instructions[14].ArgData, 4) != 6 ||
+                    combatEvent.Instructions[15].Bank != 2004 ||
+                    combatEvent.Instructions[15].ID != 1 ||
+                    BitConverter.ToInt32(
+                        combatEvent.Instructions[15].ArgData, 4) != 1 ||
+                    combatEvent.Instructions[16].Bank != 2004 ||
+                    combatEvent.Instructions[16].ID != 20 ||
+                    combatEvent.Instructions[17].Bank != 4 ||
+                    combatEvent.Instructions[17].ID != 0 ||
                     !IsInitialized(eventId))
                 {
                     throw new InvalidDataException(
@@ -4807,7 +4862,8 @@ record PatchPlacement(
     int? ActivationRegionId,
     int? ActivationWarpRegionId,
     int? CombatRegionId,
-    int? CombatExitRegionId,
+    int? CombatPauseFlagId,
+    int? CombatReentryFlagId,
     bool StaticBridgeDragon,
     bool DisableEntity,
     bool KillDisabledEntity,

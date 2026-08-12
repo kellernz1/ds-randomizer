@@ -752,7 +752,8 @@ test("real catalog produces real boss and world-item placements", async () => {
   assert.equal(asylum.groundY, 197.61);
   assert.equal(asylum.groundZ, -23.1);
   assert.equal(asylum.combatRegionId, 1812996);
-  assert.equal(asylum.combatExitRegionId, 1812320);
+  assert.equal(asylum.combatPauseFlagId, 11810315);
+  assert.equal(asylum.combatReentryFlagId, 11815390);
   const stray = result.placements.bosses.find(
     (entry) => entry.slot === "m18_01_00_00:c2230_0000",
   );

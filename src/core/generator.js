@@ -147,11 +147,12 @@ const deferredBossActivationRegions = new Map([
   ],
 ]);
 const containedBossCombatRegions = new Map([
-  // Keep the first Asylum boss visible in its encounter, but stop its AI and
-  // clear its target at the vanilla boss-room escape trigger.
+  // Keep the first Asylum boss visible in its encounter. Pause it when the
+  // vanilla side gate closes behind the escaping player, and wake it only
+  // after the upper boss fog has actually been traversed.
   [
     "m18_01_00_00:c2232_0000",
-    { enter: 1812996, exit: 1812320 },
+    { enter: 1812996, pauseFlag: 11810315, reentryFlag: 11815390 },
   ],
 ]);
 const safeBossSpawnPositions = new Map([
@@ -1216,7 +1217,10 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
       ...(containedBossCombatRegions.has(slot.id)
         ? {
             combatRegionId: containedBossCombatRegions.get(slot.id).enter,
-            combatExitRegionId: containedBossCombatRegions.get(slot.id).exit,
+            combatPauseFlagId:
+              containedBossCombatRegions.get(slot.id).pauseFlag,
+            combatReentryFlagId:
+              containedBossCombatRegions.get(slot.id).reentryFlag,
           }
         : {}),
       // Some portable boss brains start in a neutral/waiting state when they
