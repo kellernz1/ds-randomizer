@@ -759,11 +759,13 @@ test("real catalog produces real boss and world-item placements", async () => {
     [stray.groundX, stray.groundY, stray.groundZ],
     [3.31, 100, -19],
   );
-  assert.ok(
-    result.placements.bosses.some(
-      (entry) => entry.slot === "m16_00_00_00:c5390_0000" && entry.changed,
-    ),
-    "Four Kings must be a real randomized boss destination",
+  const fourKings = result.placements.bosses.find(
+    (entry) => entry.slot === "m16_00_00_00:c5390_0000",
+  );
+  assert.ok(fourKings?.changed, "Four Kings must be a real randomized boss destination");
+  assert.deepEqual(
+    [fourKings.groundX, fourKings.groundY, fourKings.groundZ],
+    [12.22, -311, 8.09],
   );
   const assignmentsByVanillaModel = new Map();
   for (const entry of result.placements.bosses.filter(

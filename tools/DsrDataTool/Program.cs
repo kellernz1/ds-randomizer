@@ -2003,6 +2003,17 @@ static EMEVD.Instruction IfDeadInstruction(
     return new EMEVD.Instruction(4, 0, args);
 }
 
+static EMEVD.Instruction IfAliveInstruction(
+    int conditionGroup,
+    int entityId)
+{
+    var args = new byte[12];
+    args[0] = unchecked((byte)(sbyte)conditionGroup);
+    BitConverter.GetBytes(entityId).CopyTo(args, 4);
+    args[8] = 0;
+    return new EMEVD.Instruction(4, 0, args);
+}
+
 static EMEVD.Instruction IfCharacterInsideRegionInstruction(
     int conditionGroup,
     int regionId)
@@ -2214,13 +2225,23 @@ static List<PatchedFile> PatchBossNames(
 
         var emevd = EMEVD.Read(sourcePath);
         var changed = 0;
+        // Quelaag's Sister (the Daughter of Chaos) is a friendly Fire Keeper,
+        // not an enemy placement. Rebuilding Quelaag's portable boss lifecycle
+        // can leave her c5340 actor disabled while alive, which also removes
+        // her talk interaction. Keep living instances visible without changing
+        // the NPC's normal death behavior.
+        var protectQuelaagFireKeeper =
+            mapId == "m14_00_00_00" &&
+            portableBossPlacements.Any(placement =>
+                placement.MapId == mapId && placement.EntityId == 1400800);
         var customEventCount =
             passiveMapPlacements.Count +
             deferredMapPlacements.Count +
             containedMapPlacements.Count +
             staticBridgeMapPlacements.Count +
             disabledMapPlacements.Count +
-            forceCombatMapPlacements.Count;
+            forceCombatMapPlacements.Count +
+            (protectQuelaagFireKeeper ? 1 : 0);
         var mapNumber = int.Parse(mapId.Substring(1, 2));
         var preferredCustomEventId =
             10_000_000 + mapNumber * 100_000 + 19_900;
@@ -2424,7 +2445,8 @@ static List<PatchedFile> PatchBossNames(
             containedMapPlacements.Count > 0 ||
             staticBridgeMapPlacements.Count > 0 ||
             disabledMapPlacements.Count > 0 ||
-            forceCombatMapPlacements.Count > 0)
+            forceCombatMapPlacements.Count > 0 ||
+            protectQuelaagFireKeeper)
         {
             var constructor = emevd.Events.Single(entry => entry.ID == 0);
             var nextCustomEventId = customEventBase;
@@ -2739,6 +2761,24 @@ static List<PatchedFile> PatchBossNames(
                     placement.EntityId));
                 RegisterCustomEvent(combatEvent);
             }
+            if (protectQuelaagFireKeeper)
+            {
+                const int fireKeeperEntityId = 1400700;
+                var visibilityEvent = new EMEVD.Event(
+                    nextCustomEventId++,
+                    EMEVD.Event.RestBehaviorType.Restart);
+                visibilityEvent.Instructions.Add(IfAliveInstruction(
+                    0,
+                    fireKeeperEntityId));
+                visibilityEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    5,
+                    new object[] { fireKeeperEntityId, 1 }));
+                visibilityEvent.Instructions.Add(IfDeadInstruction(
+                    0,
+                    fireKeeperEntityId));
+                RegisterCustomEvent(visibilityEvent);
+            }
         }
         foreach (var entry in emevd.Events)
         {
@@ -2946,7 +2986,8 @@ static List<PatchedFile> PatchBossNames(
             containedMapPlacements.Count > 0 ||
             staticBridgeMapPlacements.Count > 0 ||
             disabledMapPlacements.Count > 0 ||
-            forceCombatMapPlacements.Count > 0)
+            forceCombatMapPlacements.Count > 0 ||
+            protectQuelaagFireKeeper)
         {
             var constructor = verification.Events.Single(entry => entry.ID == 0);
             var nextCustomEventId = customEventBase;
@@ -3262,6 +3303,40 @@ static List<PatchedFile> PatchBossNames(
                     throw new InvalidDataException(
                         $"Forced combat activation did not persist for " +
                         $"{placement.SlotId}.");
+                }
+            }
+            if (protectQuelaagFireKeeper)
+            {
+                const int fireKeeperEntityId = 1400700;
+                var eventId = nextCustomEventId++;
+                var visibilityEvent = verification.Events.Single(entry =>
+                    entry.ID == eventId);
+                if (!IsInitialized(eventId) ||
+                    visibilityEvent.RestBehavior !=
+                        EMEVD.Event.RestBehaviorType.Restart ||
+                    visibilityEvent.Instructions.Count != 3 ||
+                    visibilityEvent.Instructions[0].Bank != 4 ||
+                    visibilityEvent.Instructions[0].ID != 0 ||
+                    BitConverter.ToInt32(
+                        visibilityEvent.Instructions[0].ArgData, 4) !=
+                        fireKeeperEntityId ||
+                    visibilityEvent.Instructions[0].ArgData[8] != 0 ||
+                    visibilityEvent.Instructions[1].Bank != 2004 ||
+                    visibilityEvent.Instructions[1].ID != 5 ||
+                    BitConverter.ToInt32(
+                        visibilityEvent.Instructions[1].ArgData, 0) !=
+                        fireKeeperEntityId ||
+                    BitConverter.ToInt32(
+                        visibilityEvent.Instructions[1].ArgData, 4) != 1 ||
+                    visibilityEvent.Instructions[2].Bank != 4 ||
+                    visibilityEvent.Instructions[2].ID != 0 ||
+                    BitConverter.ToInt32(
+                        visibilityEvent.Instructions[2].ArgData, 4) !=
+                        fireKeeperEntityId ||
+                    visibilityEvent.Instructions[2].ArgData[8] != 1)
+                {
+                    throw new InvalidDataException(
+                        "Quelaag Fire Keeper visibility protection did not persist.");
                 }
             }
         }

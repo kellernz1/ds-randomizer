@@ -189,6 +189,14 @@ const safeBossSpawnPositions = new Map([
     "m14_01_00_00:c5250_0000",
     { x: 396.14, y: -278.14, z: 74.56, rotationY: 130.84 },
   ],
+  // The primary Four Kings body begins far below the actual combat plane and
+  // rises through a model-specific animation. Portable replacements do not
+  // use that animation, so place them directly on the plane used by the
+  // remaining king bodies.
+  [
+    "m16_00_00_00:c5390_0000",
+    { x: 12.22, y: -311, z: 8.09, rotationY: -88.32 },
+  ],
 ]);
 
 const bedOfChaosSafeSpawn = Object.freeze({

@@ -43,6 +43,9 @@ package before touching the game.
 - Boss replacements use complete terrain-safe X/Y/Z points. Event-staged Taurus
   Demon, Bell Gargoyle, Moonlight Butterfly, Ceaseless Discharge, and Asylum
   encounters begin directly inside their playable arenas
+- Four Kings replacements start on the Abyss combat plane instead of the
+  submerged staging point used by the kings' model-specific entrance, and a
+  living Daughter of Chaos remains visible and interactable after Quelaag
 - Dragons only exchange locations with other dragons; ordinary Anor Londo
   Gargoyles and Titanite Demons participate in the regular-dragon pool, while
   detachable tails, wings, legs, and encounter variants move as linked groups
