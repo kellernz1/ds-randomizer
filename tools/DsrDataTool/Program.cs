@@ -1045,6 +1045,9 @@ static PatchReport PatchEnemies(
                     enemyGroup.ValueKind == JsonValueKind.String,
                 element.TryGetProperty("makeTangible", out var tangible) &&
                     tangible.ValueKind == JsonValueKind.True,
+                element.TryGetProperty(
+                        "preventInvisibility", out var preventInvisibility) &&
+                    preventInvisibility.ValueKind == JsonValueKind.True,
                 element.TryGetProperty("scaling", out var scaling) &&
                     scaling.ValueKind == JsonValueKind.String
                         ? scaling.GetString() ?? "vanilla"
@@ -2040,6 +2043,19 @@ static EMEVD.Instruction IfCharacterInsideRegionInstruction(
     return new EMEVD.Instruction(3, 2, args);
 }
 
+static EMEVD.Instruction IfCharacterHasSpecialEffectInstruction(
+    int conditionGroup,
+    int entityId,
+    int specialEffectId)
+{
+    var args = new byte[16];
+    args[0] = unchecked((byte)(sbyte)conditionGroup);
+    BitConverter.GetBytes(entityId).CopyTo(args, 4);
+    BitConverter.GetBytes(specialEffectId).CopyTo(args, 8);
+    args[12] = 1;
+    return new EMEVD.Instruction(4, 5, args);
+}
+
 static EMEVD.Instruction IfEventFlagEnabledInstruction(
     int conditionGroup,
     int flagId)
@@ -2134,6 +2150,11 @@ static List<PatchedFile> PatchBossNames(
         .Where(placement =>
             placement.StaticBridgeDragon &&
             placement.EntityId >= 0)
+            .ToList();
+    var visiblePriscillaPlacements = allEnemyPlacements
+        .Where(placement =>
+            placement.PreventInvisibility &&
+            placement.EntityId >= 0)
         .ToList();
     var disabledPlacements = allEnemyPlacements
         .Where(placement =>
@@ -2197,6 +2218,9 @@ static List<PatchedFile> PatchBossNames(
         var staticBridgeMapPlacements = staticBridgePlacements
             .Where(placement => placement.MapId == mapId)
             .ToList();
+        var visiblePriscillaMapPlacements = visiblePriscillaPlacements
+            .Where(placement => placement.MapId == mapId)
+            .ToList();
         var disabledMapPlacements = disabledPlacements
             .Where(placement => placement.MapId == mapId)
             .ToList();
@@ -2228,6 +2252,9 @@ static List<PatchedFile> PatchBossNames(
                 placement.TargetModelName == "c3230")
             .Select(placement => placement.EntityId)
             .ToHashSet();
+        var visiblePriscillaEntityIds = visiblePriscillaMapPlacements
+            .Select(placement => placement.EntityId)
+            .ToHashSet();
         var relativeSource = $"event/{mapId}.emevd.dcx";
         var sourceRecord = catalog.SourceFiles.SingleOrDefault(source =>
             source.Path.Equals(relativeSource, StringComparison.OrdinalIgnoreCase));
@@ -2250,9 +2277,10 @@ static List<PatchedFile> PatchBossNames(
                 placement.MapId == mapId && placement.EntityId == 1400800);
         var customEventCount =
             passiveMapPlacements.Count +
-            deferredMapPlacements.Count +
+            deferredMapPlacements.Count * 2 +
             containedMapPlacements.Count +
             staticBridgeMapPlacements.Count +
+            visiblePriscillaMapPlacements.Count +
             disabledMapPlacements.Count +
             forceCombatMapPlacements.Count +
             (protectQuelaagFireKeeper ? 1 : 0);
@@ -2460,6 +2488,7 @@ static List<PatchedFile> PatchBossNames(
             staticBridgeMapPlacements.Count > 0 ||
             disabledMapPlacements.Count > 0 ||
             forceCombatMapPlacements.Count > 0 ||
+            visiblePriscillaMapPlacements.Count > 0 ||
             protectQuelaagFireKeeper)
         {
             var constructor = emevd.Events.Single(entry => entry.ID == 0);
@@ -2600,6 +2629,42 @@ static List<PatchedFile> PatchBossNames(
                     0,
                     placement.EntityId));
                 RegisterCustomEvent(activationEvent);
+
+                // Some vanilla boss events disable AI again during their own
+                // staging sequence. Reassert combat after that sequence has
+                // settled, without hiding the replacement a second time.
+                var watchdogEvent = new EMEVD.Event(
+                    nextCustomEventId++,
+                    EMEVD.Event.RestBehaviorType.Restart);
+                watchdogEvent.Instructions.Add(IfCharacterInsideRegionInstruction(
+                    0,
+                    placement.ActivationRegionId.Value));
+                watchdogEvent.Instructions.Add(new EMEVD.Instruction(
+                    1001,
+                    0,
+                    new object[] { 1.0f }));
+                watchdogEvent.Instructions.Add(ClearSpecialStandbyInstruction(
+                    placement.EntityId));
+                watchdogEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    2,
+                    new object[] { placement.EntityId, 6 }));
+                watchdogEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    5,
+                    new object[] { placement.EntityId, 1 }));
+                watchdogEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    1,
+                    new object[] { placement.EntityId, 1 }));
+                watchdogEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    20,
+                    new object[] { placement.EntityId }));
+                watchdogEvent.Instructions.Add(IfDeadInstruction(
+                    0,
+                    placement.EntityId));
+                RegisterCustomEvent(watchdogEvent);
             }
             foreach (var placement in containedMapPlacements
                          .OrderBy(placement => placement.EntityId))
@@ -2705,6 +2770,10 @@ static List<PatchedFile> PatchBossNames(
                     new object[] { placement.EntityId, 1 }));
                 staticEvent.Instructions.Add(new EMEVD.Instruction(
                     2004,
+                    2,
+                    new object[] { placement.EntityId, 6 }));
+                staticEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
                     16,
                     new object[] { placement.EntityId }));
                 staticEvent.Instructions.Add(new EMEVD.Instruction(
@@ -2722,6 +2791,31 @@ static List<PatchedFile> PatchBossNames(
                         new object[] { placement.AwardItemLotId.Value }));
                 }
                 RegisterCustomEvent(staticEvent);
+            }
+            foreach (var placement in visiblePriscillaMapPlacements
+                         .OrderBy(placement => placement.EntityId))
+            {
+                var visibilityEvent = new EMEVD.Event(
+                    nextCustomEventId++,
+                    EMEVD.Event.RestBehaviorType.Restart);
+                visibilityEvent.Instructions.Add(
+                    IfCharacterHasSpecialEffectInstruction(
+                        0,
+                        placement.EntityId,
+                        5162));
+                visibilityEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    21,
+                    new object[] { placement.EntityId, 5162 }));
+                visibilityEvent.Instructions.Add(new EMEVD.Instruction(
+                    2004,
+                    20,
+                    new object[] { placement.EntityId }));
+                visibilityEvent.Instructions.Add(new EMEVD.Instruction(
+                    1000,
+                    4,
+                    Array.Empty<object>()));
+                RegisterCustomEvent(visibilityEvent);
             }
             foreach (var placement in disabledMapPlacements
                          .OrderBy(placement => placement.EntityId))
@@ -3001,6 +3095,7 @@ static List<PatchedFile> PatchBossNames(
             staticBridgeMapPlacements.Count > 0 ||
             disabledMapPlacements.Count > 0 ||
             forceCombatMapPlacements.Count > 0 ||
+            visiblePriscillaMapPlacements.Count > 0 ||
             protectQuelaagFireKeeper)
         {
             var constructor = verification.Events.Single(entry => entry.ID == 0);
@@ -3156,6 +3251,47 @@ static List<PatchedFile> PatchBossNames(
                         $"Deferred boss activation did not persist for " +
                         $"{placement.SlotId}.");
                 }
+
+                var watchdogEventId = nextCustomEventId++;
+                var watchdog = verification.Events.Single(entry =>
+                    entry.ID == watchdogEventId);
+                if (watchdog.RestBehavior !=
+                        EMEVD.Event.RestBehaviorType.Restart ||
+                    watchdog.Instructions.Count != 8 ||
+                    watchdog.Instructions[0].Bank != 3 ||
+                    watchdog.Instructions[0].ID != 2 ||
+                    BitConverter.ToInt32(
+                        watchdog.Instructions[0].ArgData, 8) !=
+                        placement.ActivationRegionId ||
+                    watchdog.Instructions[1].Bank != 1001 ||
+                    watchdog.Instructions[1].ID != 0 ||
+                    watchdog.Instructions[2].Bank != 2004 ||
+                    watchdog.Instructions[2].ID != 9 ||
+                    watchdog.Instructions[3].Bank != 2004 ||
+                    watchdog.Instructions[3].ID != 2 ||
+                    BitConverter.ToInt32(
+                        watchdog.Instructions[3].ArgData, 4) != 6 ||
+                    watchdog.Instructions[4].Bank != 2004 ||
+                    watchdog.Instructions[4].ID != 5 ||
+                    BitConverter.ToInt32(
+                        watchdog.Instructions[4].ArgData, 4) != 1 ||
+                    watchdog.Instructions[5].Bank != 2004 ||
+                    watchdog.Instructions[5].ID != 1 ||
+                    BitConverter.ToInt32(
+                        watchdog.Instructions[5].ArgData, 4) != 1 ||
+                    watchdog.Instructions[6].Bank != 2004 ||
+                    watchdog.Instructions[6].ID != 20 ||
+                    watchdog.Instructions[7].Bank != 4 ||
+                    watchdog.Instructions[7].ID != 0 ||
+                    BitConverter.ToInt32(
+                        watchdog.Instructions[7].ArgData, 4) !=
+                        placement.EntityId ||
+                    !IsInitialized(watchdogEventId))
+                {
+                    throw new InvalidDataException(
+                        $"Deferred boss combat watchdog did not persist for " +
+                        $"{placement.SlotId}.");
+                }
             }
             foreach (var placement in containedMapPlacements
                          .OrderBy(placement => placement.EntityId))
@@ -3234,7 +3370,7 @@ static List<PatchedFile> PatchBossNames(
                 var staticEvent = verification.Events.Single(entry =>
                     entry.ID == eventId);
                 var expectedInstructionCount =
-                    placement.AwardItemLotId.HasValue ? 10 : 8;
+                    placement.AwardItemLotId.HasValue ? 11 : 9;
                 if (staticEvent.Instructions.Count != expectedInstructionCount ||
                     staticEvent.Instructions[0].Bank != 2004 ||
                     staticEvent.Instructions[0].ID != 5 ||
@@ -3243,19 +3379,55 @@ static List<PatchedFile> PatchBossNames(
                     staticEvent.Instructions[5].ID != 1 ||
                     BitConverter.ToInt32(
                         staticEvent.Instructions[5].ArgData, 4) != 1 ||
+                    staticEvent.Instructions[6].Bank != 2004 ||
+                    staticEvent.Instructions[6].ID != 2 ||
+                    BitConverter.ToInt32(
+                        staticEvent.Instructions[6].ArgData, 4) != 6 ||
                     (placement.AwardItemLotId.HasValue &&
-                     (staticEvent.Instructions[8].Bank != 4 ||
-                      staticEvent.Instructions[8].ID != 0 ||
-                      staticEvent.Instructions[9].Bank != 2003 ||
-                      staticEvent.Instructions[9].ID != 36 ||
+                     (staticEvent.Instructions[9].Bank != 4 ||
+                      staticEvent.Instructions[9].ID != 0 ||
+                      staticEvent.Instructions[10].Bank != 2003 ||
+                      staticEvent.Instructions[10].ID != 36 ||
                       BitConverter.ToInt32(
-                          staticEvent.Instructions[9].ArgData, 0) !=
+                          staticEvent.Instructions[10].ArgData, 0) !=
                           placement.AwardItemLotId.Value)) ||
                     !IsInitialized(eventId))
                 {
                     throw new InvalidDataException(
                         $"Static bridge dragon event did not persist for " +
                         $"{placement.SlotId}.");
+                }
+            }
+            foreach (var placement in visiblePriscillaMapPlacements
+                         .OrderBy(placement => placement.EntityId))
+            {
+                var eventId = nextCustomEventId++;
+                var visibilityEvent = verification.Events.Single(entry =>
+                    entry.ID == eventId);
+                if (visibilityEvent.RestBehavior !=
+                        EMEVD.Event.RestBehaviorType.Restart ||
+                    visibilityEvent.Instructions.Count != 4 ||
+                    visibilityEvent.Instructions[0].Bank != 4 ||
+                    visibilityEvent.Instructions[0].ID != 5 ||
+                    BitConverter.ToInt32(
+                        visibilityEvent.Instructions[0].ArgData, 4) !=
+                        placement.EntityId ||
+                    BitConverter.ToInt32(
+                        visibilityEvent.Instructions[0].ArgData, 8) != 5162 ||
+                    visibilityEvent.Instructions[0].ArgData[12] != 1 ||
+                    visibilityEvent.Instructions[1].Bank != 2004 ||
+                    visibilityEvent.Instructions[1].ID != 21 ||
+                    BitConverter.ToInt32(
+                        visibilityEvent.Instructions[1].ArgData, 4) != 5162 ||
+                    visibilityEvent.Instructions[2].Bank != 2004 ||
+                    visibilityEvent.Instructions[2].ID != 20 ||
+                    visibilityEvent.Instructions[3].Bank != 1000 ||
+                    visibilityEvent.Instructions[3].ID != 4 ||
+                    !IsInitialized(eventId))
+                {
+                    throw new InvalidDataException(
+                        $"Portable Priscilla visibility event did not persist " +
+                        $"for {placement.SlotId}.");
                 }
             }
             foreach (var placement in disabledMapPlacements
@@ -3371,6 +3543,12 @@ static List<PatchedFile> PatchBossNames(
                           BitConverter.ToInt32(instruction.ArgData, 0)) &&
                       BitConverter.ToInt32(instruction.ArgData, 4) == 0) &&
                     !IsDeferredWarpInstruction(instruction) &&
+                    !(instruction.Bank == 2004 &&
+                      instruction.ID == 21 &&
+                      instruction.ArgData.Length >= 8 &&
+                      visiblePriscillaEntityIds.Contains(
+                          BitConverter.ToInt32(instruction.ArgData, 0)) &&
+                      BitConverter.ToInt32(instruction.ArgData, 4) == 5162) &&
                     !(instruction.Bank == 2003 &&
                       instruction.ID == 18 &&
                       instruction.ArgData.Length >= 8 &&
@@ -3396,6 +3574,12 @@ static List<PatchedFile> PatchBossNames(
                         BitConverter.ToInt32(instruction.ArgData, 0)) &&
                     !IsClearSpecialStandbyInstruction(instruction) &&
                     !IsDeferredWarpInstruction(instruction) &&
+                    !(instruction.Bank == 2004 &&
+                      instruction.ID == 21 &&
+                      instruction.ArgData.Length >= 8 &&
+                      visiblePriscillaEntityIds.Contains(
+                          BitConverter.ToInt32(instruction.ArgData, 0)) &&
+                      BitConverter.ToInt32(instruction.ArgData, 4) == 5162) &&
                     !(instruction.Bank == 2003 &&
                       instruction.ID == 18 &&
                       instruction.ArgData.Length >= 8 &&
@@ -5072,6 +5256,7 @@ record PatchPlacement(
     int? InitialTeamType,
     bool LinkedEnemyGroup,
     bool MakeTangible,
+    bool PreventInvisibility,
     string Scaling,
     int? ActivationRegionId,
     int? ActivationWarpRegionId,

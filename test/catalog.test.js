@@ -283,7 +283,8 @@ test("real catalog produces deterministic enemies with visibly different models"
     [9.144, 9.55, -48.007],
   );
   assert.equal(hellkiteBridge.targetCollisionName, "h1113B1");
-  assert.ok(hellkiteBridge.forceCombatActivation !== false);
+  assert.equal(hellkiteBridge.forceCombatActivation, true);
+  assert.equal(hellkiteBridge.initialTeamType, 0);
   const disabledHellkiteAuxiliaries = first.placements.enemies.filter(
     (placement) =>
       placement.compatibility === "disabled-hellkite-flight-auxiliary",
@@ -814,6 +815,16 @@ test("real catalog produces real boss and world-item placements", async () => {
     result.placements.bosses
       .filter((placement) => placement.linkedDragonGroup)
       .every((placement) => dragonModels.has(placement.targetModelName)),
+  );
+  assert.ok(
+    result.placements.bosses
+      .filter(
+        (placement) =>
+          placement.targetModelName === "c2730" &&
+          placement.map !== "m11_00_00_00",
+      )
+      .every((placement) => placement.preventInvisibility === true),
+    "portable Priscilla placements must suppress the map-bound invisibility effect",
   );
   const trueBossModels = new Set(
     gameCatalog.bossSlots

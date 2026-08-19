@@ -280,10 +280,12 @@ function bossGrounding(slot, catalog) {
 }
 
 function enemyPlacement(config, target, source, scaledNpcParamId, extra = {}) {
+  const effectiveTargetThinkParamId =
+    extra.targetThinkParamId ?? source.thinkParamId;
   const changed =
     source.modelName !== target.modelName ||
     source.npcParamId !== target.npcParamId ||
-    source.thinkParamId !== target.thinkParamId;
+    effectiveTargetThinkParamId !== target.thinkParamId;
   const desiredInitialTeamType =
     extra.initialTeamType ?? target.teamType;
   const requiresTeamOverride =
@@ -496,6 +498,11 @@ function buildDragonPlan(config, catalog) {
                 compatibility: "static-bridge-dragon-permutation",
                 linkedDragonGroup: target.id,
                 staticBridgeDragon: true,
+                // The vanilla Hellkite actor is neutral until its fly-in
+                // lifecycle changes allegiance. Static replacements skip that
+                // lifecycle, so make the bridge occupant hostile immediately.
+                initialTeamType: 0,
+                forceCombatActivation: true,
                 groundX: staticBridgeDragonSpawn.x,
                 groundY: staticBridgeDragonSpawn.y,
                 groundZ: staticBridgeDragonSpawn.z,
@@ -512,6 +519,12 @@ function buildDragonPlan(config, catalog) {
                   ? { forceCombatActivation: true }
                   : {}),
               };
+      if (
+        sourceBody.modelName === "c2730" &&
+        targetBody.mapId !== "m11_00_00_00"
+      ) {
+        placementExtra.preventInvisibility = true;
+      }
       if (parishBonfirePassiveSlots.has(targetBody.id)) {
         Object.assign(placementExtra, {
           compatibility: "passive-parish-bonfire-permutation",
@@ -774,6 +787,7 @@ function buildDragonPlan(config, catalog) {
             compatibility: "static-bridge-dragon-permutation",
             linkedDragonGroup: target.id,
             staticBridgeDragon: true,
+            initialTeamType: 0,
             groundX: staticBridgeDragonSpawn.x,
             groundY: staticBridgeDragonSpawn.y,
             groundZ: staticBridgeDragonSpawn.z,
@@ -788,6 +802,12 @@ function buildDragonPlan(config, catalog) {
             linkedDragonGroup: target.id,
             forceCombatActivation: targetBody.entityId >= 0,
           };
+      if (
+        sourceBody.modelName === "c2730" &&
+        targetBody.mapId !== "m11_00_00_00"
+      ) {
+        extra.preventInvisibility = true;
+      }
       const placement = enemyPlacement(
         config,
         targetBody,
@@ -1308,6 +1328,10 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
             combatReentryFlagId:
               containedBossCombatRegions.get(slot.id).reentryFlag,
           }
+        : {}),
+      ...(replacement.modelName === "c2730" &&
+      slot.mapId !== "m11_00_00_00"
+        ? { preventInvisibility: true }
         : {}),
       // Some portable boss brains start in a neutral/waiting state when they
       // are transplanted into another encounter. If the destination does not
