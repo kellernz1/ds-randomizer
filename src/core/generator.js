@@ -74,6 +74,10 @@ const dragonNames = new Map([
 const additionalBossNames = new Map([
   ["c3230", "Moonlight Butterfly"],
   ["c5230", "Bed of Chaos"],
+  // The visible c5230 tree is not damageable outside its scripted arena. The
+  // c5401 chaos bug is the encounter's real vulnerable body and is therefore
+  // the portable representation used by the randomizer.
+  ["c5401", "Bed of Chaos"],
   ["c5250", "Ceaseless Discharge"],
   ["c5320", "Dark Sun Gwyndolin"],
 ]);
@@ -1240,20 +1244,11 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
       slot.npcParamId >= 0 &&
       slot.thinkParamId >= 0,
   );
-  const bedSource = catalog.enemySlots.find(
-    (slot) => slot.id === "m14_01_00_00:c5230_0000",
-  );
-  const archetypeSources = bedSource
-    ? [...sources, bedSource]
-    : sources;
   const archetypeKeys = [
     ...new Set(sources.map((slot) => bossArchetypeKey(slot))),
   ];
   const archetypes = archetypeKeys.map((archetypeKey) =>
-    (archetypeKey === "c5230:523000" ? bedSource : null) ??
-    archetypeSources.find(
-      (slot) => bossArchetypeKey(slot) === archetypeKey,
-    ),
+    sources.find((slot) => bossArchetypeKey(slot) === archetypeKey),
   );
   const shuffled = shuffledPortableBosses(rng, archetypeKeys, archetypes);
   const replacementsByModel = new Map();

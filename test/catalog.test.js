@@ -824,7 +824,7 @@ test("real catalog produces real boss and world-item placements", async () => {
     result.placements.bosses.every(
       (placement) =>
         trueBossModels.has(placement.targetModelName) ||
-        placement.targetModelName === "c5230",
+        placement.targetModelName === "c5401",
     ),
     "boss encounters must only receive boss replacements",
   );
@@ -837,7 +837,7 @@ test("real catalog produces real boss and world-item placements", async () => {
   for (const [modelName, npcParamId, label] of [
     ["c2360", 236001, "Super Smough"],
     ["c3230", 323000, "Moonlight Butterfly"],
-    ["c5230", 523000, "Bed of Chaos"],
+    ["c5401", 540100, "Bed of Chaos"],
     ["c5271", 527100, "Super Ornstein"],
     ["c5320", 532000, "Gwyndolin"],
     ["c5390", 539000, "Four Kings"],
@@ -940,9 +940,22 @@ test("real catalog produces real boss and world-item placements", async () => {
     (entry) => entry.slot === "m14_01_00_00:c5401_0000",
   );
   assert.ok(bed?.changed);
+  assert.equal(bed.originalBossName, "Bed of Chaos");
   assert.equal(bed.compatibility, "grounded-flat-floor-bed-of-chaos");
   assert.equal(bed.preserveBedOfChaosFloor, true);
-  assert.notEqual(bed.targetModelName, "c5230");
+  assert.notEqual(bed.targetModelName, "c5401");
+  const portableBed = result.placements.bosses.find(
+    (entry) => entry.targetModelName === "c5401",
+  );
+  assert.ok(portableBed, "the vulnerable Bed of Chaos core must be portable");
+  assert.equal(portableBed.targetNpcParamId, 540100);
+  assert.equal(portableBed.targetThinkParamId, 540100);
+  assert.ok(
+    result.placements.bosses.every(
+      (entry) => entry.targetModelName !== "c5230",
+    ),
+    "the invulnerable Bed of Chaos scenery body must never be portable",
+  );
   assert.equal(
     result.placements.enemies.filter(
       (entry) => entry.linkedEnemyGroup === "bed-of-chaos",

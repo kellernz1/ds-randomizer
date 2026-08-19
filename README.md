@@ -55,9 +55,11 @@ package before touching the game.
 - Hydra bodies and all seven heads also move as linked hydra-only groups
 - Sanctuary Guardian, Gargoyle, and Centipede Demon bodies and removable parts
   are randomized as inseparable boss groups
-- Bed of Chaos is a portable boss source. Its destination receives one grounded
-  randomized boss, disables the original scripted side entities, and restores,
-  activates, and protects every arena-floor object from destruction
+- Bed of Chaos is a portable boss source represented by its visible, vulnerable
+  red core rather than the invulnerable scripted tree body. Its destination
+  receives one grounded randomized boss, disables the original scripted side
+  entities, and restores, activates, and protects every arena-floor object from
+  destruction
 - Large, medium, and small Humanity enemies participate in the global
   regular-enemy permutation
 - Moonlight Butterfly, Ceaseless Discharge, Dark Sun Gwyndolin, Bed of Chaos,
@@ -65,8 +67,9 @@ package before touching the game.
   Super Ornstein and Super Smough are distinct boss archetypes rather than
   aliases of their first phases
 - Boss health bars updated to the randomized boss name
-- Bed of Chaos replacements use the encounter's real localized name entry
-  instead of the nonexistent `5230` text row
+- Bed of Chaos replacements use the encounter's real localized name entry and
+  vulnerable core instead of the nonexistent `5230` text row and invulnerable
+  scenery body
 - Boss assignments are a strict archetype derangement: no portable vanilla
   boss or powered Ornstein/Smough phase remains in its native encounter.
   Multi-part encounters share one linked body/part assignment; Four Kings uses

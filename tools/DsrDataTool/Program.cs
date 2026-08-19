@@ -866,7 +866,8 @@ static List<LUAINFO.Goal> ReadLuaGoals(string bundlePath)
 static bool IsBossModel(string modelName) => modelName is
     "c2230" or "c2231" or "c2232" or "c2240" or "c2250" or "c2320" or
     "c2360" or "c2730" or "c3230" or "c3320" or "c3471" or "c4100" or
-    "c4500" or "c4510" or "c5200" or "c5210" or "c5220" or "c5230" or "c5250" or
+    "c4500" or "c4510" or "c5200" or "c5210" or "c5220" or "c5230" or
+    "c5401" or "c5250" or
     "c5260" or "c5270" or "c5271" or "c5280" or "c5290" or "c5320" or
     "c5350" or "c5351" or "c5370" or "c5390";
 
@@ -900,6 +901,7 @@ static short? GetBossNameId(string modelName) => modelName switch
     // The Bed's visible c5230 body uses the c5400 encounter name entry. There
     // is no NPC_name FMG row 5230, which otherwise renders as ?NpcName?.
     "c5230" => 5400,
+    "c5401" => 5400,
     "c5250" => 5250,
     "c5260" => 5260,
     "c5270" => 5270,
