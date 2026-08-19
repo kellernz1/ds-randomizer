@@ -1123,9 +1123,12 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan, bossPlan) {
       ? groundedNewLondoGhostSpawn(slot, index)
       : null;
     const cloneThinkParam = changed || passiveUntilAttacked;
-    const requiresCombatEvent = forceCombatActivationModels.has(
-      replacement.modelName,
-    );
+    const darkrootButterflyPath =
+      (slot.mapId === "m12_00_00_00" || slot.mapId === "m12_00_00_01") &&
+      slot.modelName === "c2330";
+    const requiresCombatEvent =
+      forceCombatActivationModels.has(replacement.modelName) ||
+      darkrootButterflyPath;
     const assignedEntityId =
       (passiveUntilAttacked || requiresCombatEvent) && slot.entityId < 0
         ? 16_099_000 + index
@@ -1137,7 +1140,7 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan, bossPlan) {
             baseThinkParamId: replacementThinkParamId,
             destinationThinkParamId: slot.thinkParamId,
             targetThinkParamId: 9_600_000 + index,
-            preserveDestinationPerception: true,
+            preserveDestinationPerception: !darkrootButterflyPath,
           }
         : {
             targetThinkParamId: replacementThinkParamId,
@@ -1172,11 +1175,13 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan, bossPlan) {
             : "passive-until-attacked-permutation"
         : groundedGhostSpawn
           ? "grounded-new-londo-ghost-slot-permutation"
-        : changed
-          ? "count-preserving-unrestricted-permutation"
-        : replacement.id !== slot.id
-          ? "count-preserving-identical-source-permutation"
-          : "count-preserving-fixed-point",
+          : darkrootButterflyPath
+            ? "active-darkroot-butterfly-path-permutation"
+            : changed
+              ? "count-preserving-unrestricted-permutation"
+              : replacement.id !== slot.id
+                ? "count-preserving-identical-source-permutation"
+                : "count-preserving-fixed-point",
     });
   });
   return randomized
@@ -1652,7 +1657,9 @@ function isDlcRestrictedItem(entry) {
   return (
     entry.progression === true ||
     /(?:Titanite|\bEmber\b)/iu.test(entry.name) ||
-    entry.name === "Havel's Ring"
+    entry.name === "Havel's Ring" ||
+    entry.name === "Fire Keeper Soul" ||
+    entry.name === "Rusted Iron Ring"
   );
 }
 
@@ -1702,7 +1709,7 @@ function shuffledWithoutDlcRestrictedItems(rng, values) {
     if (repaired) return shuffled;
   }
   throw new Error(
-    "Could not keep progression items, Embers, and Titanite out of DLC locations.",
+    "Could not keep DLC-restricted items out of DLC locations.",
   );
 }
 
@@ -1998,20 +2005,30 @@ function randomizeStartingClasses(config, catalog) {
     const statsSource = statsSources[index];
     let equipment = null;
     if (config.randomizeStartingEquipment && hasGeneralEquipmentPools) {
+      const preserveVanillaArmor = target.id === "deprived";
+      const vanillaArmor = (field, name) => ({
+        id: Number(target.start[field]),
+        name,
+      });
       equipment = {
         pickupWeapon: weaponAssignments.get(`${target.id}:primary`),
         pickupOffhand: weaponAssignments.get(`${target.id}:offhand`),
         pickupSpecial: specialIds.has(target.id)
           ? weaponAssignments.get(`${target.id}:special`)
           : null,
-        helm: pickUnique(randomArmorPools.helms, usedArmorIds, "helm"),
-        armor: pickUnique(randomArmorPools.armors, usedArmorIds, "chest armor"),
-        gauntlets: pickUnique(
-          randomArmorPools.gauntlets,
-          usedArmorIds,
-          "gauntlets",
-        ),
-        legs: pickUnique(randomArmorPools.legs, usedArmorIds, "leg armor"),
+        helm: preserveVanillaArmor
+          ? vanillaArmor("equip_Helm", "No helmet")
+          : pickUnique(randomArmorPools.helms, usedArmorIds, "helm"),
+        armor: preserveVanillaArmor
+          ? vanillaArmor("equip_Armer", "No chest armor")
+          : pickUnique(randomArmorPools.armors, usedArmorIds, "chest armor"),
+        gauntlets: preserveVanillaArmor
+          ? vanillaArmor("equip_Gaunt", "No gauntlets")
+          : pickUnique(randomArmorPools.gauntlets, usedArmorIds, "gauntlets"),
+        legs: preserveVanillaArmor
+          ? vanillaArmor("equip_Leg", "No leg armor")
+          : pickUnique(randomArmorPools.legs, usedArmorIds, "leg armor"),
+        preserveVanillaArmor,
       };
     }
     return {

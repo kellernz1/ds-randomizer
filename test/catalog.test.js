@@ -111,7 +111,9 @@ test("real catalog produces deterministic enemies with visibly different models"
     scaled.length,
     first.placements.enemies.filter(
       (placement) =>
-        placement.changed || placement.initialTeamType !== undefined,
+        placement.changed ||
+        placement.initialTeamType !== undefined ||
+        placement.makeTangible === true,
     ).length,
   );
   const vanillaScaling = generate(
@@ -145,6 +147,7 @@ test("real catalog produces deterministic enemies with visibly different models"
         "passive-new-londo-entrance-permutation",
         "passive-until-attacked-permutation",
         "passive-parish-bonfire-permutation",
+        "active-darkroot-butterfly-path-permutation",
         "grounded-new-londo-ghost-slot-permutation",
         "dragon-only-group-permutation",
         "static-bridge-dragon-permutation",
@@ -381,6 +384,22 @@ test("real catalog produces deterministic enemies with visibly different models"
         placement.forceCombatActivation === true,
     ),
   );
+  const activeDarkrootPath = ordinaryPlacements.filter(
+    (placement) =>
+      ["m12_00_00_00", "m12_00_00_01"].includes(placement.map) &&
+      placement.modelName === "c2330",
+  );
+  assert.ok(activeDarkrootPath.length > 20);
+  assert.ok(
+    activeDarkrootPath.every(
+      (placement) =>
+        placement.entityId >= 0 &&
+        placement.forceCombatActivation === true &&
+        placement.preserveDestinationPerception === false &&
+        placement.compatibility ===
+          "active-darkroot-butterfly-path-permutation",
+    ),
+  );
   let longestCycle = 0;
   for (const placement of ordinaryPlacements) {
     const visited = new Set();
@@ -411,7 +430,13 @@ test("real catalog produces deterministic enemies with visibly different models"
       activeReplacementThinkParams.get(source.modelName) ?? source.thinkParamId,
     );
     assert.equal(placement.destinationThinkParamId, slot.thinkParamId);
-    assert.equal(placement.preserveDestinationPerception, true);
+    assert.equal(
+      placement.preserveDestinationPerception,
+      placement.compatibility ===
+        "active-darkroot-butterfly-path-permutation"
+        ? false
+        : true,
+    );
     assert.ok(placement.targetThinkParamId >= 9_600_000);
     if (placement.passiveUntilAttacked) {
       assert.equal(placement.passiveUntilAttacked, true);
@@ -1020,7 +1045,9 @@ test("protected world items join the global pool except both Asylum keys", async
     (entry) =>
       entry.progression !== true &&
       !/(?:Titanite|\bEmber\b)/iu.test(entry.itemName) &&
-      entry.itemName !== "Havel's Ring",
+      entry.itemName !== "Havel's Ring" &&
+      entry.itemName !== "Fire Keeper Soul" &&
+      entry.itemName !== "Rusted Iron Ring",
   ));
 });
 
@@ -1084,7 +1111,11 @@ test("classes use deterministic stats and general-catalog equipment", async () =
     ["legs", gameCatalog.startingEquipmentPools.legs],
   ]) {
     const ids = new Set(pool.map((entry) => entry.id));
-    assert.ok(classes.every((entry) => ids.has(entry.equipment[field].id)));
+    assert.ok(
+      classes
+        .filter((entry) => entry.slot !== "deprived")
+        .every((entry) => ids.has(entry.equipment[field].id)),
+    );
   }
 
   const statsOnly = generate(
@@ -1105,6 +1136,7 @@ test("every class receives a primary weapon as its first pickup", async () => {
   const classById = new Map(
     gameCatalog.startingClasses.map((entry) => [entry.id, entry]),
   );
+  const vanillaDeprived = classById.get("deprived");
   let foundTwoHandOnlyPrimary = false;
   for (let seed = 1; seed <= 100; seed += 1) {
     const result = generate(
@@ -1115,6 +1147,24 @@ test("every class receives a primary weapon as its first pickup", async () => {
         randomizeStartingEquipment: true,
       },
       { gameCatalog },
+    );
+    const deprived = result.placements.startingClasses.find(
+      (entry) => entry.slot === "deprived",
+    );
+    assert.equal(deprived.equipment.preserveVanillaArmor, true);
+    assert.deepEqual(
+      [
+        deprived.equipment.helm.id,
+        deprived.equipment.armor.id,
+        deprived.equipment.gauntlets.id,
+        deprived.equipment.legs.id,
+      ],
+      [
+        vanillaDeprived.start.equip_Helm,
+        vanillaDeprived.start.equip_Armer,
+        vanillaDeprived.start.equip_Gaunt,
+        vanillaDeprived.start.equip_Leg,
+      ],
     );
     assert.ok(
       result.placements.startingClasses.every(
@@ -1135,18 +1185,20 @@ test("every class receives a primary weapon as its first pickup", async () => {
     assert.ok(allWeapons.every((id) => id % 1_000 === 0));
     assert.ok(allWeapons.every((id) => !vanilla.weapons.has(id)));
     for (const field of ["helm", "armor", "gauntlets", "legs"]) {
-      const armorIds = result.placements.startingClasses.map(
-        (entry) => entry.equipment[field].id,
-      );
+      const armorIds = result.placements.startingClasses
+        .filter((entry) => entry.slot !== "deprived")
+        .map((entry) => entry.equipment[field].id);
       assert.equal(new Set(armorIds).size, armorIds.length);
       assert.ok(armorIds.every((id) => !vanilla.armor.has(id)));
     }
-    const allArmor = result.placements.startingClasses.flatMap((entry) => [
-      entry.equipment.helm.id,
-      entry.equipment.armor.id,
-      entry.equipment.gauntlets.id,
-      entry.equipment.legs.id,
-    ]);
+    const allArmor = result.placements.startingClasses
+      .filter((entry) => entry.slot !== "deprived")
+      .flatMap((entry) => [
+        entry.equipment.helm.id,
+        entry.equipment.armor.id,
+        entry.equipment.gauntlets.id,
+        entry.equipment.legs.id,
+      ]);
     assert.equal(new Set(allArmor).size, allArmor.length);
     foundTwoHandOnlyPrimary ||= result.placements.startingClasses.some(
       (entry) => {

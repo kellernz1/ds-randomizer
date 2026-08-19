@@ -897,7 +897,9 @@ static short? GetBossNameId(string modelName) => modelName switch
     "c5200" => 5200,
     "c5210" => 5210,
     "c5220" => 5220,
-    "c5230" => 5230,
+    // The Bed's visible c5230 body uses the c5400 encounter name entry. There
+    // is no NPC_name FMG row 5230, which otherwise renders as ?NpcName?.
+    "c5230" => 5400,
     "c5250" => 5250,
     "c5260" => 5260,
     "c5270" => 5270,
@@ -1167,7 +1169,10 @@ static PatchReport PatchEnemies(
                         ItemId("helm"),
                         ItemId("armor"),
                         ItemId("gauntlets"),
-                        ItemId("legs"));
+                        ItemId("legs"),
+                        equipmentElement.TryGetProperty(
+                                "preserveVanillaArmor", out var preserveArmor) &&
+                            preserveArmor.ValueKind == JsonValueKind.True);
                 }
                 return new StartingPlacement(
                     element.GetProperty("slot").GetString()
@@ -3635,6 +3640,12 @@ static PatchedFile? PatchGameParam(
         {
             if (placement.Equipment != null)
             {
+                if (placement.Equipment.PreserveVanillaArmor &&
+                    placement.Slot != "deprived")
+                {
+                    throw new InvalidDataException(
+                        "Only the Deprived class may preserve vanilla armor.");
+                }
                 ValidateStartingEquipmentPools(
                     catalog.StartingEquipmentPools,
                     placement.Equipment,
@@ -3655,8 +3666,11 @@ static PatchedFile? PatchGameParam(
                         "equip_Subwep_Right",
                         placement.Equipment.PickupSpecial.Value);
                 }
-                SetStartingArmor(target.Display, placement.Equipment);
-                SetStartingArmor(target.Start, placement.Equipment);
+                if (!placement.Equipment.PreserveVanillaArmor)
+                {
+                    SetStartingArmor(target.Display, placement.Equipment);
+                    SetStartingArmor(target.Start, placement.Equipment);
+                }
             }
             else
             {
@@ -3695,8 +3709,22 @@ static PatchedFile? PatchGameParam(
                         "equip_Subwep_Right",
                         placement.Equipment.PickupSpecial.Value);
                 }
-                AssertStartingArmor(target.Display, placement.Equipment);
-                AssertStartingArmor(target.Start, placement.Equipment);
+                if (placement.Equipment.PreserveVanillaArmor)
+                {
+                    AssertCells(
+                        original.Display,
+                        target.Display,
+                        IsArmorField);
+                    AssertCells(
+                        original.Start,
+                        target.Start,
+                        IsArmorField);
+                }
+                else
+                {
+                    AssertStartingArmor(target.Display, placement.Equipment);
+                    AssertStartingArmor(target.Start, placement.Equipment);
+                }
                 AssertCells(
                     original.Display,
                     target.Display,
@@ -4090,10 +4118,13 @@ static void ValidateStartingEquipmentPools(
             throw new InvalidDataException(
                 $"Item {id} is not in the valid {slot} pool.");
     }
-    Require(pools.Helms, equipment.Helm, "helmet");
-    Require(pools.Armors, equipment.Armor, "chest armor");
-    Require(pools.Gauntlets, equipment.Gauntlets, "gauntlets");
-    Require(pools.Legs, equipment.Legs, "leg armor");
+    if (!equipment.PreserveVanillaArmor)
+    {
+        Require(pools.Helms, equipment.Helm, "helmet");
+        Require(pools.Armors, equipment.Armor, "chest armor");
+        Require(pools.Gauntlets, equipment.Gauntlets, "gauntlets");
+        Require(pools.Legs, equipment.Legs, "leg armor");
+    }
     foreach (var id in new[]
              {
                  equipment.PickupWeapon,
@@ -4108,13 +4139,15 @@ static void ValidateStartingEquipmentPools(
             throw new InvalidDataException(
                 $"Vanilla starting weapon {id} appeared in the randomized pool.");
     }
-    foreach (var id in new[]
-             {
-                 equipment.Helm,
-                 equipment.Armor,
-                 equipment.Gauntlets,
-                 equipment.Legs,
-             })
+    foreach (var id in equipment.PreserveVanillaArmor
+                 ? Array.Empty<int>()
+                 : new[]
+                 {
+                     equipment.Helm,
+                     equipment.Armor,
+                     equipment.Gauntlets,
+                     equipment.Legs,
+                 })
     {
         if (vanillaArmorIds.Contains(id))
             throw new InvalidDataException(
@@ -4972,7 +5005,8 @@ record RandomStartingEquipment(
     int Helm,
     int Armor,
     int Gauntlets,
-    int Legs);
+    int Legs,
+    bool PreserveVanillaArmor);
 record RowPlacement(int RowId, int SourceRowId);
 record ItemAssignment(
     string TargetKind,

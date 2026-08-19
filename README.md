@@ -35,6 +35,9 @@ package before touching the game.
   all three from attacking until the player damages them
 - The Kiln slot with entity ID `1800201` also remains randomized but stays
   passive until the player damages it
+- Randomized enemies on the Darkroot Garden route to the Moonlight Butterfly
+  receive explicit hostile activation instead of inheriting incompatible
+  foliage-ambush perception
 - Titanite Demons participate in the regular-dragon pool, but never occupy
   their native Titanite Demon slots
 - Friendly NPCs, merchants, quest characters, and their spawns are protected
@@ -62,6 +65,8 @@ package before touching the game.
   Super Ornstein and Super Smough are distinct boss archetypes rather than
   aliases of their first phases
 - Boss health bars updated to the randomized boss name
+- Bed of Chaos replacements use the encounter's real localized name entry
+  instead of the nonexistent `5230` text row
 - Boss assignments are a strict archetype derangement: no portable vanilla
   boss or powered Ornstein/Smough phase remains in its native encounter.
   Multi-part encounters share one linked body/part assignment; Four Kings uses
@@ -97,9 +102,9 @@ package before touching the game.
   ammunition and throwables, 10 for ordinary consumables, and 1 for weapons,
   armor and spells. Consumable souls only use rows with a native persistent
   stock flag and disappear after their single purchase, preventing soul farming
-- DLC world locations never receive progression items, Embers, Titanite, or
-  Havel's Ring; those items remain in the shared permutation but are assigned
-  outside the DLC
+- DLC world locations never receive progression items, Embers, Titanite,
+  Havel's Ring, Fire Keeper Souls, or the Rusted Iron Ring; those items remain
+  in the shared permutation but are assigned outside the DLC
 - Independent deterministic RNG streams for every category
 - Progression-item protection, spoiler logs, and reproducible placement hashes
 - A `cheat-locations.txt` report with English item and boss names, original and
@@ -117,7 +122,8 @@ The ten vanilla classes never receive weapons, shields, tools, or armor already
 used by a vanilla starting class. Every randomized first class pickup is a
 primary weapon, weapon assignments do not repeat between classes, and equipment
 requirements are checked against the class's final Strength, Dexterity,
-Intelligence, and Faith.
+Intelligence, and Faith. The Deprived remains unarmored and only its weapon
+pickups are randomized.
 
 ## Requirements
 
