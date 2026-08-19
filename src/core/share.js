@@ -22,6 +22,7 @@ const sharedKeys = Object.freeze([
   "randomizeStartingEquipment",
   "randomizeGifts",
   "randomizeEnemyDrops",
+  "guaranteedEnemyDrops",
   "randomizeShops",
   "includeDlc",
   "generateSpoilerLog",

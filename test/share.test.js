@@ -46,6 +46,7 @@ test("shared seed reproduces placements without leaking local paths", async () =
     randomizeProtectedItems: true,
     randomizeGifts: true,
     randomizeEnemyDrops: true,
+    guaranteedEnemyDrops: true,
     randomizeShops: true,
     useExtractedData: true,
   };
@@ -56,11 +57,13 @@ test("shared seed reproduces placements without leaking local paths", async () =
   const serialized = JSON.stringify(shared);
   assert.doesNotMatch(serialized, /private/u);
   assert.ok(shared.catalogFingerprint);
+  assert.equal(shared.options.guaranteedEnemyDrops, true);
 
   const imported = readSharedSeed(shared, gameCatalog);
   const originalResult = generate(source, { gameCatalog });
   const importedResult = generate(imported, { gameCatalog });
   assert.equal(importedResult.seed, source.seed);
+  assert.equal(imported.guaranteedEnemyDrops, true);
   assert.equal(importedResult.placementHash, originalResult.placementHash);
 });
 

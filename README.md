@@ -94,6 +94,9 @@ package before touching the game.
   infusion variants are excluded
 - NPC gifts, hostile and friendly NPC death drops, renewable enemy drops, and
   shops, including the Dusk Crown Ring
+- Optional 100% enemy drop rate removes the no-item outcome from every
+  catalogued enemy Item Lot while preserving the relative weights of lots with
+  multiple possible items; it works with or without enemy-drop randomization
 - Randomized New Londo ghosts have both ghost-state flags and the alternate
   ghost model disabled, keeping them visible and directly damageable in combat
 - World items, NPC gifts, enemy-drop lots, and shops are true permutations:

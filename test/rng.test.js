@@ -16,7 +16,29 @@ test("unknown configuration fields are discarded", () => {
   assert.equal(Object.hasOwn(config, "unusedOption"), false);
   assert.equal(Object.hasOwn(config, "offlineAcknowledged"), false);
   assert.equal(config.randomizeBosses, false);
+  assert.equal(config.guaranteedEnemyDrops, false);
   assert.equal(config.randomizeStartingClass, defaultConfig.randomizeStartingClass);
+});
+
+test("100% enemy drops are an independent package option", () => {
+  const disabledCategories = Object.fromEntries(
+    Object.keys(defaultConfig)
+      .filter((key) => key.startsWith("randomize"))
+      .map((key) => [key, false]),
+  );
+  const config = normalizeConfig({
+    ...defaultConfig,
+    ...disabledCategories,
+    guaranteedEnemyDrops: true,
+  });
+  assert.deepEqual(validateConfig(config), []);
+  const ordinary = generate({ ...defaultConfig, seed: "guaranteed-drops-hash" });
+  const guaranteed = generate({
+    ...defaultConfig,
+    seed: "guaranteed-drops-hash",
+    guaranteedEnemyDrops: true,
+  });
+  assert.notEqual(guaranteed.placementHash, ordinary.placementHash);
 });
 
 test("installable packages do not require an offline confirmation field", () => {

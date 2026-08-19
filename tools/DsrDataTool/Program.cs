@@ -951,6 +951,11 @@ static PatchReport PatchEnemies(
             $"Catalog schema {catalog.SchemaVersion} is obsolete. " +
             "Import the clean game data again.");
     using var placementDocument = JsonDocument.Parse(File.ReadAllText(placementsPath));
+    var guaranteedEnemyDrops =
+        placementDocument.RootElement.TryGetProperty("config", out var configRoot) &&
+        configRoot.TryGetProperty(
+            "guaranteedEnemyDrops", out var guaranteedDropsElement) &&
+        guaranteedDropsElement.ValueKind == JsonValueKind.True;
     var placementsRoot = placementDocument.RootElement.GetProperty("placements");
     IEnumerable<PatchPlacement> ReadEnemyPlacements(string propertyName)
     {
@@ -1524,7 +1529,8 @@ static PatchReport PatchEnemies(
         enemyDropPlacements.Count > 0 ||
         worldItemPlacements.Count > 0 ||
         shopPlacements.Count > 0 ||
-        itemAssignments.Count > 0
+        itemAssignments.Count > 0 ||
+        guaranteedEnemyDrops
         ? PatchGameParam(
             gameDirectory,
             outputDirectory,
@@ -1535,7 +1541,8 @@ static PatchReport PatchEnemies(
             enemyDropPlacements,
             worldItemPlacements,
             shopPlacements,
-            itemAssignments)
+            itemAssignments,
+            guaranteedEnemyDrops)
         : null;
 
     var report = new PatchReport(
@@ -3510,7 +3517,8 @@ static PatchedFile? PatchGameParam(
     List<RowPlacement> enemyDropPlacements,
     List<RowPlacement> worldItemPlacements,
     List<RowPlacement> shopPlacements,
-    List<ItemAssignment> itemAssignments)
+    List<ItemAssignment> itemAssignments,
+    bool guaranteedEnemyDrops)
 {
     if (!enemyPlacements.Any(placement => placement.ScaledNpcParamId.HasValue) &&
         !enemyPlacements.Any(placement => placement.BaseThinkParamId.HasValue) &&
@@ -3520,7 +3528,8 @@ static PatchedFile? PatchGameParam(
         enemyDropPlacements.Count == 0 &&
         worldItemPlacements.Count == 0 &&
         shopPlacements.Count == 0 &&
-        itemAssignments.Count == 0)
+        itemAssignments.Count == 0 &&
+        !guaranteedEnemyDrops)
         return null;
 
     const string relativeSource = "param/GameParam/GameParam.parambnd.dcx";
@@ -3818,6 +3827,10 @@ static PatchedFile? PatchGameParam(
         name => name.Equals("equipId", StringComparison.Ordinal),
         "shop");
     ApplyItemAssignments(itemLotParam, shopParam, itemAssignments);
+    var guaranteedEnemyDropRowIds = guaranteedEnemyDrops
+        ? catalog.EnemyDropLots.Select(lot => lot.RowId).Distinct().ToList()
+        : new List<int>();
+    ApplyGuaranteedEnemyDropRates(itemLotParam, guaranteedEnemyDropRowIds);
 
     charaFile.Bytes = charaParam.Write();
     itemLotFile.Bytes = itemLotParam.Write();
@@ -3883,6 +3896,7 @@ static PatchedFile? PatchGameParam(
                     $"Shop row {assignment.RowId} has no stock event flag.");
         }
     }
+    AssertGuaranteedEnemyDropRates(verifiedLots, guaranteedEnemyDropRowIds);
     foreach (var placement in enemyPlacements.Where(value => value.ScaledNpcParamId.HasValue))
     {
         var scaled = verifiedNpcs.Rows.Single(row => row.ID == placement.ScaledNpcParamId);
@@ -4198,6 +4212,86 @@ static bool IsItemLotPayloadField(string name) =>
     !name.Contains("FlagId", StringComparison.OrdinalIgnoreCase) &&
     (name.StartsWith("lotItem", StringComparison.Ordinal) ||
      name.StartsWith("cumulateLotPoint", StringComparison.Ordinal));
+
+static void ApplyGuaranteedEnemyDropRates(PARAM itemLotParam, List<int> rowIds)
+{
+    const int guaranteedTotal = 1_000;
+    foreach (var rowId in rowIds)
+    {
+        var row = itemLotParam.Rows.SingleOrDefault(entry => entry.ID == rowId)
+            ?? throw new InvalidDataException(
+                $"Enemy Item Lot row {rowId} is missing.");
+        var occupiedSlots = Enumerable.Range(1, 8)
+            .Where(slot =>
+                GetCellInt(row, $"lotItemId{slot:00}", 0) > 0)
+            .ToList();
+        if (occupiedSlots.Count == 0)
+            continue;
+
+        var weights = occupiedSlots
+            .Select(slot => Math.Max(
+                0,
+                GetCellInt(row, $"lotItemBasePoint{slot:00}", 0)))
+            .ToArray();
+        if (weights.Sum() == 0)
+            Array.Fill(weights, 1);
+        var weightTotal = weights.Sum();
+        var allocations = weights
+            .Select(weight => (int)((long)guaranteedTotal * weight / weightTotal))
+            .ToArray();
+        var remainderOrder = weights
+            .Select((weight, index) => new
+            {
+                Index = index,
+                Remainder = (long)guaranteedTotal * weight % weightTotal,
+            })
+            .OrderByDescending(entry => entry.Remainder)
+            .ThenBy(entry => entry.Index)
+            .ToList();
+        var remaining = guaranteedTotal - allocations.Sum();
+        for (var index = 0; index < remaining; index++)
+            allocations[remainderOrder[index].Index]++;
+
+        for (var slot = 1; slot <= 8; slot++)
+        {
+            var occupiedIndex = occupiedSlots.IndexOf(slot);
+            SetCell(
+                row,
+                $"lotItemBasePoint{slot:00}",
+                occupiedIndex >= 0 ? allocations[occupiedIndex] : 0);
+            SetCell(row, $"cumulateLotPoint{slot:00}", 0);
+        }
+    }
+}
+
+static void AssertGuaranteedEnemyDropRates(PARAM itemLotParam, List<int> rowIds)
+{
+    const int guaranteedTotal = 1_000;
+    foreach (var rowId in rowIds)
+    {
+        var row = itemLotParam.Rows.Single(entry => entry.ID == rowId);
+        var occupiedSlots = Enumerable.Range(1, 8)
+            .Where(slot =>
+                GetCellInt(row, $"lotItemId{slot:00}", 0) > 0)
+            .ToList();
+        if (occupiedSlots.Count == 0)
+            continue;
+        var occupiedTotal = occupiedSlots.Sum(slot =>
+            GetCellInt(row, $"lotItemBasePoint{slot:00}", 0));
+        var emptyPoints = Enumerable.Range(1, 8)
+            .Where(slot => !occupiedSlots.Contains(slot))
+            .Sum(slot => GetCellInt(row, $"lotItemBasePoint{slot:00}", 0));
+        var cumulativePoints = Enumerable.Range(1, 8)
+            .Sum(slot => GetCellInt(row, $"cumulateLotPoint{slot:00}", 0));
+        if (occupiedTotal != guaranteedTotal ||
+            emptyPoints != 0 ||
+            cumulativePoints != 0)
+        {
+            throw new InvalidDataException(
+                $"Enemy Item Lot {rowId} does not have a guaranteed drop rate.");
+        }
+    }
+}
 
 static int GetCellInt(PARAM.Row row, string name, int fallback = -1)
 {

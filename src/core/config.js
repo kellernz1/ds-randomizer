@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 
-export const RANDOMIZER_VERSION = "0.5.62";
+export const RANDOMIZER_VERSION = "0.5.63";
 
 export const defaultConfig = Object.freeze({
   version: RANDOMIZER_VERSION,
@@ -20,6 +20,7 @@ export const defaultConfig = Object.freeze({
   randomizeStartingEquipment: false,
   randomizeGifts: false,
   randomizeEnemyDrops: false,
+  guaranteedEnemyDrops: false,
   randomizeShops: false,
   includeDlc: true,
   generateSpoilerLog: true,
@@ -39,6 +40,7 @@ const booleanKeys = [
   "randomizeStartingEquipment",
   "randomizeGifts",
   "randomizeEnemyDrops",
+  "guaranteedEnemyDrops",
   "randomizeShops",
   "includeDlc",
   "generateSpoilerLog",
@@ -89,6 +91,7 @@ export function validateConfig(config, { requireGame = false } = {}) {
     !config.randomizeStartingEquipment &&
     !config.randomizeGifts &&
     !config.randomizeEnemyDrops &&
+    !config.guaranteedEnemyDrops &&
     !config.randomizeShops
   ) {
     errors.push("Enable at least one category to randomize.");

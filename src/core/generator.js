@@ -455,6 +455,9 @@ function buildDragonPlan(config, catalog) {
       const targetPosition = target.id === "hellkite-bridge"
         ? staticBridgeDragonSpawn
         : targetBody.position;
+      const portableCollisionName = target.id === "hellkite-bridge"
+        ? staticBridgeDragonSpawn.collisionName
+        : targetBody.collisionName;
       const portableHydraEntityBase = 9_650_000 + index * 10;
       const placementExtra = sourceIsHydra && !targetIsHydra
         ? {
@@ -465,7 +468,7 @@ function buildDragonPlan(config, catalog) {
             groundX: targetPosition.x,
             groundY: targetPosition.y,
             groundZ: targetPosition.z,
-            targetCollisionName: targetBody.collisionName,
+            targetCollisionName: portableCollisionName,
             forceCombatActivation: true,
             ...(target.id === "hellkite-bridge"
               ? {
@@ -594,7 +597,7 @@ function buildDragonPlan(config, catalog) {
                 mapId: targetBody.mapId,
                 name: syntheticName,
                 entityId: portableHydraEntityBase + partIndex + 1,
-                collisionName: targetBody.collisionName,
+                collisionName: portableCollisionName,
                 position: {
                   x: targetPosition.x + rotatedX,
                   y: targetPosition.y + offset.y,
@@ -620,7 +623,7 @@ function buildDragonPlan(config, catalog) {
                 groundZ: targetPosition.z + rotatedZ,
                 groundRotationY: targetBody.rotation.y +
                   (templatePart.rotation.y - templateBody.rotation.y),
-                targetCollisionName: targetBody.collisionName,
+                targetCollisionName: portableCollisionName,
                 forceCombatActivation: true,
               },
             ),
@@ -2243,6 +2246,9 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
             config.randomizeEnemyDrops
               ? "Enemy drops joined the enabled global item pool."
               : "Enemy drops were preserved.",
+            config.guaranteedEnemyDrops
+              ? "Every catalogued enemy drop lot was normalized to a 100% total item chance."
+              : "Enemy drop rates were preserved.",
             config.randomizeShops
               ? config.progressionLogic
                 ? "Shop inventory joined the enabled global item pool; arrows, bolts, and throwable stock stayed shop-only, selected event-bound goods were randomized, and the remaining progression stock stayed protected."
@@ -2256,7 +2262,10 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
   };
 
   result.placementHash = createHash("sha256")
-    .update(JSON.stringify(result.placements))
+    .update(JSON.stringify({
+      placements: result.placements,
+      guaranteedEnemyDrops: config.guaranteedEnemyDrops,
+    }))
     .digest("hex");
   return result;
 }
