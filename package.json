@@ -1,19 +1,52 @@
 {
   "name": "dsr-randomizer",
-  "version": "0.5.65",
+  "version": "0.5.66",
   "private": true,
   "description": "Configurable, deterministic randomizer for Dark Souls Remastered",
+  "author": "kellernz1",
   "license": "GPL-3.0-only",
   "repository": "github:kellernz1/ds-randomizer",
   "type": "module",
+  "main": "src/desktop/main.cjs",
   "scripts": {
-    "start": "node src/cli.js ui",
+    "start": "electron .",
+    "start:web": "node src/cli.js ui",
+    "desktop": "electron .",
     "generate": "node src/cli.js generate",
     "build:data-tool": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/dotnet-local.ps1 build tools/DsrDataTool/DsrDataTool.csproj --configuration Release --configfile NuGet.Config",
+    "dist:win": "npm run build:data-tool && electron-builder --win portable",
     "test": "node --test",
     "test:seeds": "node src/cli.js test-seeds --count 1000"
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "electron": "^43.4.1",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "io.github.kellernz1.dsr-randomizer",
+    "productName": "DSR Randomizer",
+    "asar": false,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "public/**/*",
+      "src/**/*",
+      "tools/DsrDataTool/bin/Release/net8.0/**/*",
+      ".tools/dotnet/dotnet.exe",
+      ".tools/dotnet/host/fxr/**/*",
+      ".tools/dotnet/shared/Microsoft.NETCore.App/**/*",
+      "package.json",
+      "README.md",
+      "LICENSE",
+      "THIRD_PARTY_NOTICES.md"
+    ],
+    "win": {
+      "target": "portable",
+      "artifactName": "DSR-Randomizer.exe"
+    }
   }
 }

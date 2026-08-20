@@ -1,6 +1,22 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { startServer } from "../src/server.js";
+import { dispatchApi, startServer } from "../src/server.js";
+
+test("desktop API dispatch works without an HTTP listener", async () => {
+  const seedResponse = await dispatchApi({
+    method: "POST",
+    pathname: "/api/seed/new",
+  });
+  assert.equal(seedResponse.ok, true);
+  assert.match(seedResponse.payload.seed, /^\d+$/u);
+
+  const missingResponse = await dispatchApi({
+    method: "GET",
+    pathname: "/api/not-available",
+  });
+  assert.equal(missingResponse.ok, false);
+  assert.equal(missingResponse.status, 404);
+});
 
 test("new-seed endpoint never reuses a cached seed", async (context) => {
   const { server, url } = await startServer();

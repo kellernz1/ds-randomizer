@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
@@ -16,10 +16,13 @@ import { createSharedSeed, readSharedSeed } from "./core/share.js";
 import { detectGame, verifyCatalogSources } from "./game/detection.js";
 import { loadGameCatalog } from "./data/catalog.js";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const root = path.resolve(process.env.DSR_RANDOMIZER_APP_ROOT || sourceRoot);
+const stateRoot = path.resolve(process.env.DSR_RANDOMIZER_STATE_ROOT || root);
 const publicDirectory = path.join(root, "public");
-const configPath = path.join(root, "config.json");
-const catalogPath = path.join(root, "data", "dsr-catalog.json");
+const configPath = path.join(stateRoot, "config.json");
+const catalogPath = path.join(stateRoot, "data", "dsr-catalog.json");
+const bundledCatalogPath = path.join(root, "data", "dsr-catalog.json");
 const dataToolPath = path.join(
   root,
   "tools",
@@ -38,6 +41,20 @@ const contentTypes = {
   ".svg": "image/svg+xml",
 };
 
+async function ensureRuntimeState() {
+  await mkdir(path.dirname(catalogPath), { recursive: true });
+  if (catalogPath === bundledCatalogPath) return;
+  try {
+    await readFile(catalogPath);
+  } catch {
+    try {
+      await copyFile(bundledCatalogPath, catalogPath);
+    } catch {
+      // A fresh installation may not have imported a clean catalog yet.
+    }
+  }
+}
+
 async function readJson(request) {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
@@ -55,6 +72,7 @@ function json(response, status, payload) {
 }
 
 async function loadConfig() {
+  await ensureRuntimeState();
   try {
     return normalizeConfig(JSON.parse(await readFile(configPath, "utf8")));
   } catch {
@@ -64,7 +82,7 @@ async function loadConfig() {
 
 function resolvePackageDirectory(value) {
   const packageDirectory = path.resolve(String(value || ""));
-  const relative = path.relative(root, packageDirectory);
+  const relative = path.relative(stateRoot, packageDirectory);
   if (
     !value ||
     relative.startsWith("..") ||
@@ -102,8 +120,8 @@ export async function runDataTool(argumentsList) {
       cwd: root,
       env: {
         ...process.env,
-        DOTNET_CLI_HOME: path.join(root, ".tools", "cli-home"),
-        NUGET_PACKAGES: path.join(root, ".tools", "nuget"),
+        DOTNET_CLI_HOME: path.join(stateRoot, "dotnet-home"),
+        NUGET_PACKAGES: path.join(stateRoot, "nuget"),
         DOTNET_CLI_TELEMETRY_OPTOUT: "1",
         DOTNET_CLI_UI_LANGUAGE: "en-US",
         VSLANG: "1033",
@@ -121,6 +139,7 @@ export async function runDataTool(argumentsList) {
 }
 
 async function api(request, response, pathname) {
+  await ensureRuntimeState();
   if (request.method === "POST" && pathname === "/api/seed/new") {
     return json(response, 200, { seed: generateSeed() });
   }
@@ -218,7 +237,7 @@ async function api(request, response, pathname) {
     const result = generate(config, { gameCatalog: catalog });
     const outputDirectory = await writeOutput(
       result,
-      path.resolve(root, config.outputDirectory),
+      path.resolve(stateRoot, config.outputDirectory),
     );
     let patch = null;
     if (catalog && !config.dryRun) {
@@ -291,6 +310,46 @@ async function api(request, response, pathname) {
     });
   }
   return json(response, 404, { error: "Endpoint not found." });
+}
+
+// Desktop builds call the same API logic through Electron IPC. Keeping this
+// adapter beside the HTTP transport prevents the launcher and browser modes
+// from drifting while ensuring the desktop application never opens a port.
+export async function dispatchApi({ method = "GET", pathname, body = {} }) {
+  let status = 200;
+  let responseText = "";
+  const encodedBody = Buffer.from(JSON.stringify(body ?? {}), "utf8");
+  const request = {
+    method,
+    async *[Symbol.asyncIterator]() {
+      if (encodedBody.length > 0) yield encodedBody;
+    },
+  };
+  const response = {
+    headersSent: false,
+    writeHead(nextStatus) {
+      status = nextStatus;
+      this.headersSent = true;
+      return this;
+    },
+    end(value = "") {
+      responseText += Buffer.isBuffer(value) ? value.toString("utf8") : String(value);
+    },
+  };
+  try {
+    await api(request, response, String(pathname || ""));
+  } catch (error) {
+    status = 500;
+    responseText = JSON.stringify({ error: error.message });
+  }
+  let payload;
+  try {
+    payload = JSON.parse(responseText || "{}");
+  } catch {
+    payload = { error: "The randomizer returned an invalid desktop response." };
+    status = 500;
+  }
+  return { ok: status >= 200 && status < 300, status, payload };
 }
 
 export function startServer({ port = 0 } = {}) {

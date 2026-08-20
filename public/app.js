@@ -22,6 +22,22 @@ function readForm() {
 }
 
 async function request(url, options) {
+  if (window.randomizerDesktop) {
+    let body = {};
+    if (options?.body) body = JSON.parse(options.body);
+    const result = await window.randomizerDesktop.request(url, {
+      method: options?.method || "GET",
+      body,
+    });
+    if (!result.ok) {
+      throw new Error(
+        result.payload.errors?.join("\n") ||
+        result.payload.error ||
+        "Unknown error.",
+      );
+    }
+    return result.payload;
+  }
   let response;
   try {
     response = await fetch(url, options);
@@ -78,6 +94,17 @@ document.querySelector("#new-seed").addEventListener("click", async () => {
   }
 });
 
+const browseButton = document.querySelector("#browse-game");
+if (window.randomizerDesktop) {
+  browseButton.hidden = false;
+  browseButton.addEventListener("click", async () => {
+    const directory = await window.randomizerDesktop.selectDirectory(
+      form.elements.gameDirectory.value,
+    );
+    if (directory) form.elements.gameDirectory.value = directory;
+  });
+}
+
 document.querySelector("#export-seed").addEventListener("click", async () => {
   message.textContent = "Preparing shared seed file...";
   try {
@@ -86,20 +113,27 @@ document.querySelector("#export-seed").addEventListener("click", async () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(readForm()),
     });
-    const blob = new Blob(
-      [`${JSON.stringify(sharedSeed, null, 2)}\n`],
-      { type: "application/json" },
-    );
-    const url = URL.createObjectURL(blob);
-    const download = document.createElement("a");
     const safeSeed = sharedSeed.seed.replace(/[^\w.-]/gu, "_");
-    download.href = url;
-    download.download = `dsr-seed_${safeSeed}.json`;
-    download.click();
-    URL.revokeObjectURL(url);
+    const fileName = `dsr-seed_${safeSeed}.json`;
+    const contents = `${JSON.stringify(sharedSeed, null, 2)}\n`;
+    if (window.randomizerDesktop) {
+      const saved = await window.randomizerDesktop.saveJson(fileName, contents);
+      if (!saved) {
+        message.textContent = "Seed export canceled.";
+        return;
+      }
+    } else {
+      const blob = new Blob([contents], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const download = document.createElement("a");
+      download.href = url;
+      download.download = fileName;
+      download.click();
+      URL.revokeObjectURL(url);
+    }
     message.textContent =
       `Exported seed ${sharedSeed.seed} with hash ` +
-      `${sharedSeed.placementHash.slice(0, 12)}…. Share the downloaded JSON file.`;
+      `${sharedSeed.placementHash.slice(0, 12)}…. Share the JSON file.`;
   } catch (error) {
     message.textContent = error.message;
   }

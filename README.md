@@ -135,9 +135,16 @@ pickups are randomized.
 
 - Windows
 - Dark Souls Remastered on Steam
-- Node.js 20 or newer
-- .NET 8 SDK
 - A clean, unpacked game installation with no other active data mods
+
+The packaged `DSR-Randomizer.exe` includes the desktop runtime and does not
+require Node.js, the .NET SDK, a browser, or a local web server. Building the
+project from source requires Node.js 20 or newer and the .NET 8 SDK.
+
+Extracted game data is never bundled into the executable. On first launch,
+select the game directory and click **Import game data**; the private catalog,
+configuration, and generated seed packages are kept in the launcher's local
+application-data directory.
 
 The configurator and generator do not download or redistribute game data.
 `data/dsr-catalog.json` is produced locally from the user's installation and is
@@ -145,10 +152,22 @@ excluded from version control.
 
 ## Quick start
 
+Download or build `release/DSR-Randomizer.exe`, then open it normally. The
+launcher runs as a standalone desktop application and does not open a local
+HTTP port or leave a server Command Prompt running.
+
+To build and launch it from source:
+
 ```powershell
 npm install
 npm run build:data-tool
 .\start-randomizer.bat
+```
+
+To create the portable Windows executable:
+
+```powershell
+npm run dist:win
 ```
 
 In the configurator:
