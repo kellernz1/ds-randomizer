@@ -1280,6 +1280,7 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
   );
   const placements = sources.map((slot, index) => {
     const sourceArchetypeKey = bossArchetypeKey(slot);
+    const sourceArchetypeIndex = archetypeKeys.indexOf(sourceArchetypeKey);
     const sourceModelName = sourceArchetypeKey.split(":")[0];
     const replacement = replacementsByModel.get(sourceArchetypeKey);
     const originalBossName =
@@ -1292,7 +1293,22 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
       bossNames[replacement.modelName] ||
       additionalBossNames.get(replacement.modelName) ||
       `${replacement.modelName} [NPC ${replacement.npcParamId}]`;
+    const deferredActivation = deferredBossActivationRegions.get(slot.id);
+    const portableThinkParamId = deferredActivation
+      ? 9_700_000 + sourceArchetypeIndex
+      : replacement.thinkParamId;
     return enemyPlacement(config, slot, replacement, 9_200_000 + index, {
+      ...(deferredActivation
+        ? {
+            // Preserve the replacement's battle goal while borrowing the
+            // destination arena's detection distances. Several bosses (Nito
+            // in particular) otherwise remain idle outside their native map.
+            baseThinkParamId: replacement.thinkParamId,
+            destinationThinkParamId: slot.thinkParamId,
+            targetThinkParamId: portableThinkParamId,
+            preserveDestinationPerception: true,
+          }
+        : {}),
       originalBossName,
       randomizedBossName,
       encounterLocation: {
@@ -1305,14 +1321,14 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
         : canonicalBossModel.has(slot.modelName)
         ? "linked-boss-form"
         : "grounded-unrestricted-boss-permutation",
-      ...(deferredBossActivationRegions.has(slot.id)
+      ...(deferredActivation
         ? {
             activationRegionId:
-              deferredBossActivationRegions.get(slot.id).enter,
-            ...(deferredBossActivationRegions.get(slot.id).warp
+              deferredActivation.enter,
+            ...(deferredActivation.warp
               ? {
                   activationWarpRegionId:
-                    deferredBossActivationRegions.get(slot.id).warp,
+                    deferredActivation.warp,
                 }
               : {}),
           }

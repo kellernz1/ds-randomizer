@@ -879,6 +879,18 @@ test("real catalog produces real boss and world-item placements", async () => {
       .every((placement) => placement.targetModelName !== "c3230"),
     "the original Butterfly encounter must still be randomized",
   );
+  assert.ok(
+    result.placements.bosses
+      .filter((placement) => placement.modelName === "c3230")
+      .every(
+        (placement) =>
+          placement.baseThinkParamId > 0 &&
+          placement.destinationThinkParamId === placement.sourceThinkParamId &&
+          placement.targetThinkParamId >= 9_700_000 &&
+          placement.preserveDestinationPerception === true,
+      ),
+    "Butterfly-arena bosses must retain their combat goal with arena detection ranges",
+  );
   const taurus = result.placements.bosses.find(
     (entry) => entry.slot === "m10_01_00_00:c2250_0000",
   );

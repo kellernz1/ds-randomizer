@@ -2086,6 +2086,20 @@ static EMEVD.Instruction ClearSpecialStandbyInstruction(int entityId) =>
         9,
         new object[] { entityId, -1, -1, -1, -1, -1 });
 
+static EMEVD.Instruction SetBackreadInstruction(int entityId, bool enabled) =>
+    new(
+        2004,
+        29,
+        // Dark Souls uses a reversed Boolean here: 0 loads backread and 1
+        // removes it.
+        new object[] { entityId, enabled ? 0 : 1 });
+
+static EMEVD.Instruction SetAnimationsInstruction(int entityId, bool enabled) =>
+    new(
+        2004,
+        39,
+        new object[] { entityId, enabled ? 1 : 0 });
+
 static bool IsClearSpecialStandbyInstruction(EMEVD.Instruction instruction) =>
     instruction.Bank == 2004 &&
     instruction.ID == 9 &&
@@ -2252,6 +2266,10 @@ static List<PatchedFile> PatchBossNames(
                 placement.TargetModelName == "c3230")
             .Select(placement => placement.EntityId)
             .ToHashSet();
+        var awakeMimicEntityIds = forceCombatMapPlacements
+            .Where(placement => placement.TargetModelName == "c2780")
+            .Select(placement => placement.EntityId)
+            .ToHashSet();
         var visiblePriscillaEntityIds = visiblePriscillaMapPlacements
             .Select(placement => placement.EntityId)
             .ToHashSet();
@@ -2275,6 +2293,34 @@ static List<PatchedFile> PatchBossNames(
             mapId == "m14_00_00_00" &&
             portableBossPlacements.Any(placement =>
                 placement.MapId == mapId && placement.EntityId == 1400800);
+        if (protectQuelaagFireKeeper)
+        {
+            // Quelaag's entrance cutscene temporarily disables the Daughter
+            // of Chaos backread. A transplanted boss can bypass the matching
+            // vanilla re-enable and leave her rendered and interactable state
+            // unloaded forever. Never allow that temporary disable to target
+            // this friendly NPC in a randomized encounter.
+            const int fireKeeperEntityId = 1400700;
+            foreach (var entry in emevd.Events)
+            {
+                for (var index = entry.Instructions.Count - 1; index >= 0; index--)
+                {
+                    var instruction = entry.Instructions[index];
+                    if (instruction.Bank != 2004 ||
+                        instruction.ID != 29 ||
+                        instruction.ArgData.Length < 8 ||
+                        BitConverter.ToInt32(instruction.ArgData, 0) !=
+                            fireKeeperEntityId ||
+                        BitConverter.ToInt32(instruction.ArgData, 4) != 1)
+                        continue;
+                    RemoveEventInstruction(
+                        entry,
+                        index,
+                        removeInstructionParameters: true);
+                    changed++;
+                }
+            }
+        }
         var customEventCount =
             passiveMapPlacements.Count +
             deferredMapPlacements.Count * 2 +
@@ -2846,6 +2892,17 @@ static List<PatchedFile> PatchBossNames(
                 var combatEvent = new EMEVD.Event(
                     nextCustomEventId++,
                     EMEVD.Event.RestBehaviorType.Restart);
+                if (placement.TargetModelName == "c2780")
+                {
+                    // Mimics retain their closed-chest special-effect state
+                    // even with the awake ThinkParam. Animation 3001 is the
+                    // vanilla attacked wake-up transition and releases the
+                    // model into its normal combat animation graph.
+                    combatEvent.Instructions.Add(ForceAnimationInstruction(
+                        placement.EntityId,
+                        3001,
+                        true));
+                }
                 combatEvent.Instructions.Add(ClearSpecialStandbyInstruction(
                     placement.EntityId));
                 combatEvent.Instructions.Add(new EMEVD.Instruction(
@@ -2878,13 +2935,24 @@ static List<PatchedFile> PatchBossNames(
                 visibilityEvent.Instructions.Add(IfAliveInstruction(
                     0,
                     fireKeeperEntityId));
+                visibilityEvent.Instructions.Add(SetBackreadInstruction(
+                    fireKeeperEntityId,
+                    true));
+                visibilityEvent.Instructions.Add(SetAnimationsInstruction(
+                    fireKeeperEntityId,
+                    true));
                 visibilityEvent.Instructions.Add(new EMEVD.Instruction(
                     2004,
                     5,
                     new object[] { fireKeeperEntityId, 1 }));
-                visibilityEvent.Instructions.Add(IfDeadInstruction(
+                visibilityEvent.Instructions.Add(new EMEVD.Instruction(
+                    1001,
                     0,
-                    fireKeeperEntityId));
+                    new object[] { 1.0f }));
+                visibilityEvent.Instructions.Add(new EMEVD.Instruction(
+                    1000,
+                    4,
+                    Array.Empty<object>()));
                 RegisterCustomEvent(visibilityEvent);
             }
         }
@@ -3464,26 +3532,32 @@ static List<PatchedFile> PatchBossNames(
                 var eventId = nextCustomEventId++;
                 var combatEvent = verification.Events.Single(entry =>
                     entry.ID == eventId);
+                var mimicOffset = placement.TargetModelName == "c2780" ? 1 : 0;
                 if (combatEvent.RestBehavior !=
                         EMEVD.Event.RestBehaviorType.Restart ||
-                    combatEvent.Instructions.Count != 6 ||
-                    combatEvent.Instructions[0].Bank != 2004 ||
-                    combatEvent.Instructions[0].ID != 9 ||
+                    combatEvent.Instructions.Count != 6 + mimicOffset ||
+                    (mimicOffset == 1 &&
+                     (combatEvent.Instructions[0].Bank != 2003 ||
+                      combatEvent.Instructions[0].ID != 18 ||
+                      BitConverter.ToInt32(
+                          combatEvent.Instructions[0].ArgData, 4) != 3001)) ||
+                    combatEvent.Instructions[mimicOffset].Bank != 2004 ||
+                    combatEvent.Instructions[mimicOffset].ID != 9 ||
                     BitConverter.ToInt32(
-                        combatEvent.Instructions[0].ArgData, 0) !=
+                        combatEvent.Instructions[mimicOffset].ArgData, 0) !=
                         placement.EntityId ||
-                    combatEvent.Instructions[1].Bank != 2004 ||
-                    combatEvent.Instructions[1].ID != 2 ||
-                    combatEvent.Instructions[2].Bank != 2004 ||
-                    combatEvent.Instructions[2].ID != 1 ||
+                    combatEvent.Instructions[1 + mimicOffset].Bank != 2004 ||
+                    combatEvent.Instructions[1 + mimicOffset].ID != 2 ||
+                    combatEvent.Instructions[2 + mimicOffset].Bank != 2004 ||
+                    combatEvent.Instructions[2 + mimicOffset].ID != 1 ||
                     BitConverter.ToInt32(
-                        combatEvent.Instructions[2].ArgData, 4) != 1 ||
-                    combatEvent.Instructions[3].Bank != 2004 ||
-                    combatEvent.Instructions[3].ID != 16 ||
-                    combatEvent.Instructions[4].Bank != 2004 ||
-                    combatEvent.Instructions[4].ID != 20 ||
-                    combatEvent.Instructions[5].Bank != 4 ||
-                    combatEvent.Instructions[5].ID != 0 ||
+                        combatEvent.Instructions[2 + mimicOffset].ArgData, 4) != 1 ||
+                    combatEvent.Instructions[3 + mimicOffset].Bank != 2004 ||
+                    combatEvent.Instructions[3 + mimicOffset].ID != 16 ||
+                    combatEvent.Instructions[4 + mimicOffset].Bank != 2004 ||
+                    combatEvent.Instructions[4 + mimicOffset].ID != 20 ||
+                    combatEvent.Instructions[5 + mimicOffset].Bank != 4 ||
+                    combatEvent.Instructions[5 + mimicOffset].ID != 0 ||
                     !IsInitialized(eventId))
                 {
                     throw new InvalidDataException(
@@ -3500,7 +3574,7 @@ static List<PatchedFile> PatchBossNames(
                 if (!IsInitialized(eventId) ||
                     visibilityEvent.RestBehavior !=
                         EMEVD.Event.RestBehaviorType.Restart ||
-                    visibilityEvent.Instructions.Count != 3 ||
+                    visibilityEvent.Instructions.Count != 6 ||
                     visibilityEvent.Instructions[0].Bank != 4 ||
                     visibilityEvent.Instructions[0].ID != 0 ||
                     BitConverter.ToInt32(
@@ -3508,18 +3582,33 @@ static List<PatchedFile> PatchBossNames(
                         fireKeeperEntityId ||
                     visibilityEvent.Instructions[0].ArgData[8] != 0 ||
                     visibilityEvent.Instructions[1].Bank != 2004 ||
-                    visibilityEvent.Instructions[1].ID != 5 ||
+                    visibilityEvent.Instructions[1].ID != 29 ||
                     BitConverter.ToInt32(
                         visibilityEvent.Instructions[1].ArgData, 0) !=
                         fireKeeperEntityId ||
                     BitConverter.ToInt32(
-                        visibilityEvent.Instructions[1].ArgData, 4) != 1 ||
-                    visibilityEvent.Instructions[2].Bank != 4 ||
-                    visibilityEvent.Instructions[2].ID != 0 ||
+                        visibilityEvent.Instructions[1].ArgData, 4) != 0 ||
+                    visibilityEvent.Instructions[2].Bank != 2004 ||
+                    visibilityEvent.Instructions[2].ID != 39 ||
                     BitConverter.ToInt32(
                         visibilityEvent.Instructions[2].ArgData, 4) !=
-                        fireKeeperEntityId ||
-                    visibilityEvent.Instructions[2].ArgData[8] != 1)
+                        1 ||
+                    visibilityEvent.Instructions[3].Bank != 2004 ||
+                    visibilityEvent.Instructions[3].ID != 5 ||
+                    BitConverter.ToInt32(
+                        visibilityEvent.Instructions[3].ArgData, 4) != 1 ||
+                    visibilityEvent.Instructions[4].Bank != 1001 ||
+                    visibilityEvent.Instructions[4].ID != 0 ||
+                    visibilityEvent.Instructions[5].Bank != 1000 ||
+                    visibilityEvent.Instructions[5].ID != 4 ||
+                    verification.Events.SelectMany(entry => entry.Instructions)
+                        .Any(instruction =>
+                            instruction.Bank == 2004 &&
+                            instruction.ID == 29 &&
+                            instruction.ArgData.Length >= 8 &&
+                            BitConverter.ToInt32(instruction.ArgData, 0) ==
+                                fireKeeperEntityId &&
+                            BitConverter.ToInt32(instruction.ArgData, 4) == 1))
                 {
                     throw new InvalidDataException(
                         "Quelaag Fire Keeper visibility protection did not persist.");
@@ -3554,12 +3643,18 @@ static List<PatchedFile> PatchBossNames(
                       instruction.ArgData.Length >= 8 &&
                       butterflyEntityIds.Contains(
                           BitConverter.ToInt32(instruction.ArgData, 0)) &&
-                      BitConverter.ToInt32(instruction.ArgData, 4) == 3020))
+                      BitConverter.ToInt32(instruction.ArgData, 4) == 3020) &&
+                    !(instruction.Bank == 2003 &&
+                      instruction.ID == 18 &&
+                      instruction.ArgData.Length >= 8 &&
+                      awakeMimicEntityIds.Contains(
+                          BitConverter.ToInt32(instruction.ArgData, 0)) &&
+                      BitConverter.ToInt32(instruction.ArgData, 4) == 3001))
                 {
                     throw new InvalidDataException(
                         $"Model-specific event action remained for randomized " +
                         $"entity {BitConverter.ToInt32(instruction.ArgData, 0)} " +
-                        $"in {mapId}.");
+                        $"in {mapId}: {instruction.Bank}/{instruction.ID}.");
                 }
             }
         }
@@ -4246,8 +4341,20 @@ static void AddCustomThinkRows(PARAM thinkParam, List<PatchPlacement> placements
         return;
     var existingIds = thinkParam.Rows.Select(row => row.ID).ToHashSet();
     var originalRows = thinkParam.Rows.ToDictionary(row => row.ID);
-    foreach (var placement in placements)
+    foreach (var group in placements.GroupBy(placement =>
+                 placement.TargetThinkParamId))
     {
+        var placement = group.First();
+        if (group.Any(candidate =>
+                candidate.BaseThinkParamId != placement.BaseThinkParamId ||
+                candidate.DestinationThinkParamId !=
+                    placement.DestinationThinkParamId ||
+                candidate.PreserveDestinationPerception !=
+                    placement.PreserveDestinationPerception))
+        {
+            throw new InvalidDataException(
+                $"Conflicting custom NpcThinkParam definition: {group.Key}.");
+        }
         var newId = placement.TargetThinkParamId;
         if (!existingIds.Add(newId))
             throw new InvalidDataException(
