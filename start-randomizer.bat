@@ -3,10 +3,17 @@ setlocal
 cd /d "%~dp0"
 
 echo Starting DSR Randomizer...
+if not exist "%~dp0release\DSR-Randomizer.exe" if not exist "%~dp0node_modules\electron\dist\electron.exe" (
+  if exist "%~dp0node_modules\electron\install.js" (
+    echo Downloading Electron runtime...
+    node "%~dp0node_modules\electron\install.js"
+    if errorlevel 1 goto :startup_failed
+  )
+)
 if exist "%~dp0release\DSR-Randomizer.exe" (
   start "" "%~dp0release\DSR-Randomizer.exe"
 ) else if exist "%~dp0node_modules\electron\dist\electron.exe" (
-  start "" /D "%~dp0" "%~dp0node_modules\electron\dist\electron.exe" "%~dp0"
+  start "" /D "%~dp0" "%~dp0node_modules\electron\dist\electron.exe" .
 ) else (
   echo ERROR: The desktop launcher was not found.
   echo Run npm install and then try again.

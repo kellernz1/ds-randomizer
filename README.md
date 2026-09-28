@@ -32,10 +32,14 @@ Download the latest release from
 2. Run `DSR-Randomizer.exe` outside the game directory.
 3. Select the `DARK SOULS REMASTERED` installation directory.
 4. Click **Verify**, then **Import Game Data** while the installation is clean.
-5. Select what you want to randomize and generate a seed.
-6. Click **Activate in Game** and launch the game normally.
-7. Use **Restore Vanilla** before changing seeds, verifying game files, or
-   installing another data mod.
+5. Select what you want to randomize and choose a seed.
+6. In **Package**, leave **Use extracted game data** checked and uncheck
+   **Safe simulation**. Safe simulation is on by default and creates reports
+   only; it does not create a package that can be activated in the game.
+7. Click **Generate Randomizer**. When generation completes, click **Activate
+   in Game** and wait for the success message before launching the game.
+8. Use **Restore Vanilla** before changing seeds, importing game data again,
+   verifying game files, or installing another data mod.
 
 Create a new character when randomizing starting classes or equipment.
 

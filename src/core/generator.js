@@ -1648,8 +1648,14 @@ function randomizeExtractedItemLots(config, catalog) {
       result.shops.push(placement);
     }
   };
+  // ShopLineupParam also supplies the spell list shown by Attune Magic at
+  // bonfires. Keep magic entries in their own permutation so those rows never
+  // become weapons, goods, or other non-magic shop entries.
+  const nonMagicTargets = globalTargets.filter((entry) => entry.equipType !== 4);
+  const magicTargets = globalTargets.filter((entry) => entry.equipType === 4);
   for (const [stream, targets] of [
-    ["all-item-sources", globalTargets],
+    ["all-item-sources", nonMagicTargets],
+    ["magic-item-sources", magicTargets],
     ["shop-consumables", shopOnlyTargets],
   ]) {
     if (targets.length === 0) continue;
