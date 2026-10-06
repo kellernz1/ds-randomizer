@@ -1,6 +1,6 @@
 {
   "name": "dsr-randomizer",
-  "version": "0.5.67",
+  "version": "0.5.70",
   "private": true,
   "description": "Configurable, deterministic randomizer for Dark Souls Remastered",
   "author": "kellernz1",
@@ -14,7 +14,7 @@
     "desktop": "electron .",
     "generate": "node src/cli.js generate",
     "build:data-tool": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/dotnet-local.ps1 build tools/DsrDataTool/DsrDataTool.csproj --configuration Release --configfile NuGet.Config",
-    "dist:win": "npm run build:data-tool && electron-builder --win portable",
+    "dist:win": "npm run build:data-tool && electron-builder --win zip",
     "test": "node --test",
     "test:seeds": "node src/cli.js test-seeds --count 1000"
   },
@@ -45,8 +45,9 @@
       "THIRD_PARTY_NOTICES.md"
     ],
     "win": {
-      "target": "portable",
-      "artifactName": "DSR-Randomizer.exe"
+      "target": "zip",
+      "artifactName": "DSR-Randomizer.zip",
+      "signAndEditExecutable": false
     }
   }
 }

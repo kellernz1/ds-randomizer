@@ -2117,7 +2117,12 @@ static bool IsModelSpecificEnemyInstruction(EMEVD.Instruction instruction)
 static bool IsPortableBossSpecificInstruction(EMEVD.Instruction instruction)
 {
     return IsModelSpecificEnemyInstruction(instruction) ||
-        (instruction.Bank == 2004 && instruction.ID is 22 or 27 or 28 or 29 or 30 or 31 or 32 or 35 or 36 or 40 or 42);
+        // SetCharacterImmortality (2004[12]) can leave a replacement boss at
+        // 1 HP when the destination encounter uses a special invulnerability
+        // mechanic, as Seath does with the Primordial Crystal.
+        (instruction.Bank == 2004 &&
+         instruction.ID is 12 or 22 or 27 or 28 or 29 or 30 or 31 or 32 or
+             35 or 36 or 40 or 42);
 }
 
 static bool IsStaticEnemyLifecycleInstruction(EMEVD.Instruction instruction)

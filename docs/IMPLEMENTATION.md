@@ -76,6 +76,10 @@ files; source hashes prevent applying it to a different installation state.
 - Hydras use linked hydra-only body/head groups. Moonlight Butterfly,
   Ceaseless Discharge, Gwyndolin, Bed of Chaos, Four Kings, Super Ornstein, and
   Super Smough are distinct portable boss sources and destinations
+- Moonlight Butterfly remains eligible for Sif and Nito arenas. Its spawn is
+  raised 1.5 units for the landing animation to settle onto those uneven floors
+- Portable boss replacements have destination-specific immortality instructions
+  removed, so Seath's crystal mechanic cannot leave a replacement at 1 HP
 - All 45 Humanity enemy slots participate in the regular permutation
 - Sanctuary Guardian tails, both Gargoyle tail types, and all Centipede Demon
   removable parts follow their linked boss assignment

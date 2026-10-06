@@ -279,6 +279,23 @@ function bossGrounding(slot, catalog) {
   };
 }
 
+function portableBossGrounding(slot, catalog, replacementModel) {
+  const grounding = bossGrounding(slot, catalog);
+  if (
+    replacementModel === "c3230" &&
+    [
+      "m12_00_00_00:c5210_0000",
+      "m12_00_00_01:c5210_0000",
+      "m13_01_00_00:c5220_0000",
+    ].includes(slot.id)
+  ) {
+    // Give the Butterfly's forced landing room to settle onto the uneven Sif
+    // and Nito arena floors instead of starting with its capsule below them.
+    grounding.groundY += 1.5;
+  }
+  return grounding;
+}
+
 function enemyPlacement(config, target, source, scaledNpcParamId, extra = {}) {
   const effectiveTargetThinkParamId =
     extra.targetThinkParamId ?? source.thinkParamId;
@@ -1365,7 +1382,7 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
             groundRotationY: bedOfChaosSafeSpawn.rotationY,
             preserveBedOfChaosFloor: true,
           }
-        : bossGrounding(slot, catalog)),
+        : portableBossGrounding(slot, catalog, replacement.modelName)),
     });
   });
   return placements.concat(dragonPlan.bosses);
