@@ -1,0 +1,41 @@
+DSR RANDOMIZER 0.5.70 — SOURCE EDITION
+======================================
+
+This archive contains the randomizer source code and no executable files.
+To run it, install Node.js 20 or newer and the .NET 8 SDK first.
+
+BUILD AND RUN
+-------------
+
+1. Extract this archive into a folder outside the game directory.
+2. Open PowerShell in that folder.
+3. Restore and compile the data tool:
+
+   dotnet restore tools/DsrDataTool/DsrDataTool.csproj --configfile NuGet.Config
+   dotnet build tools/DsrDataTool/DsrDataTool.csproj --configuration Release --no-restore
+
+4. Start the browser interface:
+
+   node src/cli.js ui
+
+Keep the PowerShell window open while using the randomizer. The interface will
+open in your default browser. Import game data from a clean DARK SOULS:
+REMASTERED installation through the interface.
+
+No npm install is required. The browser UI uses Node.js built-in modules. The
+.NET SDK restores the SoulsFormats package from NuGet during the first build.
+
+SAFETY
+------
+
+- Play offline whenever modified game data is active.
+- Back up your save files before playing.
+- Use Restore Vanilla before changing seeds or importing game data again.
+- No game files or extracted game data are included in this archive.
+
+SOURCE AND LICENSE
+------------------
+
+https://github.com/kellernz1/ds-randomizer
+
+Licensed under GNU GPL v3. See LICENSE and THIRD_PARTY_NOTICES.md.

@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
@@ -33,6 +34,9 @@ const dataToolPath = path.join(
   "DsrDataTool.dll",
 );
 const localDotnetPath = path.join(root, ".tools", "dotnet", "dotnet.exe");
+const dotnetExecutable = existsSync(localDotnetPath)
+  ? localDotnetPath
+  : "dotnet";
 const execFileAsync = promisify(execFile);
 const contentTypes = {
   ".html": "text/html; charset=utf-8",
@@ -115,8 +119,13 @@ async function packageState(packageDirectory) {
 }
 
 export async function runDataTool(argumentsList) {
+  if (!existsSync(dataToolPath)) {
+    throw new Error(
+      "The data tool is not compiled. Run dotnet build tools/DsrDataTool/DsrDataTool.csproj --configuration Release.",
+    );
+  }
   try {
-    return await execFileAsync(localDotnetPath, [dataToolPath, ...argumentsList], {
+    return await execFileAsync(dotnetExecutable, [dataToolPath, ...argumentsList], {
       cwd: root,
       env: {
         ...process.env,
@@ -131,7 +140,7 @@ export async function runDataTool(argumentsList) {
   } catch (error) {
     if (error.code === "ENOENT") {
       throw new Error(
-        "The data tool is not compiled. See docs/IMPLEMENTATION.md.",
+        "The .NET 8 runtime was not found. Install the .NET 8 SDK and make sure dotnet is available in PATH.",
       );
     }
     throw new Error(error.stderr?.trim() || error.message);

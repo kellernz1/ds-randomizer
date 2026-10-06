@@ -14,6 +14,7 @@
     "desktop": "electron .",
     "generate": "node src/cli.js generate",
     "build:data-tool": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/dotnet-local.ps1 build tools/DsrDataTool/DsrDataTool.csproj --configuration Release --configfile NuGet.Config",
+    "dist:nexus-source": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-nexus-source.ps1",
     "dist:win": "npm run build:data-tool && electron-builder --win zip",
     "test": "node --test",
     "test:seeds": "node src/cli.js test-seeds --count 1000"

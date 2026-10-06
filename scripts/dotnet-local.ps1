@@ -5,7 +5,11 @@ $dotnet = Join-Path $projectRoot ".tools\dotnet\dotnet.exe"
 $toolRoot = Join-Path $projectRoot ".tools"
 
 if (-not (Test-Path -LiteralPath $dotnet)) {
-    throw "Local SDK not found. Run scripts\install-dotnet.ps1."
+    $systemDotnet = Get-Command "dotnet" -ErrorAction SilentlyContinue
+    if (-not $systemDotnet) {
+        throw "No .NET SDK found. Install the .NET 8 SDK or run scripts\install-dotnet.ps1."
+    }
+    $dotnet = $systemDotnet.Source
 }
 
 $env:DOTNET_CLI_HOME = Join-Path $toolRoot "cli-home"

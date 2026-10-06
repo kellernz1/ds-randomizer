@@ -8,6 +8,8 @@ activate it directly from the desktop launcher.
 
 Download the latest release from
 [Nexus Mods](https://www.nexusmods.com/darksoulsremastered/mods/1430).
+The Nexus page also offers a source-only ZIP for users who prefer not to
+download an executable. That edition requires Node.js 20+ and the .NET 8 SDK.
 
 ## Features
 
@@ -56,7 +58,22 @@ npm test
 npm run dist:win
 ```
 
-The portable executable is generated at `release/DSR-Randomizer.exe`.
+The Windows ZIP with the desktop app is generated in `release`.
+
+### Running the source-only edition
+
+The source-only Nexus ZIP contains no executable files. After installing
+Node.js 20+ and the .NET 8 SDK, extract it and run these commands in PowerShell:
+
+```powershell
+dotnet restore tools/DsrDataTool/DsrDataTool.csproj --configfile NuGet.Config
+dotnet build tools/DsrDataTool/DsrDataTool.csproj --configuration Release --no-restore
+node src/cli.js ui
+```
+
+Keep the PowerShell window open while using the randomizer in your browser. No
+`npm install` is required for the browser UI. Generate that source archive with
+`npm run dist:nexus-source`.
 
 ## Legal
 
