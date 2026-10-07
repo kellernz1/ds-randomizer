@@ -11,6 +11,10 @@ import {
 } from "../data/prototype-data.js";
 
 const byId = (values) => new Map(values.map((value) => [value.id, value]));
+const enemyStream = (config, name) =>
+  createStream(config.enemySeed || config.seed, name, config.version);
+const isEnemyBanned = (config, modelName) =>
+  config.bannedEnemyModels.includes(String(modelName).toLowerCase());
 const dragonBodyModels = new Set([
   "c2300", // Titanite Demon
   "c2730", // Crossbreed Priscilla
@@ -138,6 +142,9 @@ const parishBonfirePassiveSlots = new Set([
   // Replacements must not acquire the player through the floor or stairwell.
   "m10_01_00_00:c2300_0000",
 ]);
+const eventBoundEnemyModels = new Set([
+  "c3460", // Armored Tusk: native encounter has model-specific EMEVD references.
+]);
 const deferredBossActivationRegions = new Map([
   // The regions used by the vanilla battle events are beyond the fog gate and
   // below the collapsing Asylum floor respectively. Waiting on the event ID
@@ -254,7 +261,7 @@ function pickCompatibleEnemy(rng, slot, pool) {
 
 function randomizePrototypeEnemies(config) {
   if (!config.randomizeEnemies) return [];
-  const rng = createStream(config.seed, "enemies", config.version);
+  const rng = enemyStream(config, "enemies");
   const enemyIndex = byId(enemies);
   return enemySlots.map((slot) => {
     const replacement = pickCompatibleEnemy(rng, slot, enemies);
@@ -427,11 +434,13 @@ function buildDragonPlan(config, catalog) {
   ].filter((entry) => entry.bodies.length > 0);
 
   const enabled = units.filter((entry) => {
+    if (entry.bodies.concat(entry.parts).some((part) =>
+      isEnemyBanned(config, part.modelName))) return false;
     const boss = entry.bodies.some((body) => bossSlotIds.has(body.id));
     return boss ? config.randomizeBosses : config.randomizeEnemies;
   });
   const assignments = new Map();
-  const rng = createStream(config.seed, "dragons", config.version);
+  const rng = enemyStream(config, "dragons");
   const isBossUnit = (entry) =>
     entry.bodies.some((body) => bossSlotIds.has(body.id));
   const poolKeys = new Set(enabled.map(
@@ -1039,7 +1048,7 @@ function buildMassOfSoulsPlan(config, catalog) {
 
 function randomizeExtractedEnemies(config, catalog, dragonPlan, bossPlan) {
   if (!config.randomizeEnemies) return dragonPlan.enemies;
-  const rng = createStream(config.seed, "enemies", config.version);
+  const rng = enemyStream(config, "enemies");
   const massOfSoulsPlan = buildMassOfSoulsPlan(config, catalog);
   const bossSlotIds = new Set(effectiveBossSlots(catalog).map((slot) => slot.id));
   const bossFamilyModels = new Set(
@@ -1057,6 +1066,7 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan, bossPlan) {
       slot.teamType === 0 &&
       slot.modelName !== "c0000" &&
       slot.modelName.startsWith("c") &&
+      !(slot.eventModelLocked && eventBoundEnemyModels.has(slot.modelName)) &&
       slot.npcParamId > 0 &&
       slot.thinkParamId > 0 &&
       slot.baseHp > 0 &&
@@ -1064,7 +1074,8 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan, bossPlan) {
         nonBossEncounterSlots.has(slot.id)) &&
       !dragonBodyModels.has(slot.modelName) &&
       !linkedPartModels.has(slot.modelName) &&
-      !internalHelperModels.has(slot.modelName),
+      !internalHelperModels.has(slot.modelName) &&
+      !isEnemyBanned(config, slot.modelName),
   );
 
   const regularSlotIds = new Set(slots.map((slot) => slot.id));
@@ -1271,7 +1282,7 @@ function shuffledPortableBosses(rng, archetypeKeys, archetypes) {
 
 function randomizeExtractedBosses(config, catalog, dragonPlan) {
   if (!config.randomizeBosses || !catalog?.bossSlots?.length) return [];
-  const rng = createStream(config.seed, "bosses", config.version);
+  const rng = enemyStream(config, "bosses");
   const areaNames = new Map(
     (catalog.maps || []).map((map) => [map.id, map.name]),
   );
@@ -1282,7 +1293,8 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
       !dragonPlan.reservedSlotIds.has(slot.id) &&
       slot.id !== "m14_01_00_00:c5230_0000" &&
       slot.npcParamId >= 0 &&
-      slot.thinkParamId >= 0,
+      slot.thinkParamId >= 0 &&
+      !isEnemyBanned(config, slot.modelName),
   );
   const archetypeKeys = [
     ...new Set(sources.map((slot) => bossArchetypeKey(slot))),
@@ -1524,21 +1536,52 @@ function shopPurchaseLimit(entry) {
 }
 
 function randomizeExtractedItemLots(config, catalog) {
-  const worldLots = randomizableWorldItemLots(config, catalog);
+  const lordRewardsEnabled = config.randomizeLordvessel || config.randomizeLordSouls;
+  const worldLots = randomizableWorldItemLots({
+    ...config,
+    randomizeProtectedItems: config.randomizeProtectedItems || lordRewardsEnabled,
+  }, catalog);
+  if (config.randomizeLordvessel &&
+      !(catalog?.gifts || []).some((gift) => gift.rowId === 1090)) {
+    throw new Error("The catalog is missing the Lordvessel reward. Import game data again.");
+  }
+  const lordSoulLots = catalog?.lordSoulLots || [];
+  if (config.randomizeLordSouls && lordSoulLots.length !== 4) {
+    throw new Error(
+      `Expected four Lord Soul boss rewards in the catalog, found ${lordSoulLots.length}. Import game data again.`,
+    );
+  }
   const protectedGiftRows = new Set([1090, 1100]);
-  const giftLots = config.randomizeGifts
-    ? (catalog?.gifts || []).filter(
-        (gift) =>
-          !config.progressionLogic || !protectedGiftRows.has(gift.rowId),
-      )
+  const giftLots = (catalog?.gifts || []).filter((gift) => {
+    if (gift.rowId === 1090) return config.randomizeLordvessel;
+    return config.randomizeGifts &&
+      (!config.progressionLogic || !protectedGiftRows.has(gift.rowId));
+  }).map((gift) => ({
+    ...gift,
+    protectedProgression: gift.rowId === 1090,
+  }));
+  const bossRewardLots = lordRewardsEnabled
+    ? catalog?.bossRewardLots || []
     : [];
-  const enemyLots = config.randomizeEnemyDrops
-    ? catalog?.enemyDropLots || []
-    : [];
+  const bossRewardIds = new Set(bossRewardLots.map((lot) => lot.rowId));
+  const enemyLots = [
+    ...(config.randomizeEnemyDrops
+      ? (catalog?.enemyDropLots || []).filter((lot) => !bossRewardIds.has(lot.rowId))
+      : []),
+    ...bossRewardLots.map((lot) => ({
+      ...lot,
+      protectedProgression: true,
+      bossReward: true,
+      entries: (lot.entries || []).filter((entry) =>
+        config.randomizeLordSouls ||
+        !entry.name.toLowerCase().includes("lord soul")),
+    })),
+  ];
   const shopRows = config.randomizeShops
     ? (catalog?.shopEntries || []).filter(
         (entry) =>
           !(entry.equipType === 4 && entry.equipId === 5200) &&
+          (entry.equipType !== 4 || Number(entry.magicGoodsId) > 0) &&
           (!config.progressionLogic ||
             entry.equipType !== 3 ||
             entry.eventFlag < 0 ||
@@ -1563,6 +1606,9 @@ function randomizeExtractedItemLots(config, catalog) {
       pool: lot.pool,
       kind: "lot",
       progression: Boolean(lot.protectedProgression),
+      bossReward: Boolean(lot.bossReward),
+      magicId: Number(entry.magicId) > 0 ? entry.magicId : -1,
+      goodsId: entry.itemId,
       name: entry.name || lot.name,
     })).filter((entry) => !isUnsupportedCutItem(entry)),
   );
@@ -1581,6 +1627,8 @@ function randomizeExtractedItemLots(config, catalog) {
             ? 0x20000000
             : 0x40000000,
     equipType: entry.equipType,
+    magicId: entry.equipType === 4 ? entry.equipId : -1,
+    goodsId: entry.equipType === 4 ? entry.magicGoodsId : entry.equipId,
     quantity: 1,
     name: entry.name,
     eventFlag: entry.eventFlag,
@@ -1610,13 +1658,19 @@ function randomizeExtractedItemLots(config, catalog) {
             map: "ItemLotParam",
             itemLot: entry.rowId,
           }
-        : entry.pool === "shop"
+      : entry.pool === "shop"
+        ? {
+            area: `Shop inventory: ${entry.name}`,
+            map: "ShopLineupParam",
+            itemLot: entry.rowId,
+          }
+        : entry.bossReward
           ? {
-              area: `Shop inventory: ${entry.name}`,
-              map: "ShopLineupParam",
+              area: `Boss reward: ${entry.name}`,
+              map: "ItemLotParam",
               itemLot: entry.rowId,
             }
-          : {
+        : {
               area: `Enemy drop: ${entry.name}`,
               map: "ItemLotParam",
               itemLot: entry.rowId,
@@ -1631,7 +1685,12 @@ function randomizeExtractedItemLots(config, catalog) {
       sourceSlot: source.slot,
       targetKind: target.kind,
       targetSlot: target.slot,
-      itemId: source.itemId,
+      itemId:
+        target.kind === "shop" && source.equipType === 4
+          ? source.magicId
+          : target.kind !== "shop" && source.equipType === 4
+            ? source.goodsId
+            : source.itemId,
       itemCategory: source.category,
       equipType: source.equipType,
       itemQuantity: singleQuantity
@@ -1670,14 +1729,24 @@ function randomizeExtractedItemLots(config, catalog) {
   // become weapons, goods, or other non-magic shop entries.
   const nonMagicTargets = globalTargets.filter((entry) => entry.equipType !== 4);
   const magicTargets = globalTargets.filter((entry) => entry.equipType === 4);
+  const isolateProgressionPool = config.separateProgressionItems || lordRewardsEnabled;
+  const progressionTargets = isolateProgressionPool
+    ? globalTargets.filter((entry) => entry.progression)
+    : [];
+  const generalTargets = isolateProgressionPool
+    ? globalTargets.filter((entry) => !entry.progression)
+    : globalTargets;
+  const generalNonMagicTargets = generalTargets.filter((entry) => entry.equipType !== 4);
+  const generalMagicTargets = generalTargets.filter((entry) => entry.equipType === 4);
   for (const [stream, targets] of [
-    ["all-item-sources", nonMagicTargets],
-    ["magic-item-sources", magicTargets],
+    ["all-item-sources", isolateProgressionPool ? generalNonMagicTargets : nonMagicTargets],
+    ["magic-item-sources", isolateProgressionPool ? generalMagicTargets : magicTargets],
+    ["progression-item-sources", progressionTargets],
     ["shop-consumables", shopOnlyTargets],
   ]) {
     if (targets.length === 0) continue;
     const rng = createStream(config.seed, stream, config.version);
-    let sources = stream === "all-item-sources"
+    let sources = stream === "all-item-sources" || stream === "progression-item-sources"
       ? shuffledWithoutDlcRestrictedItems(rng, targets)
       : shuffledWithoutFixedPoints(rng, targets);
     if (stream === "all-item-sources") {
@@ -2112,7 +2181,7 @@ function randomizeStartingClasses(config, catalog) {
 
 function randomizeBosses(config) {
   if (!config.randomizeBosses) return [];
-  const rng = createStream(config.seed, "bosses", config.version);
+  const rng = enemyStream(config, "bosses");
   const bossIndex = byId(bosses);
   return bossSlots.map((slot) => {
     const candidates = bosses.filter(
@@ -2234,7 +2303,7 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
   if (errors.length > 0) {
     throw new Error(errors.join("\n"));
   }
-  if (gameCatalog && gameCatalog.schemaVersion !== 17) {
+  if (gameCatalog && gameCatalog.schemaVersion !== 19) {
     throw new Error(
       `Catalog schema ${gameCatalog.schemaVersion} is obsolete. ` +
         "Verify the clean game and import its data again.",
@@ -2244,6 +2313,9 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
   const extractedData = Boolean(
     gameCatalog?.enemySlots?.length && gameCatalog?.enemyArchetypes?.length,
   );
+  const lordRewardsEnabled = config.randomizeLordvessel || config.randomizeLordSouls;
+  const isolateProgressionPool =
+    config.separateProgressionItems || lordRewardsEnabled;
   const dragonPlan = extractedData
     ? buildDragonPlan(config, gameCatalog)
     : null;
@@ -2288,15 +2360,25 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
     },
     validation: {
       valid: true,
-      finalBossReachable: !config.randomizeProtectedItems,
+      finalBossReachable: !(
+        config.randomizeProtectedItems ||
+        config.randomizeLordvessel ||
+        config.randomizeLordSouls
+      ),
       notes: extractedData
         ? [
             "All hostile regular-enemy slots use a count-preserving global permutation within a 30-character-model total map budget; friendly NPCs and invisible technical helpers stay vanilla.",
-            "Area scaling inherits destination combat stats and replaces hidden level multipliers from the selected enemy.",
-            "Bosses use an unrestricted permutation and are grounded at their destination encounter; dragons only exchange complete linked dragon groups.",
-            config.randomizeProtectedItems
+            config.enemyScaling === "progressive"
+              ? "Progressive scaling adds +10% max HP and outgoing damage per Bell, Lordvessel, and Lord Soul obtained."
+              : config.enemyScaling === "area"
+                ? "Area scaling inherits destination combat stats and replaces hidden level multipliers from the selected enemy."
+                : "Vanilla scaling keeps each enemy's original combat stats.",
+            "Bosses use a safe permutation and are grounded at their destination encounter; dragons only exchange complete linked dragon groups.",
+            config.randomizeProtectedItems && !isolateProgressionPool
               ? "Protected world items joined the full item pool; the two Asylum escape keys stayed vanilla."
-              : "World items were randomized while protected progression lots stayed vanilla.",
+              : config.randomizeProtectedItems || lordRewardsEnabled
+                ? "Protected progression items and selected boss rewards were shuffled only among progression locations; the two Asylum escape keys stayed vanilla."
+                : "World items were randomized while protected progression lots stayed vanilla.",
             config.randomizeStartingClass
               ? "Starting-class base stats were redistributed."
               : "Starting-class base stats were preserved.",
@@ -2305,7 +2387,15 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
               : "Starting loadouts were preserved.",
             config.randomizeGifts
               ? "Items granted by NPCs joined the enabled global item pool."
-              : "NPC gifts were preserved.",
+              : config.randomizeLordvessel
+                ? "NPC gifts were preserved apart from the separately randomized Lordvessel."
+                : "NPC gifts were preserved.",
+            config.randomizeLordvessel
+              ? "The Lordvessel was shuffled within progression and boss reward locations."
+              : "The Lordvessel stayed at its original location.",
+            config.randomizeLordSouls
+              ? "Lord Soul rewards were shuffled within progression and boss reward locations."
+              : "Lord Soul rewards stayed at their original locations.",
             config.randomizeEnemyDrops
               ? "Enemy drops joined the enabled global item pool."
               : "Enemy drops were preserved.",

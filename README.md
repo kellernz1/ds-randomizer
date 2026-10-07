@@ -13,10 +13,13 @@ download an executable. That edition requires Node.js 20+ and the .NET 8 SDK.
 
 ## Features
 
-- Randomized regular enemies and bosses, with optional area or progressive scaling
+- Randomized regular enemies and bosses, with optional area scaling or +10%
+  progressive HP and damage per Bell, Lordvessel, and Lord Soul milestone
 - Randomized world items, enemy and NPC drops, gifts, and shops
 - Randomized starting-class stats, weapons, and armor
 - Optional progression protection and 100% enemy drop rate
+- Independent enemy seed and enemy-model exclusion list
+- Optional Lordvessel and Lord Soul shuffling limited to progression and boss rewards
 - Reproducible seeds that can be exported and shared
 - Spoiler log and `cheat-locations.txt` reports
 - Safe package activation and vanilla restoration

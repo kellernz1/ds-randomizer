@@ -2,6 +2,39 @@ const form = document.querySelector("#config-form");
 const message = document.querySelector("#message");
 let latestGeneratedSeed = "";
 let latestPackageDirectory = "";
+let availableEnemyModels = [];
+
+function syncEnemyBanSelection(selectedModels = []) {
+  const selected = new Set(selectedModels);
+  for (const input of document.querySelectorAll("#enemy-ban-list input")) {
+    input.checked = selected.has(input.value);
+  }
+  const count = document.querySelectorAll("#enemy-ban-list input:checked").length;
+  const summary = document.querySelector("#enemy-ban-options summary");
+  if (summary) summary.textContent = `Exclude specific enemy models (${count})`;
+}
+
+function renderEnemyBanOptions(options, selectedModels = []) {
+  availableEnemyModels = options || [];
+  const wrapper = document.querySelector("#enemy-ban-options");
+  const list = document.querySelector("#enemy-ban-list");
+  list.replaceChildren();
+  wrapper.hidden = availableEnemyModels.length === 0;
+  for (const option of availableEnemyModels) {
+    const label = document.createElement("label");
+    label.className = "enemy-ban-option";
+    label.dataset.filter = `${option.name} ${option.modelName}`.toLowerCase();
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.value = option.modelName;
+    const text = document.createElement("span");
+    text.textContent = `${option.name} (${option.modelName})`;
+    label.append(input, text);
+    list.append(label);
+    input.addEventListener("change", () => syncEnemyBanSelection());
+  }
+  syncEnemyBanSelection(selectedModels);
+}
 
 function setForm(config) {
   for (const [key, value] of Object.entries(config)) {
@@ -10,6 +43,7 @@ function setForm(config) {
     if (field.type === "checkbox") field.checked = Boolean(value);
     else field.value = value;
   }
+  syncEnemyBanSelection(config.bannedEnemyModels || []);
 }
 
 function readForm() {
@@ -18,6 +52,8 @@ function readForm() {
     if (!field.name) continue;
     result[field.name] = field.type === "checkbox" ? field.checked : field.value;
   }
+  result.bannedEnemyModels = [...document.querySelectorAll("#enemy-ban-list input:checked")]
+    .map((input) => input.value);
   return result;
 }
 
@@ -64,6 +100,10 @@ async function request(url, options) {
 const state = await request("/api/state");
 latestGeneratedSeed = state.generatedSeed;
 setForm(state.config);
+renderEnemyBanOptions(
+  state.catalog.bannableEnemies || [],
+  state.config.bannedEnemyModels || [],
+);
 if (state.package) {
   latestPackageDirectory = state.package.directory;
   document.querySelector("#install-package").disabled =
@@ -74,6 +114,9 @@ if (state.catalog.available) {
   document.querySelector("#detection").textContent =
     `Catalog: ${state.catalog.maps} maps and ` +
     `${state.catalog.enemySlots} character slots.`;
+} else if (state.catalog.needsImport) {
+  document.querySelector("#detection").textContent =
+    `Catalog schema ${state.catalog.schemaVersion} is outdated. Import game data again.`;
 }
 
 document.querySelector("#new-seed").addEventListener("click", async () => {
@@ -91,6 +134,30 @@ document.querySelector("#new-seed").addEventListener("click", async () => {
     message.textContent = error.message;
   } finally {
     button.disabled = false;
+  }
+});
+
+document.querySelector("#new-enemy-seed").addEventListener("click", async () => {
+  const button = document.querySelector("#new-enemy-seed");
+  button.disabled = true;
+  try {
+    const result = await request("/api/seed/new", {
+      method: "POST",
+      cache: "no-store",
+    });
+    form.elements.enemySeed.value = result.seed;
+    message.textContent = `New enemy seed: ${result.seed}`;
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+document.querySelector("#enemy-ban-filter").addEventListener("input", (event) => {
+  const query = event.currentTarget.value.trim().toLowerCase();
+  for (const option of document.querySelectorAll(".enemy-ban-option")) {
+    option.hidden = !option.dataset.filter.includes(query);
   }
 });
 

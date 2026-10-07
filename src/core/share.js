@@ -10,6 +10,11 @@ export const SHARED_SEED_FORMAT = "dsr-randomizer-seed";
 export const SHARED_SEED_SCHEMA = 1;
 
 const sharedKeys = Object.freeze([
+  "enemySeed",
+  "bannedEnemyModels",
+  "separateProgressionItems",
+  "randomizeLordvessel",
+  "randomizeLordSouls",
   "randomizeEnemies",
   "randomizeBosses",
   "randomizeItems",

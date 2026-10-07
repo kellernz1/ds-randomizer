@@ -18,3 +18,5 @@ config.json
 tools/**/bin/
 tools/**/obj/
 data/dsr-catalog.json
+Nexus/DSR-Randomizer-0.5.70.zip
+PROJECT_CONTEXT.md

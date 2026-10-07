@@ -1,4 +1,4 @@
-DSR RANDOMIZER 0.5.70 — SOURCE EDITION
+DSR RANDOMIZER 0.5.76 — SOURCE EDITION
 ======================================
 
 This archive contains the randomizer source code and no executable files.

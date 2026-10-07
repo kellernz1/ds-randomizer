@@ -34,6 +34,17 @@ files; source hashes prevent applying it to a different installation state.
 - Invisible helper-only character resources are excluded from cross-map pools
 - World items, gifts, enemy drops, and shops preserve their source multisets
   through deterministic permutations
+- Enemy, boss, and dragon placement accepts a separate enemy seed, allowing
+  enemy-only rerolls while leaving item results unchanged
+- Configurable enemy model exclusions leave banned models in their original
+  slots and keep linked dragon units intact
+- An optional progression-only item pool keeps protected progression items
+  among protected progression locations
+- Independent Lordvessel and Lord Soul toggles shuffle those rewards among
+  protected progression and boss reward locations, never into ordinary pools
+- Progressive scaling uses permanent map events and SpEffect rows to add
+  +10% max HP and outgoing damage per obtained milestone (two Bells, Lordvessel,
+  and each of four Lord Souls)
 - Per-seed `cheat-locations.txt` showing every randomized world item's original
   and randomized area and Item Lot ID, plus the boss assigned to every
   randomized encounter
@@ -89,13 +100,8 @@ files; source hashes prevent applying it to a different installation state.
   are removed, and all floor objects are restored and made invulnerable
 - First Asylum boss rooftop animation is replaced by a floor spawn
 - Adapted Asylum intro explicitly enables replacement AI after arena entry
-- The first three regular Asylum slots receive cloned replacement
-  `NpcThinkParam` and `NpcParam` rows plus restarting EMEVD guards. Their
-  neutral allegiance now exists in the PARAM before the first map frame,
-  preventing the AI from acquiring the player before the constructor runs
-  while keeping the character vulnerable to ordinary attacks.
-  They switch to enemy allegiance on damage, replan immediately, and stay
-  hostile until death before the guard prepares the next respawn.
+- The first three regular Asylum slots remain randomized with their
+  tutorial-specific passive-until-attacked behavior.
 - Male Ghost, Female Ghost, and Pisaca replacements use their canonical active
   combat brains instead of area-dependent ambush/defensive AI variants.
 - Male and Female Ghost replacements receive per-placement `NpcParam` clones
@@ -105,9 +111,11 @@ files; source hashes prevent applying it to a different installation state.
   its movement and battle goals come from the randomized enemy, while battle,
   sight, and hearing distances come from the destination slot.
 - The first three Asylum slots and the fifteen passive Hollows at New Londo's
-  elevator entrance use race-free neutral PARAM rows and hostility events. AI is
-  stopped and its target cleared during initialization, then restored to
+  elevator entrance use race-free neutral PARAM rows and hostility events. AI
+  is stopped and its target cleared during initialization, then restored to
   hostile only after the player attacks.
+- Armored Tusk (`c3460`) is kept in its native encounter because that slot has
+  model-specific EMEVD references that are not relocated with the model.
 - Second-visit Asylum enemies retain event 11810350's disabled/enabled
   lifecycle. The Stray Demon slot remains disabled until the player reaches the
   lower arena region after the floor breaks. Before activation it is staged
@@ -208,12 +216,13 @@ it cannot appear as the in-game `?MagicName?` placeholder.
 - Four Kings now contributes its main body to the boss permutation; its four
   event-created extra bodies are disabled so the encounter remains a single
   randomized boss lifecycle.
-- Protected-item randomization is intentionally unrestricted and can produce
-  progression softlocks; only the two Asylum escape keys are permanently fixed.
-- Area and progressive modes currently use the same slot-relative combat-stat
-  inheritance; a distinct progressive curve is planned.
-- The project currently activates through direct, hash-guarded file replacement;
-  mod-loader packaging is not implemented.
+- Protected-item randomization can still produce progression softlocks; the
+  optional separate progression pool limits protected items to protected
+  progression locations. Only the two Asylum escape keys are permanently fixed.
+- Progressive milestone effects are structurally validated during packaging,
+  but still need in-game checks against unusual enemy types and boss phases.
+- The project activates generated packages through direct, hash-guarded file
+  replacement. Mod-loader packaging is not implemented.
 
 Prototype data remains available for tests that run without the game. The real
 catalog is always generated locally and is intentionally ignored by Git.

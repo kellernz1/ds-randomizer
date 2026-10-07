@@ -153,17 +153,30 @@ async function api(request, response, pathname) {
     return json(response, 200, { seed: generateSeed() });
   }
   if (request.method === "GET" && pathname === "/api/state") {
-    const catalog = await loadGameCatalog(catalogPath);
+    const catalog = await loadGameCatalog(catalogPath, { allowStale: true });
     const config = await loadConfig();
     return json(response, 200, {
       config,
       generatedSeed: generateSeed(),
       catalog: catalog
-        ? {
-            available: true,
+          ? {
+            available: catalog.schemaVersion === 19,
+            schemaVersion: catalog.schemaVersion,
+            needsImport: catalog.schemaVersion !== 19,
             maps: catalog.maps.length,
             enemySlots: catalog.enemySlots.length,
             errors: catalog.errors.length,
+            bannableEnemies: [...new Set([
+              ...catalog.enemyArchetypes
+                .filter((entry) => entry.safeCandidateCount > 0)
+                .map((entry) => entry.modelName),
+              ...catalog.bossSlots.map((slot) => slot.modelName),
+            ])]
+              .sort()
+              .map((modelName) => ({
+                modelName,
+                name: catalog.bossNames?.[modelName] || modelName,
+              })),
           }
         : { available: false },
       package: await packageState(config.lastPackageDirectory),
@@ -204,8 +217,18 @@ async function api(request, response, pathname) {
     if (!detection.supported) {
       return json(response, 400, { error: detection.reason });
     }
-    const previousCatalog = await loadGameCatalog(catalogPath);
+    const previousCatalog = await loadGameCatalog(catalogPath, { allowStale: true });
     if (previousCatalog) {
+      if (
+        previousCatalog.schemaVersion !== 19 &&
+        (!Array.isArray(previousCatalog.sourceFiles) ||
+          previousCatalog.sourceFiles.length === 0)
+      ) {
+        return json(response, 400, {
+          error:
+            "The old catalog has no source hashes to verify. Restore the clean game files before importing data again.",
+        });
+      }
       const sourceState = await verifyCatalogSources(gameDirectory, previousCatalog);
       if (!sourceState.matches) {
         return json(response, 400, {
@@ -266,7 +289,10 @@ async function api(request, response, pathname) {
         "--output",
         outputDirectory,
       ]);
-      patch = { generated: true, message: patchResult.stdout.trim() };
+      patch = {
+        generated: true,
+        message: patchResult.stdout.trim(),
+      };
     }
     if (patch) config.lastPackageDirectory = outputDirectory;
     await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");

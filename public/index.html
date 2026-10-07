@@ -39,6 +39,14 @@
               <button type="button" class="secondary" id="new-seed">New</button>
             </div>
           </div>
+          <div class="field seed">
+            <label for="enemySeed">Enemy seed</label>
+            <div class="inline">
+              <input id="enemySeed" name="enemySeed" maxlength="64" placeholder="Blank uses the main seed" />
+              <button type="button" class="secondary" id="new-enemy-seed">Reroll</button>
+            </div>
+              <small>Change this to reroll enemies, bosses, and dragons while keeping item results.</small>
+          </div>
           <div class="field seed-sharing">
             <label>Share seed</label>
             <div class="inline">
@@ -59,15 +67,25 @@
               <select id="enemyScaling" name="enemyScaling">
                 <option value="vanilla">Original stats</option>
                 <option value="area">By area</option>
-                <option value="progressive">Progressive</option>
+                <option value="progressive">Progressive (+10% per milestone)</option>
               </select>
+              <small>Milestones: each Bell, Lordvessel, and each Lord Soul obtained.</small>
             </div>
+            <details id="enemy-ban-options" hidden>
+              <summary>Exclude specific enemy models</summary>
+              <p class="panel-note">Selected models stay in their vanilla slots and cannot be moved elsewhere. Linked dragon units are kept together.</p>
+              <input id="enemy-ban-filter" type="search" placeholder="Filter by name or model ID" />
+              <div id="enemy-ban-list" class="enemy-ban-list"></div>
+            </details>
           </section>
 
           <section class="panel">
             <h2>Items</h2>
             <label class="toggle"><input type="checkbox" name="randomizeItems" /><span></span><b>World items</b></label>
             <label class="toggle"><input type="checkbox" name="randomizeProtectedItems" /><span></span><b>Include protected world items</b></label>
+            <label class="toggle" title="Progression items shuffle only among progression item locations when protected items are enabled."><input type="checkbox" name="separateProgressionItems" /><span></span><b>Separate progression item pool</b></label>
+            <label class="toggle" title="Shuffles the Lordvessel only among progression locations."><input type="checkbox" name="randomizeLordvessel" /><span></span><b>Randomize Lordvessel location</b></label>
+            <label class="toggle" title="Shuffles the four Lord Soul rewards only among progression and boss-reward locations."><input type="checkbox" name="randomizeLordSouls" /><span></span><b>Randomize Lord Soul locations</b></label>
             <label class="toggle"><input type="checkbox" name="randomizeGifts" /><span></span><b>NPC gifts</b></label>
             <label class="toggle" title="World items, NPC gifts, enemy drops, and shops enabled here share one global pool."><input type="checkbox" name="randomizeEnemyDrops" /><span></span><b>Enemy drops</b></label>
             <label class="toggle" title="Every catalogued enemy that has an item drop will always drop at least one item. Multi-item lots keep their relative weights."><input type="checkbox" name="guaranteedEnemyDrops" /><span></span><b>100% enemy drop rate</b></label>
@@ -75,7 +93,7 @@
             <label class="toggle"><input type="checkbox" name="progressionLogic" /><span></span><b>Protect progression</b></label>
             <label class="toggle"><input type="checkbox" name="guaranteeEarlyWeapon" /><span></span><b>Guarantee an early weapon</b></label>
             <label class="toggle"><input type="checkbox" name="balancedEarlyLoot" /><span></span><b>Balanced early loot</b></label>
-            <p class="panel-note">All enabled item sources share one global pool: world items, NPC gifts, enemy drops, and shops. Dungeon Cell Key and Undead Asylum F2 East Key always stay vanilla.</p>
+            <p class="panel-note">By default, enabled item sources share one global pool: world items, NPC gifts, enemy drops, and shops. The separate progression pool and Lord Soul/Lordvessel options keep progression rewards among progression locations and boss rewards. Enabling either Lord option also enables progression locations as destinations. Dungeon Cell Key and Undead Asylum F2 East Key always stay vanilla.</p>
           </section>
 
           <section class="panel">

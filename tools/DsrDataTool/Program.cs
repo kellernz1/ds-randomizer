@@ -6,7 +6,9 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using SoulsFormats;
 
-const int SchemaVersion = 17;
+const int SchemaVersion = 19;
+const int ProgressiveEffectIdBase = 9_600_000;
+const int ProgressiveMilestoneCount = 7;
 Console.OutputEncoding = new UTF8Encoding(false);
 Console.InputEncoding = new UTF8Encoding(false);
 
@@ -329,6 +331,8 @@ static GameCatalog ScanGame(string gameDirectory)
     var startingItemLots = new List<StartingItemLotRecord>();
     var gifts = new List<ItemLotRecord>();
     var enemyDropLots = new List<ItemLotRecord>();
+    var lordSoulLots = new List<ItemLotRecord>();
+    var bossRewardLots = new List<ItemLotRecord>();
     var worldItemLots = new List<WorldItemLotRecord>();
     var shopEntries = new List<ShopEntryRecord>();
     var startingEquipmentPools = new StartingEquipmentPools(
@@ -359,9 +363,15 @@ static GameCatalog ScanGame(string gameDirectory)
                             slot.ModelName.StartsWith('c'))
                         .Select(slot => slot.NpcParamId)
                         .ToHashSet(),
+                    slots.Where(slot =>
+                            slot.NpcParamId >= 0 && IsBossModel(slot.ModelName))
+                        .Select(slot => slot.NpcParamId)
+                        .ToHashSet(),
                     eventAwardItemLotIds);
                 gifts = randomizerData.Gifts;
                 enemyDropLots = randomizerData.EnemyDropLots;
+                lordSoulLots = randomizerData.LordSoulLots;
+                bossRewardLots = randomizerData.BossRewardLots;
                 worldItemLots = randomizerData.WorldItemLots;
                 shopEntries = randomizerData.ShopEntries;
                 startingEquipmentPools = randomizerData.StartingEquipmentPools;
@@ -393,6 +403,8 @@ static GameCatalog ScanGame(string gameDirectory)
         startingItemLots,
         gifts,
         enemyDropLots,
+        lordSoulLots,
+        bossRewardLots,
         worldItemLots,
         shopEntries,
         startingEquipmentPools,
@@ -407,6 +419,7 @@ static RandomizerParamData ReadRandomizerParamData(
     string paramdefPath,
     ItemNameLookup itemNames,
     HashSet<int> safeNpcParamIds,
+    HashSet<int> bossNpcParamIds,
     HashSet<int> eventAwardItemLotIds)
 {
     var paramdefs = BND3.Read(paramdefPath).Files
@@ -422,6 +435,24 @@ static RandomizerParamData ReadRandomizerParamData(
     }
 
     var itemLotParam = ReadParam("ItemLotParam.param");
+    var goodsParam = ReadParam("EquipParamGoods.param");
+    var magicGoodsByMagicId = goodsParam.Rows
+        .Select(row => new
+        {
+            GoodsId = row.ID,
+            MagicId = GetCellInt(row, "magicId", -1),
+        })
+        .Where(entry => entry.MagicId > 0 && itemNames.Magic.ContainsKey(entry.MagicId))
+        .GroupBy(entry => entry.MagicId)
+        .ToDictionary(group => group.Key, group => group.Min(entry => entry.GoodsId));
+    var magicIdByGoodsId = goodsParam.Rows
+        .Select(row => new
+        {
+            GoodsId = row.ID,
+            MagicId = GetCellInt(row, "magicId", -1),
+        })
+        .Where(entry => entry.MagicId > 0 && itemNames.Magic.ContainsKey(entry.MagicId))
+        .ToDictionary(entry => entry.GoodsId, entry => entry.MagicId);
     string DescribeItemLot(PARAM.Row row)
     {
         var names = Enumerable.Range(1, 8)
@@ -433,7 +464,10 @@ static RandomizerParamData ReadRandomizerParamData(
                     return null;
                 var category = GetCellInt(row, $"lotItemCategory{suffix}");
                 var quantity = GetCellInt(row, $"lotItemNum{suffix}", 1);
-                var name = itemNames.GetName(category, itemId);
+                var name = category == 0x40000000 &&
+                    magicIdByGoodsId.TryGetValue(itemId, out var magicId)
+                    ? itemNames.Magic.GetValueOrDefault(magicId, itemNames.GetName(category, itemId))
+                    : itemNames.GetName(category, itemId);
                 return quantity > 1 ? $"{name} x{quantity}" : name;
             })
             .Where(name => !string.IsNullOrWhiteSpace(name))
@@ -449,12 +483,15 @@ static RandomizerParamData ReadRandomizerParamData(
                 var suffix = slot.ToString("00");
                 var itemId = GetCellInt(row, $"lotItemId{suffix}");
                 var category = GetCellInt(row, $"lotItemCategory{suffix}");
+                var magicId = category == 0x40000000
+                    ? magicIdByGoodsId.GetValueOrDefault(itemId, -1)
+                    : -1;
                 var equipType = category switch
                 {
                     0 => 0,
                     0x10000000 => 1,
                     0x20000000 => 2,
-                    0x40000000 when itemNames.Magic.ContainsKey(itemId) => 4,
+                    0x40000000 when magicId > 0 => 4,
                     0x40000000 => 3,
                     _ => -1,
                 };
@@ -464,7 +501,10 @@ static RandomizerParamData ReadRandomizerParamData(
                     category,
                     GetCellInt(row, $"lotItemNum{suffix}", 1),
                     equipType,
-                    itemNames.GetName(category, itemId));
+                    equipType == 4
+                        ? itemNames.Magic.GetValueOrDefault(magicId, itemNames.GetName(category, itemId))
+                        : itemNames.GetName(category, itemId),
+                    magicId);
             })
             .Where(entry => entry.ItemId > 0 && entry.EquipType >= 0)
             .ToList();
@@ -533,6 +573,39 @@ static RandomizerParamData ReadRandomizerParamData(
             ItemLotEntries(row)))
         .OrderBy(row => row.RowId)
         .ToList();
+    var lordSoulLots = itemLotParam.Rows
+        .Where(row => dropLotIds.Contains(row.ID))
+        .Where(row => !giftIds.Contains(row.ID))
+        .Where(row => ItemLotEntries(row).Any(entry =>
+            entry.Name.Contains("Lord Soul", StringComparison.OrdinalIgnoreCase)))
+        .Select(row => new ItemLotRecord(
+            row.ID,
+            DescribeItemLot(row),
+            ItemLotEntries(row)))
+        .OrderBy(row => row.RowId)
+        .ToList();
+    var bossDropLotIds = npcParam.Rows
+        .Where(row => bossNpcParamIds.Contains(row.ID))
+        .SelectMany(row => row.Cells
+            .Where(cell => cell.Def.InternalName.StartsWith(
+                "itemLotId_", StringComparison.OrdinalIgnoreCase))
+            .Select(cell => Convert.ToInt32(cell.Value)))
+        .Where(id => id > 0)
+        .ToHashSet();
+    var bossRewardLots = itemLotParam.Rows
+        .Where(row => bossDropLotIds.Contains(row.ID) ||
+            (dropLotIds.Contains(row.ID) && ItemLotEntries(row).Any(entry =>
+                entry.Name.Contains("Lord Soul", StringComparison.OrdinalIgnoreCase))))
+        .Where(row => !giftIds.Contains(row.ID))
+        .Where(row => row.Cells.Any(cell =>
+            cell.Def.InternalName.StartsWith("lotItemId", StringComparison.Ordinal) &&
+            Convert.ToInt32(cell.Value) > 0))
+        .Select(row => new ItemLotRecord(
+            row.ID,
+            DescribeItemLot(row),
+            ItemLotEntries(row)))
+        .OrderBy(row => row.RowId)
+        .ToList();
 
     var startingLotIds = StartingLotDefinitions().Values
         .SelectMany(roles => roles.Values)
@@ -585,7 +658,10 @@ static RandomizerParamData ReadRandomizerParamData(
                 itemNames.GetShopName(equipType, equipId),
                 equipId,
                 equipType,
-                GetCellInt(row, "eventFlag", -1));
+                GetCellInt(row, "eventFlag", -1),
+                equipType == 4
+                    ? magicGoodsByMagicId.GetValueOrDefault(equipId, -1)
+                    : -1);
         })
         .Where(row => row.EquipId >= 0 && row.EquipType is >= 0 and <= 4)
         // Escape Death is a cut miracle left in the shop PARAM. Its residual
@@ -653,6 +729,8 @@ static RandomizerParamData ReadRandomizerParamData(
     return new RandomizerParamData(
         gifts,
         enemyDropLots,
+        lordSoulLots,
+        bossRewardLots,
         worldItemLots,
         shopEntries,
         startingEquipmentPools);
@@ -956,6 +1034,14 @@ static PatchReport PatchEnemies(
         configRoot.TryGetProperty(
             "guaranteedEnemyDrops", out var guaranteedDropsElement) &&
         guaranteedDropsElement.ValueKind == JsonValueKind.True;
+    var progressiveScaling =
+        placementDocument.RootElement.TryGetProperty("config", out configRoot) &&
+        configRoot.TryGetProperty("enemyScaling", out var scalingElement) &&
+        scalingElement.GetString() == "progressive" &&
+        (!configRoot.TryGetProperty("randomizeEnemies", out var randomizeEnemiesElement) ||
+            randomizeEnemiesElement.ValueKind == JsonValueKind.True ||
+         !configRoot.TryGetProperty("randomizeBosses", out var randomizeBossesElement) ||
+            randomizeBossesElement.ValueKind == JsonValueKind.True);
     var placementsRoot = placementDocument.RootElement.GetProperty("placements");
     IEnumerable<PatchPlacement> ReadEnemyPlacements(string propertyName)
     {
@@ -1515,6 +1601,19 @@ static PatchReport PatchEnemies(
         outputDirectory,
         catalog,
         allEnemyPlacements);
+    if (progressiveScaling)
+    {
+        var progressiveEvents = PatchProgressiveScalingEvents(
+            gameDirectory,
+            outputDirectory,
+            catalog);
+        patchedEvents = patchedEvents
+            .Where(existing => !progressiveEvents.Any(progressive =>
+                progressive.Output.Equals(
+                    existing.Output, StringComparison.OrdinalIgnoreCase)))
+            .Concat(progressiveEvents)
+            .ToList();
+    }
 
     // Enemy effects are normally spread across map-local SFX bundles. An enemy
     // moved to another map can otherwise attack correctly while its projectile
@@ -1533,7 +1632,8 @@ static PatchReport PatchEnemies(
         worldItemPlacements.Count > 0 ||
         shopPlacements.Count > 0 ||
         itemAssignments.Count > 0 ||
-        guaranteedEnemyDrops
+        guaranteedEnemyDrops ||
+        progressiveScaling
         ? PatchGameParam(
             gameDirectory,
             outputDirectory,
@@ -1545,7 +1645,8 @@ static PatchReport PatchEnemies(
             worldItemPlacements,
             shopPlacements,
             itemAssignments,
-            guaranteedEnemyDrops)
+            guaranteedEnemyDrops,
+            progressiveScaling)
         : null;
 
     var report = new PatchReport(
@@ -2064,6 +2165,27 @@ static EMEVD.Instruction IfEventFlagEnabledInstruction(
     args[0] = unchecked((byte)(sbyte)conditionGroup);
     BitConverter.GetBytes(flagId).CopyTo(args, 4);
     return new EMEVD.Instruction(3, 0, args);
+}
+
+static EMEVD.Instruction IfConditionGroupInstruction(
+    int resultConditionGroup,
+    int desiredState,
+    int targetConditionGroup) =>
+    new(0, 0, new object[]
+    {
+        resultConditionGroup, desiredState, targetConditionGroup,
+    });
+
+static EMEVD.Instruction IfPlayerHasGoodsInstruction(
+    int conditionGroup,
+    int itemId)
+{
+    var args = new byte[12];
+    args[0] = unchecked((byte)(sbyte)conditionGroup);
+    args[1] = 3;
+    BitConverter.GetBytes(itemId).CopyTo(args, 4);
+    args[8] = 1;
+    return new EMEVD.Instruction(3, 4, args);
 }
 
 static EMEVD.Instruction ForceAnimationInstruction(
@@ -3791,6 +3913,179 @@ static List<PatchedFile> PatchBossNames(
     return results;
 }
 
+static List<PatchedFile> PatchProgressiveScalingEvents(
+    string gameDirectory,
+    string outputDirectory,
+    GameCatalog catalog)
+{
+    var soulGoodsIds = catalog.LordSoulLots
+        .SelectMany(lot => lot.Entries)
+        .Where(entry => entry.Category == 0x40000000 &&
+            entry.Name.Contains("Lord Soul", StringComparison.OrdinalIgnoreCase))
+        .Select(entry => entry.ItemId)
+        .Distinct()
+        .Order()
+        .ToArray();
+    if (soulGoodsIds.Length != 4)
+        throw new InvalidDataException(
+            $"Progressive scaling requires four Lord Soul goods; catalog found {soulGoodsIds.Length}.");
+    var enemySlots = catalog.EnemySlots
+        .Where(slot => slot.TeamType == 0 &&
+            slot.ModelName.StartsWith('c') &&
+            slot.NpcParamId > 0 &&
+            slot.EntityId > 0)
+        .Concat(catalog.BossSlots.Where(slot => slot.EntityId > 0))
+        .DistinctBy(slot => slot.Id)
+        .ToList();
+    var results = new List<PatchedFile>();
+    foreach (var mapGroup in enemySlots.GroupBy(slot => slot.MapId)
+                 .OrderBy(group => group.Key, StringComparer.Ordinal))
+    {
+        var relativeSource = $"event/{mapGroup.Key}.emevd.dcx";
+        var sourceRecord = catalog.SourceFiles.SingleOrDefault(source =>
+            source.Path.Equals(relativeSource, StringComparison.OrdinalIgnoreCase));
+        if (sourceRecord is null)
+            throw new InvalidDataException(
+                $"The extracted catalog has no event file for {mapGroup.Key}.");
+        var sourcePath = Path.Combine(
+            gameDirectory, relativeSource.Replace('/', Path.DirectorySeparatorChar));
+        AssertHash(sourcePath, sourceRecord.Sha256,
+            $"Source event file changed: {mapGroup.Key}");
+        var outputRelative = $"mod/{relativeSource}";
+        var outputPath = Path.Combine(
+            outputDirectory, outputRelative.Replace('/', Path.DirectorySeparatorChar));
+        var emevd = EMEVD.Read(File.Exists(outputPath) ? outputPath : sourcePath);
+        var constructor = emevd.Events.SingleOrDefault(entry => entry.ID == 0)
+            ?? throw new InvalidDataException(
+                $"The map constructor event is missing in {mapGroup.Key}.");
+
+        var staleEvents = emevd.Events
+            .Where(entry => entry.Instructions.Any(instruction =>
+                instruction.Bank == 2004 && instruction.ID == 8 &&
+                instruction.ArgData.Length == 8 &&
+                BitConverter.ToInt32(instruction.ArgData, 4) >= ProgressiveEffectIdBase &&
+                BitConverter.ToInt32(instruction.ArgData, 4) <
+                    ProgressiveEffectIdBase + ProgressiveMilestoneCount))
+            .Select(entry => entry.ID)
+            .ToHashSet();
+        for (var index = constructor.Instructions.Count - 1; index >= 0; index--)
+        {
+            var instruction = constructor.Instructions[index];
+            if (instruction.Bank == 2000 && instruction.ID == 0 &&
+                instruction.ArgData.Length >= 8 &&
+                staleEvents.Contains(BitConverter.ToInt32(instruction.ArgData, 4)))
+                RemoveEventInstruction(constructor, index);
+        }
+        emevd.Events.RemoveAll(entry => staleEvents.Contains(entry.ID));
+
+        var eventIds = new HashSet<int>();
+        var customEventBase = FindFreeCustomEventRange(
+            emevd, 9_500_000, ProgressiveMilestoneCount);
+        var entities = mapGroup.Select(slot => slot.EntityId)
+            .Distinct().Order().ToArray();
+        var milestones = new List<int[][]>
+        {
+            new[] { new[] { 11010700 } },
+            new[] { new[] { 11400200 } },
+            new[] { new[] { 710 } },
+        };
+        for (var soulCount = 1; soulCount <= soulGoodsIds.Length; soulCount++)
+            milestones.Add(Combinations(soulGoodsIds, soulCount));
+
+        for (var milestone = 0; milestone < ProgressiveMilestoneCount; milestone++)
+        {
+            var eventId = checked(customEventBase + milestone);
+            if (!eventIds.Add(eventId))
+                throw new InvalidDataException(
+                    $"Progressive scaling event ID collision in {mapGroup.Key}.");
+            var eventEntry = new EMEVD.Event(
+                eventId,
+                EMEVD.Event.RestBehaviorType.End);
+            var triggers = milestones[milestone];
+            if (milestone < 3)
+            {
+                eventEntry.Instructions.Add(
+                    IfEventFlagEnabledInstruction(0, triggers[0][0]));
+            }
+            else
+            {
+                for (var combinationIndex = 0;
+                     combinationIndex < triggers.Length;
+                     combinationIndex++)
+                {
+                    var conditionGroup = combinationIndex + 1;
+                    foreach (var soulItemId in triggers[combinationIndex])
+                        eventEntry.Instructions.Add(
+                            IfPlayerHasGoodsInstruction(conditionGroup, soulItemId));
+                    eventEntry.Instructions.Add(IfConditionGroupInstruction(
+                        -1, 1, conditionGroup));
+                }
+                eventEntry.Instructions.Add(IfConditionGroupInstruction(0, 1, -1));
+            }
+            eventEntry.Instructions.Add(new EMEVD.Instruction(
+                1001, 1, new object[] { 1 }));
+            var effectId = ProgressiveEffectIdBase + milestone;
+            foreach (var entityId in entities)
+                eventEntry.Instructions.Add(new EMEVD.Instruction(
+                    2004, 8, new object[] { entityId, effectId }));
+            emevd.Events.Add(eventEntry);
+            constructor.Instructions.Add(new EMEVD.Instruction(
+                2000, 0, new object[] { 0, eventId, 0 }));
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+        emevd.Write(outputPath);
+        var verification = EMEVD.Read(outputPath);
+        var verifiedConstructor = verification.Events.Single(entry => entry.ID == 0);
+        foreach (var eventId in eventIds)
+        {
+            var eventEntry = verification.Events.SingleOrDefault(entry => entry.ID == eventId)
+                ?? throw new InvalidDataException(
+                    $"Progressive scaling event {eventId} did not persist in {mapGroup.Key}.");
+            if (!verifiedConstructor.Instructions.Any(instruction =>
+                    instruction.Bank == 2000 && instruction.ID == 0 &&
+                    BitConverter.ToInt32(instruction.ArgData, 4) == eventId) ||
+                !entities.All(entityId => eventEntry.Instructions.Any(instruction =>
+                    instruction.Bank == 2004 && instruction.ID == 8 &&
+                    BitConverter.ToInt32(instruction.ArgData, 0) == entityId &&
+                    BitConverter.ToInt32(instruction.ArgData, 4) >= ProgressiveEffectIdBase &&
+                    BitConverter.ToInt32(instruction.ArgData, 4) <
+                        ProgressiveEffectIdBase + ProgressiveMilestoneCount)))
+            {
+                throw new InvalidDataException(
+                    $"Progressive scaling instructions did not persist in {mapGroup.Key}.");
+            }
+        }
+        results.Add(new PatchedFile(
+            relativeSource,
+            outputRelative,
+            sourceRecord.Sha256,
+            HashFile(outputPath)));
+    }
+    return results;
+
+    static int[][] Combinations(int[] values, int count)
+    {
+        var result = new List<int[]>();
+        void Add(int start, List<int> current)
+        {
+            if (current.Count == count)
+            {
+                result.Add(current.ToArray());
+                return;
+            }
+            for (var index = start; index <= values.Length - (count - current.Count); index++)
+            {
+                current.Add(values[index]);
+                Add(index + 1, current);
+                current.RemoveAt(current.Count - 1);
+            }
+        }
+        Add(0, new List<int>());
+        return result.ToArray();
+    }
+}
+
 static PatchedFile? PatchGameParam(
     string gameDirectory,
     string outputDirectory,
@@ -3802,7 +4097,8 @@ static PatchedFile? PatchGameParam(
     List<RowPlacement> worldItemPlacements,
     List<RowPlacement> shopPlacements,
     List<ItemAssignment> itemAssignments,
-    bool guaranteedEnemyDrops)
+    bool guaranteedEnemyDrops,
+    bool progressiveScaling)
 {
     if (!enemyPlacements.Any(placement => placement.ScaledNpcParamId.HasValue) &&
         !enemyPlacements.Any(placement => placement.BaseThinkParamId.HasValue) &&
@@ -3813,7 +4109,8 @@ static PatchedFile? PatchGameParam(
         worldItemPlacements.Count == 0 &&
         shopPlacements.Count == 0 &&
         itemAssignments.Count == 0 &&
-        !guaranteedEnemyDrops)
+        !guaranteedEnemyDrops &&
+        !progressiveScaling)
         return null;
 
     const string relativeSource = "param/GameParam/GameParam.parambnd.dcx";
@@ -3839,16 +4136,20 @@ static PatchedFile? PatchGameParam(
         file.Name.EndsWith("NpcParam.param", StringComparison.OrdinalIgnoreCase));
     var thinkFile = binder.Files.Single(file =>
         file.Name.EndsWith("NpcThinkParam.param", StringComparison.OrdinalIgnoreCase));
+    var spEffectFile = binder.Files.Single(file =>
+        file.Name.EndsWith("SpEffectParam.param", StringComparison.OrdinalIgnoreCase));
     var charaParam = PARAM.Read(charaFile.Bytes);
     var itemLotParam = PARAM.Read(itemLotFile.Bytes);
     var shopParam = PARAM.Read(shopFile.Bytes);
     var npcParam = PARAM.Read(npcFile.Bytes);
     var thinkParam = PARAM.Read(thinkFile.Bytes);
+    var spEffectParam = PARAM.Read(spEffectFile.Bytes);
     ApplyCompatibleParamdef(charaParam, paramdefs);
     ApplyCompatibleParamdef(itemLotParam, paramdefs);
     ApplyCompatibleParamdef(shopParam, paramdefs);
     ApplyCompatibleParamdef(npcParam, paramdefs);
     ApplyCompatibleParamdef(thinkParam, paramdefs);
+    ApplyCompatibleParamdef(spEffectParam, paramdefs);
 
     AddScaledNpcRows(
         npcParam,
@@ -3856,6 +4157,8 @@ static PatchedFile? PatchGameParam(
     AddCustomThinkRows(
         thinkParam,
         enemyPlacements.Where(placement => placement.BaseThinkParamId.HasValue).ToList());
+    if (progressiveScaling)
+        AddProgressiveSpEffectRows(spEffectParam);
 
     var classes = catalog.StartingClasses.ToDictionary(entry => entry.Id);
     var classRows = classes.ToDictionary(
@@ -4121,6 +4424,8 @@ static PatchedFile? PatchGameParam(
     shopFile.Bytes = shopParam.Write();
     npcFile.Bytes = npcParam.Write();
     thinkFile.Bytes = thinkParam.Write();
+    if (progressiveScaling)
+        spEffectFile.Bytes = spEffectParam.Write();
     var outputRelative = "mod/param/GameParam/GameParam.parambnd.dcx";
     var outputPath = Path.Combine(
         outputDirectory, outputRelative.Replace('/', Path.DirectorySeparatorChar));
@@ -4139,25 +4444,32 @@ static PatchedFile? PatchGameParam(
         file.Name.EndsWith("NpcParam.param", StringComparison.OrdinalIgnoreCase));
     var verifiedThinkFile = verification.Files.Single(file =>
         file.Name.EndsWith("NpcThinkParam.param", StringComparison.OrdinalIgnoreCase));
+    var verifiedSpEffectFile = verification.Files.Single(file =>
+        file.Name.EndsWith("SpEffectParam.param", StringComparison.OrdinalIgnoreCase));
     var verifiedChara = PARAM.Read(verifiedCharaFile.Bytes);
     var verifiedLots = PARAM.Read(verifiedLotFile.Bytes);
     var verifiedShops = PARAM.Read(verifiedShopFile.Bytes);
     var verifiedNpcs = PARAM.Read(verifiedNpcFile.Bytes);
     var verifiedThinks = PARAM.Read(verifiedThinkFile.Bytes);
+    var verifiedSpEffects = PARAM.Read(verifiedSpEffectFile.Bytes);
     ApplyCompatibleParamdef(verifiedLots, paramdefs);
     ApplyCompatibleParamdef(verifiedShops, paramdefs);
     ApplyCompatibleParamdef(verifiedNpcs, paramdefs);
     ApplyCompatibleParamdef(verifiedThinks, paramdefs);
+    ApplyCompatibleParamdef(verifiedSpEffects, paramdefs);
     if (verifiedChara.Rows.Count != charaParam.Rows.Count ||
         verifiedLots.Rows.Count != itemLotParam.Rows.Count ||
         verifiedShops.Rows.Count != shopParam.Rows.Count ||
         verifiedNpcs.Rows.Count != npcParam.Rows.Count ||
         verifiedThinks.Rows.Count != thinkParam.Rows.Count ||
+        (progressiveScaling && verifiedSpEffects.Rows.Count != spEffectParam.Rows.Count) ||
         !verifiedCharaFile.Bytes.SequenceEqual(charaFile.Bytes) ||
         !verifiedLotFile.Bytes.SequenceEqual(itemLotFile.Bytes) ||
         !verifiedShopFile.Bytes.SequenceEqual(shopFile.Bytes) ||
         !verifiedNpcFile.Bytes.SequenceEqual(npcFile.Bytes) ||
-        !verifiedThinkFile.Bytes.SequenceEqual(thinkFile.Bytes))
+        !verifiedThinkFile.Bytes.SequenceEqual(thinkFile.Bytes) ||
+        (progressiveScaling &&
+         !verifiedSpEffectFile.Bytes.SequenceEqual(spEffectFile.Bytes)))
         throw new InvalidDataException("Invalid GameParam round-trip.");
     foreach (var assignment in itemAssignments)
     {
@@ -4237,6 +4549,29 @@ static PatchedFile? PatchGameParam(
                 name => perceptionFields.Contains(name));
         }
     }
+    if (progressiveScaling)
+    {
+        for (var milestone = 0; milestone < ProgressiveMilestoneCount; milestone++)
+        {
+            var effectId = ProgressiveEffectIdBase + milestone;
+            var effect = verifiedSpEffects.Rows.SingleOrDefault(row => row.ID == effectId)
+                ?? throw new InvalidDataException(
+                    $"Progressive scaling effect {effectId} did not persist.");
+            var targetRate = 1.0 + 0.1 * (milestone + 1);
+            var previousRate = 1.0 + 0.1 * milestone;
+            var stepRate = (float)(targetRate / previousRate);
+            foreach (var field in new[]
+                     {
+                         "maxHpRate", "physicsAttackRate", "magicAttackRate",
+                         "fireAttackRate", "thunderAttackRate",
+                     })
+            {
+                if (Math.Abs(GetCellFloat(effect, field) - stepRate) > 0.0001)
+                    throw new InvalidDataException(
+                        $"Progressive scaling effect {effectId} has an invalid {field}.");
+            }
+        }
+    }
     AssertHash(sourcePath, sourceRecord.Sha256, "Source GameParam changed");
 
     return new PatchedFile(
@@ -4244,6 +4579,52 @@ static PatchedFile? PatchGameParam(
         outputRelative,
         sourceRecord.Sha256,
         HashFile(outputPath));
+}
+
+static void AddProgressiveSpEffectRows(PARAM spEffectParam)
+{
+    var existingIds = spEffectParam.Rows.Select(row => row.ID).ToHashSet();
+    if (Enumerable.Range(0, ProgressiveMilestoneCount)
+        .Any(offset => existingIds.Contains(ProgressiveEffectIdBase + offset)))
+    {
+        throw new InvalidDataException(
+            "The reserved progressive SpEffectParam ID range is already in use.");
+    }
+    var neutral = spEffectParam.Rows.SingleOrDefault(row => row.ID == 0)
+        ?? throw new InvalidDataException(
+            "SpEffectParam row 0 is required to create progressive scaling effects.");
+    var rates = new[]
+    {
+        "maxHpRate", "physicsAttackRate", "magicAttackRate",
+        "fireAttackRate", "thunderAttackRate",
+    };
+    foreach (var field in rates)
+    {
+        if (Math.Abs(GetCellFloat(neutral, field) - 1f) > 0.0001)
+            throw new InvalidDataException(
+                $"SpEffectParam row 0 is not neutral for {field}; cannot safely create scaling effects.");
+    }
+
+    for (var milestone = 0; milestone < ProgressiveMilestoneCount; milestone++)
+    {
+        var newId = ProgressiveEffectIdBase + milestone;
+        var row = new PARAM.Row(
+            newId,
+            $"DSR Randomizer Progressive Scaling {milestone + 1}",
+            spEffectParam.AppliedParamdef);
+        CopyCells(RowCells(neutral), row, _ => true);
+        var targetRate = 1.0 + 0.1 * (milestone + 1);
+        var previousRate = 1.0 + 0.1 * milestone;
+        var stepRate = (float)(targetRate / previousRate);
+        SetCellFloat(row, "effectEndurance", -1f);
+        SetCellFloat(row, "conditionHp", -1f);
+        SetCellFloat(row, "motionInterval", 0f);
+        SetCell(row, "bCurrHPIndependeMaxHP", 0);
+        foreach (var field in rates)
+            SetCellFloat(row, field, stepRate);
+        spEffectParam.Rows.Add(row);
+    }
+    spEffectParam.Rows.Sort((left, right) => left.ID.CompareTo(right.ID));
 }
 
 static void AddScaledNpcRows(PARAM npcParam, List<PatchPlacement> placements)
@@ -4409,6 +4790,13 @@ static void AddCustomThinkRows(PARAM thinkParam, List<PatchPlacement> placements
 }
 
 static void SetCell(PARAM.Row row, string name, int value)
+{
+    var cell = row.Cells.Single(entry =>
+        entry.Def.InternalName.Equals(name, StringComparison.Ordinal));
+    cell.Value = Convert.ChangeType(value, cell.Value.GetType());
+}
+
+static void SetCellFloat(PARAM.Row row, string name, float value)
 {
     var cell = row.Cells.Single(entry =>
         entry.Def.InternalName.Equals(name, StringComparison.Ordinal));
@@ -5131,6 +5519,8 @@ record GameCatalog(
     List<StartingItemLotRecord> StartingItemLots,
     List<ItemLotRecord> Gifts,
     List<ItemLotRecord> EnemyDropLots,
+    List<ItemLotRecord> LordSoulLots,
+    List<ItemLotRecord> BossRewardLots,
     List<WorldItemLotRecord> WorldItemLots,
     List<ShopEntryRecord> ShopEntries,
     StartingEquipmentPools StartingEquipmentPools,
@@ -5271,7 +5661,8 @@ record ItemLotEntryRecord(
     int Category,
     int Quantity,
     int EquipType,
-    string Name);
+    string Name,
+    int MagicId);
 record ItemNameLookup(
     Dictionary<int, string> Goods,
     Dictionary<int, string> Weapons,
@@ -5319,7 +5710,8 @@ record ShopEntryRecord(
     string Name,
     int EquipId,
     int EquipType,
-    int EventFlag);
+    int EventFlag,
+    int MagicGoodsId);
 record ItemCandidate(
     int Id,
     string Name,
@@ -5337,6 +5729,8 @@ record StartingEquipmentPools(
 record RandomizerParamData(
     List<ItemLotRecord> Gifts,
     List<ItemLotRecord> EnemyDropLots,
+    List<ItemLotRecord> LordSoulLots,
+    List<ItemLotRecord> BossRewardLots,
     List<WorldItemLotRecord> WorldItemLots,
     List<ShopEntryRecord> ShopEntries,
     StartingEquipmentPools StartingEquipmentPools);

@@ -1,10 +1,15 @@
 import { randomBytes } from "node:crypto";
 
-export const RANDOMIZER_VERSION = "0.5.70";
+export const RANDOMIZER_VERSION = "0.5.76";
 
 export const defaultConfig = Object.freeze({
   version: RANDOMIZER_VERSION,
   seed: "817293615",
+  enemySeed: "",
+  bannedEnemyModels: [],
+  separateProgressionItems: false,
+  randomizeLordvessel: false,
+  randomizeLordSouls: false,
   gameDirectory: "",
   outputDirectory: "output",
   lastPackageDirectory: "",
@@ -33,6 +38,9 @@ const booleanKeys = [
   "randomizeBosses",
   "randomizeItems",
   "randomizeProtectedItems",
+  "separateProgressionItems",
+  "randomizeLordvessel",
+  "randomizeLordSouls",
   "progressionLogic",
   "guaranteeEarlyWeapon",
   "balancedEarlyLoot",
@@ -59,6 +67,12 @@ export function normalizeConfig(input = {}) {
   }
 
   config.seed = String(config.seed || generateSeed()).trim();
+  config.enemySeed = String(config.enemySeed || "").trim();
+  config.bannedEnemyModels = [...new Set(
+    (Array.isArray(input.bannedEnemyModels) ? input.bannedEnemyModels : [])
+      .map((model) => String(model).trim().toLowerCase())
+      .filter((model) => /^c\d{4}$/u.test(model)),
+  )].sort();
   config.version = RANDOMIZER_VERSION;
   config.gameDirectory = String(config.gameDirectory || "").trim();
   config.outputDirectory = String(config.outputDirectory || "output").trim();
@@ -79,6 +93,9 @@ export function validateConfig(config, { requireGame = false } = {}) {
   if (!/^[\w.-]{1,64}$/u.test(config.seed)) {
     errors.push("The seed must contain 1-64 characters (letters, numbers, dot, hyphen, or underscore).");
   }
+  if (config.enemySeed && !/^[\w.-]{1,64}$/u.test(config.enemySeed)) {
+    errors.push("The enemy seed must contain 1-64 characters (letters, numbers, dot, hyphen, or underscore).");
+  }
   if (requireGame && !config.gameDirectory) {
     errors.push("Select the Dark Souls Remastered game directory.");
   }
@@ -87,6 +104,8 @@ export function validateConfig(config, { requireGame = false } = {}) {
     !config.randomizeBosses &&
     !config.randomizeItems &&
     !config.randomizeProtectedItems &&
+    !config.randomizeLordvessel &&
+    !config.randomizeLordSouls &&
     !config.randomizeStartingClass &&
     !config.randomizeStartingEquipment &&
     !config.randomizeGifts &&
