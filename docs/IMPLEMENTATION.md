@@ -42,6 +42,9 @@ files; source hashes prevent applying it to a different installation state.
   among protected progression locations
 - Independent Lordvessel and Lord Soul toggles shuffle those rewards among
   protected progression and boss reward locations, never into ordinary pools
+- Lord Soul rewards are recognized by their GoodsParam IDs rather than
+  localized display text; DLC progression world lots stay vanilla when the
+  progression pool is isolated
 - Progressive scaling uses permanent map events and SpEffect rows to add
   +10% max HP and outgoing damage per obtained milestone (two Bells, Lordvessel,
   and each of four Lord Souls)
@@ -95,9 +98,10 @@ files; source hashes prevent applying it to a different installation state.
 - Sanctuary Guardian tails, both Gargoyle tail types, and all Centipede Demon
   removable parts follow their linked boss assignment
 - Bed of Chaos body, core, and bug are reserved out of the regular-enemy
-  permutation. Its victory-tracked core receives one grounded boss replacement,
-  the original helper entities are disabled, the floor-break event registrations
-  are removed, and all floor objects are restored and made invulnerable
+  permutation. Its victory-tracked core receives one boss replacement and the
+  original helper entities are disabled. By default, the vanilla side-root and
+  collapsing-floor progression remains active; an option restores the
+  intact-floor behavior for a flat replacement-boss encounter
 - First Asylum boss rooftop animation is replaced by a floor spawn
 - Adapted Asylum intro explicitly enables replacement AI after arena entry
 - The first three regular Asylum slots remain randomized with their

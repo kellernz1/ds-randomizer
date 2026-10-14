@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using SoulsFormats;
 
-const int SchemaVersion = 19;
+const int SchemaVersion = 20;
 const int ProgressiveEffectIdBase = 9_600_000;
 const int ProgressiveMilestoneCount = 7;
 Console.OutputEncoding = new UTF8Encoding(false);
@@ -573,17 +573,6 @@ static RandomizerParamData ReadRandomizerParamData(
             ItemLotEntries(row)))
         .OrderBy(row => row.RowId)
         .ToList();
-    var lordSoulLots = itemLotParam.Rows
-        .Where(row => dropLotIds.Contains(row.ID))
-        .Where(row => !giftIds.Contains(row.ID))
-        .Where(row => ItemLotEntries(row).Any(entry =>
-            entry.Name.Contains("Lord Soul", StringComparison.OrdinalIgnoreCase)))
-        .Select(row => new ItemLotRecord(
-            row.ID,
-            DescribeItemLot(row),
-            ItemLotEntries(row)))
-        .OrderBy(row => row.RowId)
-        .ToList();
     var bossDropLotIds = npcParam.Rows
         .Where(row => bossNpcParamIds.Contains(row.ID))
         .SelectMany(row => row.Cells
@@ -592,10 +581,32 @@ static RandomizerParamData ReadRandomizerParamData(
             .Select(cell => Convert.ToInt32(cell.Value)))
         .Where(id => id > 0)
         .ToHashSet();
+    var lordSoulBossRewardLotIds = new HashSet<int>
+    {
+        2560, // Nito
+        2580, // Bed of Chaos
+        2630, // Four Kings
+        2640, // Seath
+    };
+    var lordSoulLots = itemLotParam.Rows
+        .Where(row =>
+            lordSoulBossRewardLotIds.Contains(row.ID) ||
+            bossDropLotIds.Contains(row.ID) ||
+            eventAwardItemLotIds.Contains(row.ID))
+        .Where(row => !giftIds.Contains(row.ID))
+        .Where(row => ItemLotEntries(row).Any(entry =>
+            IsLordSoulGoods(entry.Category, entry.ItemId)))
+        .Select(row => new ItemLotRecord(
+            row.ID,
+            DescribeItemLot(row),
+            ItemLotEntries(row)))
+        .OrderBy(row => row.RowId)
+        .ToList();
     var bossRewardLots = itemLotParam.Rows
         .Where(row => bossDropLotIds.Contains(row.ID) ||
+            lordSoulBossRewardLotIds.Contains(row.ID) ||
             (dropLotIds.Contains(row.ID) && ItemLotEntries(row).Any(entry =>
-                entry.Name.Contains("Lord Soul", StringComparison.OrdinalIgnoreCase))))
+                IsLordSoulGoods(entry.Category, entry.ItemId))))
         .Where(row => !giftIds.Contains(row.ID))
         .Where(row => row.Cells.Any(cell =>
             cell.Def.InternalName.StartsWith("lotItemId", StringComparison.Ordinal) &&
@@ -948,6 +959,9 @@ static bool IsBossModel(string modelName) => modelName is
     "c5401" or "c5250" or
     "c5260" or "c5270" or "c5271" or "c5280" or "c5290" or "c5320" or
     "c5350" or "c5351" or "c5370" or "c5390";
+
+static bool IsLordSoulGoods(int category, int itemId) =>
+    category == 0x40000000 && itemId is (2500 or 2501 or 2502 or 2503);
 
 static bool IsLinkedDragonPartModel(string modelName) => modelName is
     "c2731" or "c3422" or "c3431" or "c3531" or "c4511" or "c5261" or
@@ -3284,6 +3298,29 @@ static List<PatchedFile> PatchBossNames(
                     "The protected Bed of Chaos floor event did not persist.");
             }
         }
+        if (!preserveBedFloor && mapId == "m14_01_00_00" &&
+            mapGroup.Any(placement =>
+                placement.SlotId == "m14_01_00_00:c5401_0000"))
+        {
+            var constructor = verification.Events.Single(entry => entry.ID == 0);
+            var vanillaFloorEvents = new HashSet<int>
+            {
+                11410200, 11410201, 11410250,
+            };
+            var initializedFloorEvents = constructor.Instructions
+                .Where(instruction =>
+                    instruction.Bank == 2000 &&
+                    instruction.ID == 0 &&
+                    instruction.ArgData.Length >= 8)
+                .Select(instruction =>
+                    BitConverter.ToInt32(instruction.ArgData, 4))
+                .ToHashSet();
+            if (!vanillaFloorEvents.IsSubsetOf(initializedFloorEvents))
+            {
+                throw new InvalidDataException(
+                    "Vanilla Bed of Chaos floor-break events were not preserved.");
+            }
+        }
         if (passiveMapPlacements.Count > 0 ||
             deferredMapPlacements.Count > 0 ||
             containedMapPlacements.Count > 0 ||
@@ -3920,8 +3957,7 @@ static List<PatchedFile> PatchProgressiveScalingEvents(
 {
     var soulGoodsIds = catalog.LordSoulLots
         .SelectMany(lot => lot.Entries)
-        .Where(entry => entry.Category == 0x40000000 &&
-            entry.Name.Contains("Lord Soul", StringComparison.OrdinalIgnoreCase))
+        .Where(entry => IsLordSoulGoods(entry.Category, entry.ItemId))
         .Select(entry => entry.ItemId)
         .Distinct()
         .Order()

@@ -19,6 +19,7 @@ download an executable. That edition requires Node.js 20+ and the .NET 8 SDK.
 - Randomized starting-class stats, weapons, and armor
 - Optional progression protection and 100% enemy drop rate
 - Independent enemy seed and enemy-model exclusion list
+- Optional intact Bed of Chaos arena floor; the default keeps its vanilla route
 - Optional Lordvessel and Lord Soul shuffling limited to progression and boss rewards
 - Reproducible seeds that can be exported and shared
 - Spoiler log and `cheat-locations.txt` reports

@@ -31,7 +31,7 @@ async function catalog() {
     }));
   return {
     ...data,
-    schemaVersion: 17,
+    schemaVersion: 20,
     gifts: hydrate(data.gifts, 8_000_000),
     enemyDropLots: hydrate(data.enemyDropLots, 8_100_000),
     worldItemLots: hydrate(data.worldItemLots, 8_200_000),
@@ -604,7 +604,7 @@ test("real catalog produces deterministic enemies with visibly different models"
 
 test("friendly NPC and human-character slots are never randomized", async () => {
   const gameCatalog = await catalog();
-  assert.equal(gameCatalog.schemaVersion, 17);
+  assert.equal(gameCatalog.schemaVersion, 20);
   const protectedSlots = gameCatalog.enemySlots.filter(
     (slot) =>
       (slot.teamType >= 2 && slot.modelName !== "c5291") ||
@@ -693,7 +693,11 @@ test("obsolete catalogs require a fresh import", async () => {
 test("real catalog produces real boss and world-item placements", async () => {
   const gameCatalog = await catalog();
   const result = generate(
-    { ...defaultConfig, seed: "real-no-prototype" },
+    {
+      ...defaultConfig,
+      seed: "real-no-prototype",
+      keepBedOfChaosFloorIntact: true,
+    },
     { gameCatalog },
   );
   assert.ok(result.placements.bosses.length > 20);

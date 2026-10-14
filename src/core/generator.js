@@ -15,6 +15,9 @@ const enemyStream = (config, name) =>
   createStream(config.enemySeed || config.seed, name, config.version);
 const isEnemyBanned = (config, modelName) =>
   config.bannedEnemyModels.includes(String(modelName).toLowerCase());
+const lordSoulGoodsIds = new Set([2500, 2501, 2502, 2503]);
+const isLordSoulEntry = (entry) =>
+  entry.category === 0x40000000 && lordSoulGoodsIds.has(Number(entry.itemId));
 const dragonBodyModels = new Set([
   "c2300", // Titanite Demon
   "c2730", // Crossbreed Priscilla
@@ -1345,11 +1348,14 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
         map: slot.mapId,
         slot: slot.name,
       },
-      compatibility: slot.id === "m14_01_00_00:c5401_0000"
-        ? "grounded-flat-floor-bed-of-chaos"
-        : canonicalBossModel.has(slot.modelName)
-        ? "linked-boss-form"
-        : "grounded-unrestricted-boss-permutation",
+      compatibility:
+        slot.id === "m14_01_00_00:c5401_0000"
+          ? config.keepBedOfChaosFloorIntact
+            ? "grounded-flat-floor-bed-of-chaos"
+            : "vanilla-flow-bed-of-chaos"
+          : canonicalBossModel.has(slot.modelName)
+            ? "linked-boss-form"
+            : "grounded-unrestricted-boss-permutation",
       ...(deferredActivation
         ? {
             activationRegionId:
@@ -1386,7 +1392,8 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
       ...(slot.entityId >= 0 ? { forceCombatActivation: true } : {}),
       portableBossSanitization: slot.modelName !== replacement.modelName ||
         slot.npcParamId !== replacement.npcParamId,
-      ...(slot.id === "m14_01_00_00:c5401_0000"
+      ...(slot.id === "m14_01_00_00:c5401_0000" &&
+      config.keepBedOfChaosFloorIntact
         ? {
             groundX: bedOfChaosSafeSpawn.x,
             groundY: bedOfChaosSafeSpawn.y,
@@ -1573,8 +1580,7 @@ function randomizeExtractedItemLots(config, catalog) {
       protectedProgression: true,
       bossReward: true,
       entries: (lot.entries || []).filter((entry) =>
-        config.randomizeLordSouls ||
-        !entry.name.toLowerCase().includes("lord soul")),
+        config.randomizeLordSouls || !isLordSoulEntry(entry)),
     })),
   ];
   const shopRows = config.randomizeShops
@@ -1731,7 +1737,9 @@ function randomizeExtractedItemLots(config, catalog) {
   const magicTargets = globalTargets.filter((entry) => entry.equipType === 4);
   const isolateProgressionPool = config.separateProgressionItems || lordRewardsEnabled;
   const progressionTargets = isolateProgressionPool
-    ? globalTargets.filter((entry) => entry.progression)
+    ? globalTargets.filter((entry) =>
+        entry.progression && entry.mapId !== "m12_01_00_00",
+      )
     : [];
   const generalTargets = isolateProgressionPool
     ? globalTargets.filter((entry) => !entry.progression)
@@ -2303,7 +2311,7 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
   if (errors.length > 0) {
     throw new Error(errors.join("\n"));
   }
-  if (gameCatalog && gameCatalog.schemaVersion !== 19) {
+  if (gameCatalog && gameCatalog.schemaVersion !== 20) {
     throw new Error(
       `Catalog schema ${gameCatalog.schemaVersion} is obsolete. ` +
         "Verify the clean game and import its data again.",
@@ -2374,11 +2382,23 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
                 ? "Area scaling inherits destination combat stats and replaces hidden level multipliers from the selected enemy."
                 : "Vanilla scaling keeps each enemy's original combat stats.",
             "Bosses use a safe permutation and are grounded at their destination encounter; dragons only exchange complete linked dragon groups.",
+            ...(config.randomizeBosses
+              ? [
+                  config.keepBedOfChaosFloorIntact
+                    ? "The Bed of Chaos arena floor stays intact for the replacement boss encounter."
+                    : "The Bed of Chaos keeps its vanilla branch and collapsing-floor progression.",
+                ]
+              : []),
             config.randomizeProtectedItems && !isolateProgressionPool
               ? "Protected world items joined the full item pool; the two Asylum escape keys stayed vanilla."
               : config.randomizeProtectedItems || lordRewardsEnabled
                 ? "Protected progression items and selected boss rewards were shuffled only among progression locations; the two Asylum escape keys stayed vanilla."
                 : "World items were randomized while protected progression lots stayed vanilla.",
+            ...(isolateProgressionPool
+              ? [
+                  "Progression item lots located in the DLC stayed vanilla so protected items are not moved into DLC locations.",
+                ]
+              : []),
             config.randomizeStartingClass
               ? "Starting-class base stats were redistributed."
               : "Starting-class base stats were preserved.",
