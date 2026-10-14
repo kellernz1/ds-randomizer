@@ -929,10 +929,10 @@ test("real catalog produces real boss and world-item placements", async () => {
   );
   assert.equal(secondGargoyle.disableEntity, true);
   assert.equal(secondGargoyle.killDisabledEntity, true);
-  assert.notEqual(
+  assert.equal(
     assignmentsByVanillaModel.get("c5270:527000").targetNpcParamId,
     assignmentsByVanillaModel.get("c5271:527100").targetNpcParamId,
-    "Ornstein and Super Ornstein must be distinct boss assignments",
+    "Super Ornstein must use the boss assigned to Ornstein's phase-two transition",
   );
   const linkedBossFamilies = new Map([
     ["sanctuary-guardian", new Set(["c3471", "c3472"])],

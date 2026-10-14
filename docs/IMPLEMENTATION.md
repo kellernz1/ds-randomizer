@@ -92,6 +92,9 @@ files; source hashes prevent applying it to a different installation state.
   Super Smough are distinct portable boss sources and destinations
 - Moonlight Butterfly remains eligible for Sif and Nito arenas. Its spawn is
   raised 1.5 units for the landing animation to settle onto those uneven floors
+- Ornstein and Smough phase-two entities use the same randomized boss as their
+  corresponding phase-one entity, preserving the vanilla transition in either
+  kill order
 - Portable boss replacements have destination-specific immortality instructions
   removed, so Seath's crystal mechanic cannot leave a replacement at 1 HP
 - All 45 Humanity enemy slots participate in the regular permutation

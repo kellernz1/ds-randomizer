@@ -1310,6 +1310,19 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
   archetypeKeys.forEach((archetypeKey, index) =>
     replacementsByModel.set(archetypeKey, shuffled[index]),
   );
+  // Ornstein and Smough's phase-two entities are enabled by the vanilla
+  // transition event after one phase-one entity dies. Keep each upgraded
+  // entity on the same randomized boss as its phase-one counterpart so the
+  // event never has to transition into an unrelated boss archetype.
+  for (const [phaseOneKey, phaseTwoKey] of [
+    ["c5270:527000", "c5271:527100"], // Ornstein -> Super Ornstein
+    ["c2360:236000", "c2360:236001"], // Smough -> Super Smough
+  ]) {
+    const phaseOneReplacement = replacementsByModel.get(phaseOneKey);
+    if (phaseOneReplacement && replacementsByModel.has(phaseTwoKey)) {
+      replacementsByModel.set(phaseTwoKey, phaseOneReplacement);
+    }
+  }
   const placements = sources.map((slot, index) => {
     const sourceArchetypeKey = bossArchetypeKey(slot);
     const sourceArchetypeIndex = archetypeKeys.indexOf(sourceArchetypeKey);
