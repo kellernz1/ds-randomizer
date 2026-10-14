@@ -88,8 +88,10 @@ files; source hashes prevent applying it to a different installation state.
 - Dragons are isolated into boss-dragon and regular-dragon permutation groups;
   detachable parts and alternate encounter bodies follow their parent group
 - Hydras use linked hydra-only body/head groups. Moonlight Butterfly,
-  Ceaseless Discharge, Gwyndolin, Bed of Chaos, Four Kings, Super Ornstein, and
+  Ceaseless Discharge, Bed of Chaos, Four Kings, Super Ornstein, and
   Super Smough are distinct portable boss sources and destinations
+- Gwyndolin stays in his native encounter because his retreat teleports depend
+  on the custom corridor layout
 - Moonlight Butterfly remains eligible for Sif and Nito arenas. Its spawn is
   raised 1.5 units for the landing animation to settle onto those uneven floors
 - Ornstein and Smough phase-two entities use the same randomized boss as their
@@ -131,7 +133,7 @@ files; source hashes prevent applying it to a different installation state.
   floor. The Taurus slot remains disabled until the player reaches the bridge
   region beyond the fog wall.
 - Per-placement boss `NpcParam` rows inherit the destination encounter's team.
-  Bosses whose vanilla PARAM is neutral, especially Gwyndolin, therefore
+  Bosses whose vanilla PARAM is neutral therefore
   become hostile and run their combat AI when moved to another arena.
 - Boss activation clears model-specific standby state, forces enemy allegiance,
   enables AI, clears stale targets, and replans when the destination encounter

@@ -1250,7 +1250,9 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan, bossPlan) {
 const canonicalBossModel = new Map([
   ["c5351", "c5350"],
 ]);
-const nonPortableBossReplacementModels = new Set();
+const nonPortableBossReplacementModels = new Set([
+  "c5320", // Gwyndolin's retreat teleports depend on his native corridor.
+]);
 
 function shuffledPortableBosses(rng, archetypeKeys, archetypes) {
   const portable = archetypes.filter(
@@ -1297,6 +1299,7 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
       slot.id !== "m14_01_00_00:c5230_0000" &&
       slot.npcParamId >= 0 &&
       slot.thinkParamId >= 0 &&
+      !nonPortableBossReplacementModels.has(slot.modelName) &&
       !isEnemyBanned(config, slot.modelName),
   );
   const archetypeKeys = [
@@ -2395,6 +2398,11 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
                 ? "Area scaling inherits destination combat stats and replaces hidden level multipliers from the selected enemy."
                 : "Vanilla scaling keeps each enemy's original combat stats.",
             "Bosses use a safe permutation and are grounded at their destination encounter; dragons only exchange complete linked dragon groups.",
+            ...(config.randomizeBosses
+              ? [
+                  "Gwyndolin stays in his native encounter because his retreat teleports depend on its corridor layout.",
+                ]
+              : []),
             ...(config.randomizeBosses
               ? [
                   config.keepBedOfChaosFloorIntact

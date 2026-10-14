@@ -761,7 +761,7 @@ test("real catalog produces real boss and world-item placements", async () => {
         Number.isFinite(entry.groundZ),
     ),
   );
-  for (const modelName of ["c3230", "c5250", "c5271", "c5320", "c5390"]) {
+  for (const modelName of ["c3230", "c5250", "c5271", "c5390"]) {
     assert.ok(
       result.placements.bosses.some((entry) => entry.modelName === modelName),
       `${modelName} must be included in the boss permutation`,
@@ -854,7 +854,6 @@ test("real catalog produces real boss and world-item placements", async () => {
     ["c3230", 323000, "Moonlight Butterfly"],
     ["c5401", 540100, "Bed of Chaos"],
     ["c5271", 527100, "Super Ornstein"],
-    ["c5320", 532000, "Gwyndolin"],
     ["c5390", 539000, "Four Kings"],
   ]) {
     assert.ok(
