@@ -90,8 +90,8 @@ files; source hashes prevent applying it to a different installation state.
 - Hydras use linked hydra-only body/head groups. Moonlight Butterfly,
   Ceaseless Discharge, Bed of Chaos, Four Kings, Super Ornstein, and
   Super Smough are distinct portable boss sources and destinations
-- Gwyndolin stays in his native encounter because his retreat teleports depend
-  on the custom corridor layout
+- Gwyndolin remains in the boss pool; verify his retreat teleports when
+  randomized outside Anor Londo
 - Moonlight Butterfly remains eligible for Sif and Nito arenas. Its spawn is
   raised 1.5 units for the landing animation to settle onto those uneven floors
 - Ornstein and Smough phase-two entities use the same randomized boss as their
