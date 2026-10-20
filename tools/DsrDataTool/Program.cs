@@ -259,7 +259,7 @@ static GameCatalog ScanGame(string gameDirectory)
     }
 
     var aiBundlePaths = maps
-        .Select(map => NormalizeAiMapId(map.Id))
+        .Select(map => NormalizeSharedMapId(map.Id))
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .Select(mapId => Path.Combine(
             gameDirectory, "script", $"{mapId}.luabnd.dcx"))
@@ -940,7 +940,7 @@ static bool IsGameplayMap(string mapId)
     return mapId[2] is >= '0' and <= '8';
 }
 
-static string NormalizeAiMapId(string mapId) =>
+static string NormalizeSharedMapId(string mapId) =>
     mapId == "m12_00_00_01" ? "m12_00_00_00" : mapId;
 
 static List<LUAINFO.Goal> ReadLuaGoals(string bundlePath)
@@ -1836,7 +1836,7 @@ static List<PatchedFile> PatchLuaAiBundles(
         .ToHashSet();
     var results = new List<PatchedFile>();
     foreach (var mapGroup in placements
-                 .GroupBy(placement => NormalizeAiMapId(placement.MapId))
+                 .GroupBy(placement => NormalizeSharedMapId(placement.MapId))
                  .OrderBy(group => group.Key, StringComparer.Ordinal))
     {
         var targetRelative = $"script/{mapGroup.Key}.luabnd.dcx";
@@ -3974,7 +3974,11 @@ static List<PatchedFile> PatchProgressiveScalingEvents(
         .DistinctBy(slot => slot.Id)
         .ToList();
     var results = new List<PatchedFile>();
-    foreach (var mapGroup in enemySlots.GroupBy(slot => slot.MapId)
+    // Some areas have a second MSB but share the primary map's EMEVD. Keep
+    // their entities in the same progressive event patch so we read, write,
+    // and package that shared event file only once.
+    foreach (var mapGroup in enemySlots
+                 .GroupBy(slot => NormalizeSharedMapId(slot.MapId))
                  .OrderBy(group => group.Key, StringComparer.Ordinal))
     {
         var relativeSource = $"event/{mapGroup.Key}.emevd.dcx";
