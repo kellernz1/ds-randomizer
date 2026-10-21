@@ -960,6 +960,12 @@ static bool IsBossModel(string modelName) => modelName is
     "c5260" or "c5270" or "c5271" or "c5280" or "c5290" or "c5320" or
     "c5350" or "c5351" or "c5370" or "c5390";
 
+static bool IsEarlyBossArenaSlot(string slotId) => slotId is
+    "m10_01_00_00:c2240_0000" or // Taurus Demon
+    "m10_01_00_00:c2250_0000" or // Capra Demon
+    "m10_01_00_00:c5350_0000" or // Bell Gargoyle
+    "m10_01_00_00:c5350_0002";   // Bell Gargoyle
+
 static bool IsLordSoulGoods(int category, int itemId) =>
     category == 0x40000000 && itemId is (2500 or 2501 or 2502 or 2503);
 
@@ -4565,6 +4571,20 @@ static PatchedFile? PatchGameParam(
                     GetCellInt(source, cell.Def.InternalName));
             }
         }
+        if (placement.Scaling.Equals("area", StringComparison.Ordinal) &&
+            IsEarlyBossArenaSlot(placement.SlotId))
+        {
+            var minimumEarlyBossPoise = Math.Clamp(
+                GetCellInt(source, "superArmorDurability") + 10,
+                25,
+                40);
+            AssertCell(
+                scaled,
+                "superArmorDurability",
+                Math.Max(
+                    GetCellInt(target, "superArmorDurability"),
+                    minimumEarlyBossPoise));
+        }
         AssertCell(scaled, "nameId", GetCellInt(target, "nameId"));
         AssertCell(
             scaled,
@@ -4728,6 +4748,23 @@ static void AddScaledNpcRows(PARAM npcParam, List<PatchPlacement> placements)
         {
             CopyCells(RowCells(source), scaled, name => combatFields.Contains(name));
             AssertCells(RowCells(source), scaled, name => combatFields.Contains(name));
+        }
+        if (placement.Scaling.Equals("area", StringComparison.Ordinal) &&
+            IsEarlyBossArenaSlot(placement.SlotId))
+        {
+            // Early arenas can leave a transplanted boss staggered by every
+            // light hit. Keep the randomized boss's own poise, with a modest
+            // floor based on the arena's vanilla poise (25-40).
+            var minimumEarlyBossPoise = Math.Clamp(
+                GetCellInt(source, "superArmorDurability") + 10,
+                25,
+                40);
+            SetCell(
+                scaled,
+                "superArmorDurability",
+                Math.Max(
+                    GetCellInt(target, "superArmorDurability"),
+                    minimumEarlyBossPoise));
         }
         // Drops belong to the randomized location, not to the replacement
         // model. The referenced ItemLot rows are shuffled independently, so a
