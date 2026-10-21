@@ -2262,6 +2262,15 @@ static bool IsPortableBossSpecificInstruction(EMEVD.Instruction instruction)
              32 or 35 or 36 or 40 or 42);
 }
 
+static bool IsOrnsteinSmoughPhaseProtectionInstruction(
+    string mapId,
+    EMEVD.Instruction instruction) =>
+    mapId == "m15_01_00_00" &&
+    instruction.Bank == 2004 &&
+    instruction.ID == 12 &&
+    instruction.ArgData.Length >= 4 &&
+    BitConverter.ToInt32(instruction.ArgData, 0) is 1510800 or 1510810;
+
 static bool IsStaticEnemyLifecycleInstruction(EMEVD.Instruction instruction)
 {
     return
@@ -2577,6 +2586,8 @@ static List<PatchedFile> PatchBossNames(
                 {
                     var instruction = entry.Instructions[index];
                     if (!IsPortableBossSpecificInstruction(instruction) ||
+                        IsOrnsteinSmoughPhaseProtectionInstruction(
+                            mapId, instruction) ||
                         instruction.ArgData.Length < 4 ||
                         !portableBossEntityIds.Contains(
                             BitConverter.ToInt32(instruction.ArgData, 0)))
@@ -3829,6 +3840,8 @@ static List<PatchedFile> PatchBossNames(
                          .SelectMany(entry => entry.Instructions))
             {
                 if (IsPortableBossSpecificInstruction(instruction) &&
+                    !IsOrnsteinSmoughPhaseProtectionInstruction(
+                        mapId, instruction) &&
                     instruction.ArgData.Length >= 4 &&
                     portableBossEntityIds.Contains(
                         BitConverter.ToInt32(instruction.ArgData, 0)) &&
