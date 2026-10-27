@@ -303,6 +303,15 @@ function portableBossGrounding(slot, catalog, replacementModel) {
     // and Nito arena floors instead of starting with its capsule below them.
     grounding.groundY += 1.5;
   }
+  if (
+    replacementModel === "c3230" &&
+    slot.id === "m14_01_00_00:c5250_0000"
+  ) {
+    // Ceaseless's arena uses a separate, elevated spawn point above uneven
+    // volcanic floor geometry. Start the Butterfly higher so its forced
+    // landing animation cannot clip its body below the collision surface.
+    grounding.groundY += 6;
+  }
   return grounding;
 }
 
