@@ -1,6 +1,7 @@
 const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
 const { writeFile } = require("node:fs/promises");
 const path = require("node:path");
+const { basename, dirname, isAbsolute, relative, sep } = path;
 const { pathToFileURL } = require("node:url");
 
 const allowedRequests = new Map([
@@ -80,6 +81,24 @@ ipcMain.handle("randomizer:save-json", async (_event, request) => {
   });
   if (result.canceled || !result.filePath) return false;
   await writeFile(result.filePath, String(request?.contents || ""), "utf8");
+  return true;
+});
+
+ipcMain.handle("randomizer:open-spoiler", async (_event, spoilerPath) => {
+  const stateRoot = app.getPath("userData");
+  const resolvedPath = resolve(String(spoilerPath || ""));
+  const relativePath = relative(stateRoot, resolvedPath);
+  if (
+    !isAbsolute(resolvedPath) ||
+    relativePath.startsWith(`..${sep}`) ||
+    relativePath === ".." ||
+    basename(resolvedPath) !== "spoiler.txt" ||
+    !basename(dirname(resolvedPath)).startsWith("seed_")
+  ) {
+    throw new Error("Invalid spoiler log path.");
+  }
+  const error = await shell.openPath(resolvedPath);
+  if (error) throw new Error(error);
   return true;
 });
 

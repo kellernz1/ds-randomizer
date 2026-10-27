@@ -17,4 +17,8 @@ contextBridge.exposeInMainWorld("randomizerDesktop", Object.freeze({
     "randomizer:save-json",
     { defaultName, contents },
   ),
+  openSpoiler: (spoilerPath) => ipcRenderer.invoke(
+    "randomizer:open-spoiler",
+    spoilerPath,
+  ),
 }));

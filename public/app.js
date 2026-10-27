@@ -2,6 +2,7 @@ const form = document.querySelector("#config-form");
 const message = document.querySelector("#message");
 let latestGeneratedSeed = "";
 let latestPackageDirectory = "";
+let latestSpoilerPath = "";
 let availableEnemyModels = [];
 
 function syncEnemyBanSelection(selectedModels = []) {
@@ -287,14 +288,32 @@ form.addEventListener("submit", async (event) => {
       `${result.counts.gifts} gifts, ${result.counts.enemyDrops} drops, and ` +
       `${result.counts.shops} shop entries processed.\n` +
       `Output: ${result.outputDirectory}` +
+      (result.spoilerLog ? `\nSpoiler log: ${result.spoilerLog}` : "\nSpoiler log: not generated (option is off).") +
       (result.patch ? `\nValidated patch package: ${result.patch.message}` : "");
     latestPackageDirectory = result.outputDirectory;
+    latestSpoilerPath = result.spoilerLog || "";
+    const spoilerButton = document.querySelector("#open-spoiler");
+    spoilerButton.hidden = !window.randomizerDesktop;
+    spoilerButton.disabled = !latestSpoilerPath;
     document.querySelector("#install-package").disabled = !result.patch;
     document.querySelector("#restore-package").disabled = true;
   } catch (error) {
     message.textContent = error.message;
   } finally {
     button.disabled = false;
+  }
+});
+
+document.querySelector("#open-spoiler").addEventListener("click", async () => {
+  if (!latestSpoilerPath || !window.randomizerDesktop) return;
+  const button = document.querySelector("#open-spoiler");
+  button.disabled = true;
+  try {
+    await window.randomizerDesktop.openSpoiler(latestSpoilerPath);
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    button.disabled = !latestSpoilerPath;
   }
 });
 

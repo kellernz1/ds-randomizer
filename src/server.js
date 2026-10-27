@@ -300,6 +300,9 @@ async function api(request, response, pathname) {
       seed: result.seed,
       placementHash: result.placementHash,
       outputDirectory,
+      spoilerLog: result.config.generateSpoilerLog
+        ? path.join(outputDirectory, "spoiler.txt")
+        : null,
       counts: {
         enemies: result.placements.enemies.length,
         bosses: result.placements.bosses.length,

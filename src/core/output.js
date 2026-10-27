@@ -173,6 +173,8 @@ export async function writeOutput(result, baseDirectory) {
   );
   if (result.config.generateSpoilerLog) {
     await writeFile(path.join(directory, "spoiler.txt"), spoilerText(result), "utf8");
+  } else {
+    await rm(path.join(directory, "spoiler.txt"), { force: true });
   }
   if (
     result.placements.items.length > 0 ||
