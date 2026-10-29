@@ -291,26 +291,10 @@ function bossGrounding(slot, catalog) {
 
 function portableBossGrounding(slot, catalog, replacementModel) {
   const grounding = bossGrounding(slot, catalog);
-  if (
-    replacementModel === "c3230" &&
-    [
-      "m12_00_00_00:c5210_0000",
-      "m12_00_00_01:c5210_0000",
-      "m13_01_00_00:c5220_0000",
-    ].includes(slot.id)
-  ) {
-    // Give the Butterfly's forced landing room to settle onto the uneven Sif
-    // and Nito arena floors instead of starting with its capsule below them.
-    grounding.groundY += 1.5;
-  }
-  if (
-    replacementModel === "c3230" &&
-    slot.id === "m14_01_00_00:c5250_0000"
-  ) {
-    // Ceaseless's arena uses a separate, elevated spawn point above uneven
-    // volcanic floor geometry. Start the Butterfly higher so its forced
-    // landing animation cannot clip its body below the collision surface.
-    grounding.groundY += 6;
+  if (replacementModel === "c3230") {
+    // Start slightly above each arena's floor so the forced landing sequence
+    // can settle cleanly even when the destination has uneven collision.
+    grounding.groundY += 3;
   }
   return grounding;
 }

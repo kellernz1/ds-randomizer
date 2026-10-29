@@ -2264,8 +2264,8 @@ static bool IsPortableBossSpecificInstruction(EMEVD.Instruction instruction)
         // when the destination encounter uses a special protection mechanic,
         // as Seath does with the Primordial Crystal.
         (instruction.Bank == 2004 &&
-         instruction.ID is 12 or 15 or 22 or 27 or 28 or 29 or 30 or 31 or
-             32 or 35 or 36 or 40 or 42);
+         instruction.ID is 10 or 12 or 15 or 22 or 27 or 28 or 29 or 30 or
+             31 or 32 or 35 or 36 or 40 or 42);
 }
 
 static bool IsOrnsteinSmoughPhaseProtectionInstruction(
@@ -3158,26 +3158,33 @@ static List<PatchedFile> PatchBossNames(
                     InsertEventInstruction(
                         entry,
                         index + 2,
+                        new EMEVD.Instruction(
+                            2004,
+                            10,
+                            new object[] { entityId, 1 }));
+                    InsertEventInstruction(
+                        entry,
+                        index + 3,
                         ForceAnimationInstruction(
                             entityId,
                             3020,
                             true));
                     InsertEventInstruction(
                         entry,
-                        index + 3,
+                        index + 4,
                         new EMEVD.Instruction(
                             2004,
                             1,
                             new object[] { entityId, 1 }));
                     InsertEventInstruction(
                         entry,
-                        index + 4,
+                        index + 5,
                         new EMEVD.Instruction(
                             2004,
                             20,
                             new object[] { entityId }));
-                    index += 4;
-                    changed += 4;
+                    index += 5;
+                    changed += 5;
                     continue;
                 }
                 var nextIsEnable =
@@ -3905,18 +3912,23 @@ static List<PatchedFile> PatchBossNames(
                     continue;
                 if (butterflyEntityIds.Contains(entityId))
                 {
-                    if (index + 4 >= entry.Instructions.Count)
+                    if (index + 5 >= entry.Instructions.Count)
                         throw new InvalidDataException(
                             $"Moonlight Butterfly landing sequence is incomplete " +
                             $"for entity {entityId} in {mapId}.");
                     var disable = entry.Instructions[index + 1];
-                    var landing = entry.Instructions[index + 2];
-                    var landingEnable = entry.Instructions[index + 3];
-                    var landingReplan = entry.Instructions[index + 4];
+                    var gravity = entry.Instructions[index + 2];
+                    var landing = entry.Instructions[index + 3];
+                    var landingEnable = entry.Instructions[index + 4];
+                    var landingReplan = entry.Instructions[index + 5];
                     if (disable.Bank != 2004 ||
                         disable.ID != 1 ||
                         BitConverter.ToInt32(disable.ArgData, 0) != entityId ||
                         BitConverter.ToInt32(disable.ArgData, 4) != 0 ||
+                        gravity.Bank != 2004 ||
+                        gravity.ID != 10 ||
+                        BitConverter.ToInt32(gravity.ArgData, 0) != entityId ||
+                        BitConverter.ToInt32(gravity.ArgData, 4) != 1 ||
                         landing.Bank != 2003 ||
                         landing.ID != 18 ||
                         landing.ArgData.Length != 12 ||
