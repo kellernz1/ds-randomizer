@@ -2716,7 +2716,7 @@ static List<PatchedFile> PatchBossNames(
                 if (instruction.ArgData.Length < 4 ||
                     BitConverter.ToInt32(instruction.ArgData, 0) != 1810800 ||
                     !((instruction.Bank == 2004 &&
-                       instruction.ID is 8 or 9 or 21 or 41) ||
+                       instruction.ID is 8 or 9 or 10 or 21 or 41) ||
                       (instruction.Bank == 2003 && instruction.ID == 18)))
                     continue;
                 RemoveEventInstruction(intro, index);
@@ -3301,7 +3301,7 @@ static List<PatchedFile> PatchBossNames(
                     instruction.ArgData.Length >= 4 &&
                     BitConverter.ToInt32(instruction.ArgData, 0) == 1810800 &&
                     ((instruction.Bank == 2004 &&
-                      instruction.ID is 8 or 9 or 21 or 41) ||
+                      instruction.ID is 8 or 9 or 10 or 21 or 41) ||
                      (instruction.Bank == 2003 && instruction.ID == 18))) ||
                 enableIndex < 0 ||
                 terminalIndex < 0 ||
