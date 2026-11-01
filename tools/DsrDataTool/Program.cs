@@ -2318,8 +2318,8 @@ static bool IsPortableBossSpecificInstruction(EMEVD.Instruction instruction)
         // when the destination encounter uses a special protection mechanic,
         // as Seath does with the Primordial Crystal.
         (instruction.Bank == 2004 &&
-         instruction.ID is 10 or 12 or 15 or 22 or 27 or 28 or 29 or 30 or
-             31 or 32 or 35 or 36 or 40 or 42);
+         instruction.ID is 10 or 12 or 13 or 14 or 15 or 18 or 19 or 22 or
+             27 or 28 or 29 or 30 or 31 or 32 or 35 or 36 or 40 or 42);
 }
 
 static bool IsOrnsteinSmoughPhaseProtectionInstruction(
@@ -3932,10 +3932,13 @@ static List<PatchedFile> PatchBossNames(
                           BitConverter.ToInt32(instruction.ArgData, 0)) &&
                       BitConverter.ToInt32(instruction.ArgData, 4) == 3020))
                 {
+                    var eventId = verification.Events.FirstOrDefault(entry =>
+                        entry.Instructions.Contains(instruction))?.ID;
                     throw new InvalidDataException(
                         $"Boss-specific event action remained for portable " +
                         $"entity {BitConverter.ToInt32(instruction.ArgData, 0)} " +
-                        $"in {mapId}.");
+                        $"in {mapId}: event action {instruction.Bank}/{instruction.ID} " +
+                        $"in event {eventId}.");
                 }
             }
         }
