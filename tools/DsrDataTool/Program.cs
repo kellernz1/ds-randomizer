@@ -966,6 +966,18 @@ static bool IsEarlyBossArenaSlot(string slotId) => slotId is
     "m10_01_00_00:c5350_0000" or // Bell Gargoyle
     "m10_01_00_00:c5350_0002";   // Bell Gargoyle
 
+static bool HasEarlyBossPoiseOverride(PatchPlacement placement) =>
+    placement.Scaling.Equals("area", StringComparison.Ordinal) &&
+    IsEarlyBossArenaSlot(placement.SlotId);
+
+static int GetEarlyBossPoise(
+    PatchPlacement placement,
+    PARAM.Row target,
+    PARAM.Row source) =>
+    Math.Max(
+        GetCellInt(target, "superArmorDurability"),
+        Math.Clamp(GetCellInt(source, "superArmorDurability") + 10, 25, 40));
+
 static bool IsLordSoulGoods(int category, int itemId) =>
     category == 0x40000000 && itemId is (2500 or 2501 or 2502 or 2503);
 
@@ -4583,19 +4595,12 @@ static PatchedFile? PatchGameParam(
                     GetCellInt(source, cell.Def.InternalName));
             }
         }
-        if (placement.Scaling.Equals("area", StringComparison.Ordinal) &&
-            IsEarlyBossArenaSlot(placement.SlotId))
+        if (HasEarlyBossPoiseOverride(placement))
         {
-            var minimumEarlyBossPoise = Math.Clamp(
-                GetCellInt(source, "superArmorDurability") + 10,
-                25,
-                40);
             AssertCell(
                 scaled,
                 "superArmorDurability",
-                Math.Max(
-                    GetCellInt(target, "superArmorDurability"),
-                    minimumEarlyBossPoise));
+                GetEarlyBossPoise(placement, target, source));
         }
         AssertCell(scaled, "nameId", GetCellInt(target, "nameId"));
         AssertCell(
@@ -4761,22 +4766,15 @@ static void AddScaledNpcRows(PARAM npcParam, List<PatchPlacement> placements)
             CopyCells(RowCells(source), scaled, name => combatFields.Contains(name));
             AssertCells(RowCells(source), scaled, name => combatFields.Contains(name));
         }
-        if (placement.Scaling.Equals("area", StringComparison.Ordinal) &&
-            IsEarlyBossArenaSlot(placement.SlotId))
+        if (HasEarlyBossPoiseOverride(placement))
         {
             // Early arenas can leave a transplanted boss staggered by every
             // light hit. Keep the randomized boss's own poise, with a modest
             // floor based on the arena's vanilla poise (25-40).
-            var minimumEarlyBossPoise = Math.Clamp(
-                GetCellInt(source, "superArmorDurability") + 10,
-                25,
-                40);
             SetCell(
                 scaled,
                 "superArmorDurability",
-                Math.Max(
-                    GetCellInt(target, "superArmorDurability"),
-                    minimumEarlyBossPoise));
+                GetEarlyBossPoise(placement, target, source));
         }
         // Drops belong to the randomized location, not to the replacement
         // model. The referenced ItemLot rows are shuffled independently, so a
@@ -4805,10 +4803,19 @@ static void AddScaledNpcRows(PARAM npcParam, List<PatchPlacement> placements)
             scaled,
             name =>
                 !combatFields.Contains(name) &&
+                !(HasEarlyBossPoiseOverride(placement) &&
+                  name == "superArmorDurability") &&
                 name != "teamType" &&
                 !IsNpcItemLotField(name) &&
                 !(placement.MakeTangible &&
                   name is "isGhost" or "isChangeWanderGhost" or "ghostModelId"));
+        if (HasEarlyBossPoiseOverride(placement))
+        {
+            AssertCell(
+                scaled,
+                "superArmorDurability",
+                GetEarlyBossPoise(placement, target, source));
+        }
         AssertCell(
             scaled,
             "teamType",
