@@ -86,7 +86,7 @@ ipcMain.handle("randomizer:save-json", async (_event, request) => {
 
 ipcMain.handle("randomizer:open-spoiler", async (_event, spoilerPath) => {
   const stateRoot = app.getPath("userData");
-  const resolvedPath = resolve(String(spoilerPath || ""));
+  const resolvedPath = path.resolve(String(spoilerPath || ""));
   const relativePath = relative(stateRoot, resolvedPath);
   if (
     !isAbsolute(resolvedPath) ||
