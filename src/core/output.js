@@ -114,6 +114,11 @@ function spoilerText(result) {
       `[${placement.map}] ${placement.from} -> ${placement.to}${sourceLocation}`,
     );
   }
+  lines.push("", "=== MIMIC CHESTS ===");
+  for (const placement of result.placements.chestMimics || []) {
+    const chestName = placement.slot.slice(placement.slot.indexOf(":") + 1);
+    lines.push(`[${placement.map}] ${chestName} -> Mimic (item lot ${placement.awardItemLotId})`);
+  }
   lines.push("", "=== BOSSES ===");
   for (const placement of result.placements.bosses) {
     lines.push(bossPlacementLine(placement));

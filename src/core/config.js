@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 
-export const RANDOMIZER_VERSION = "0.5.88";
+export const RANDOMIZER_VERSION = "0.5.89";
 
 export const defaultConfig = Object.freeze({
   version: RANDOMIZER_VERSION,
@@ -14,6 +14,7 @@ export const defaultConfig = Object.freeze({
   outputDirectory: "output",
   lastPackageDirectory: "",
   randomizeEnemies: true,
+  mimicChance: 0,
   randomizeBosses: true,
   keepBedOfChaosFloorIntact: false,
   randomizeItems: true,
@@ -82,6 +83,9 @@ export function normalizeConfig(input = {}) {
   config.enemyScaling = ["vanilla", "area", "progressive"].includes(config.enemyScaling)
     ? config.enemyScaling
     : defaultConfig.enemyScaling;
+  config.mimicChance = Number.isFinite(Number(config.mimicChance))
+    ? Math.min(100, Math.max(0, Math.round(Number(config.mimicChance))))
+    : defaultConfig.mimicChance;
 
   for (const key of booleanKeys) {
     config[key] = Boolean(config[key]);

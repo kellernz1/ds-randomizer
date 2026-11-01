@@ -16,6 +16,7 @@ const sharedKeys = Object.freeze([
   "randomizeLordvessel",
   "randomizeLordSouls",
   "randomizeEnemies",
+  "mimicChance",
   "randomizeBosses",
   "keepBedOfChaosFloorIntact",
   "randomizeItems",

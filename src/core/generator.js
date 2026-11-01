@@ -1432,6 +1432,55 @@ function randomizableWorldItemLots(config, catalog) {
   );
 }
 
+function randomizeChestMimics(config, catalog) {
+  const chance = config.mimicChance;
+  if (chance <= 0 || !catalog?.chests?.length) return [];
+  const mimicSource = catalog.enemySlots
+    .filter((slot) =>
+      slot.modelName === "c2780" &&
+      slot.npcParamId === 278000 &&
+      slot.thinkParamId === 278000 &&
+      !slot.dummy &&
+      slot.entityId >= 0)
+    .sort((left, right) => left.id.localeCompare(right.id))[0];
+  if (!mimicSource) return [];
+  const knownWorldLotIds = new Set(catalog.worldItemLots.map((lot) => lot.rowId));
+  const protectedLotIds = new Set(
+    catalog.worldItemLots
+      .filter((lot) => lot.protectedProgression)
+      .map((lot) => lot.rowId),
+  );
+  const rng = createStream(config.enemySeed || config.seed, "mimic-chests", config.version);
+  const chests = catalog.chests
+    .filter((chest) =>
+      chest.eligible &&
+      Number.isInteger(chest.itemLotId) &&
+      knownWorldLotIds.has(chest.itemLotId) &&
+      !protectedLotIds.has(chest.itemLotId) &&
+      chest.entityId >= 0 &&
+      chest.position && chest.rotation)
+    .sort((left, right) => left.id.localeCompare(right.id));
+  return chests.flatMap((chest) => rng.next() * 100 < chance ? [{
+    slot: chest.id,
+    map: chest.mapId,
+    sourceSlot: mimicSource.id,
+    targetModelName: "c2780",
+    targetNpcParamId: mimicSource.npcParamId,
+    targetThinkParamId: 278000,
+    targetBattleGoalId: mimicSource.battleGoalId,
+    sourceNpcParamId: mimicSource.npcParamId,
+    entityId: chest.entityId,
+    groundX: chest.position.x,
+    groundY: chest.position.y,
+    groundZ: chest.position.z,
+    groundRotationY: chest.rotation.y,
+    forceCombatActivation: true,
+    syntheticEnemy: true,
+    awardItemLotId: chest.itemLotId,
+    chestMimic: true,
+  }] : []);
+}
+
 const bulkShopGoodNames = new Set([
   "Throwing Knife",
   "Poison Throwing Knife",
@@ -2310,7 +2359,7 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
   if (errors.length > 0) {
     throw new Error(errors.join("\n"));
   }
-  if (gameCatalog && gameCatalog.schemaVersion !== 20) {
+  if (gameCatalog && gameCatalog.schemaVersion !== 21) {
     throw new Error(
       `Catalog schema ${gameCatalog.schemaVersion} is obsolete. ` +
         "Verify the clean game and import its data again.",
@@ -2364,6 +2413,7 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
         ? itemLotPlan.enemyDrops
         : [],
       shops: extractedData ? itemLotPlan.shops : [],
+      chestMimics: extractedData ? randomizeChestMimics(config, gameCatalog) : [],
     },
     validation: {
       valid: true,

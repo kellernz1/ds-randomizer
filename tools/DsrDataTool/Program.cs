@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using SoulsFormats;
 
-const int SchemaVersion = 20;
+const int SchemaVersion = 21;
 const int ProgressiveEffectIdBase = 9_600_000;
 const int ProgressiveMilestoneCount = 7;
 Console.OutputEncoding = new UTF8Encoding(false);
@@ -206,6 +206,7 @@ static GameCatalog ScanGame(string gameDirectory)
 
     var maps = new List<MapRecord>();
     var slots = new List<EnemySlotRecord>();
+    var chests = new List<ChestRecord>();
     var eventAwardItemLotIds = new HashSet<int>();
     var ignoredFiles = new List<string>();
     var mapNames = CreateMapNames();
@@ -248,6 +249,23 @@ static GameCatalog ScanGame(string gameDirectory)
                 enemy => ToSlot(
                     mapId, enemy, true, enemyMetadata,
                     eventModelLockedEntities)));
+            var chestObjects = map.Parts.Objects
+                .Where(part => part.ModelName == "o0110")
+                .ToDictionary(part => part.Name, StringComparer.Ordinal);
+            foreach (var treasure in map.Events.Treasures)
+            {
+                if (!chestObjects.TryGetValue(treasure.TreasurePartName, out var chest))
+                    continue;
+                chests.Add(new ChestRecord(
+                    $"{mapId}:{chest.Name}",
+                    mapId,
+                    chest.Name,
+                    chest.EntityID,
+                    new VectorRecord(chest.Position.X, chest.Position.Y, chest.Position.Z),
+                    new VectorRecord(chest.Rotation.X, chest.Rotation.Y, chest.Rotation.Z),
+                    treasure.ItemLots.Length == 1 ? treasure.ItemLots[0] : -1,
+                    treasure.ItemLots.Length == 1 && chest.EntityID >= 0 && !treasure.StartDisabled));
+            }
         }
         catch (Exception error)
         {
@@ -394,6 +412,7 @@ static GameCatalog ScanGame(string gameDirectory)
         sourceFiles,
         maps,
         slots,
+        chests,
         archetypes,
         slots.Where(slot => IsBossModel(slot.ModelName))
             .Where(slot => !slot.Dummy && IsPrimaryBossSlot(slot))
@@ -1209,11 +1228,15 @@ static PatchReport PatchEnemies(
                 element.TryGetProperty("awardItemLotId", out var awardItemLot) &&
                     awardItemLot.ValueKind == JsonValueKind.Number
                         ? awardItemLot.GetInt32()
-                        : null))
+                        : null,
+                element.TryGetProperty("chestMimic", out var chestMimic) &&
+                    chestMimic.ValueKind == JsonValueKind.True))
             .Where(placement =>
                 placement.TargetNpcParamId >= 0 && placement.TargetThinkParamId >= 0);
     }
-    var regularEnemyPlacements = ReadEnemyPlacements("enemies").ToList();
+    var regularEnemyPlacements = ReadEnemyPlacements("enemies")
+        .Concat(ReadEnemyPlacements("chestMimics"))
+        .ToList();
     var bossPlacements = ReadEnemyPlacements("bosses").ToList();
     var slotsById = catalog.EnemySlots.ToDictionary(slot => slot.Id);
     foreach (var placement in regularEnemyPlacements)
@@ -1227,11 +1250,20 @@ static PatchReport PatchEnemies(
             sourceSlot.ModelName == placement.TargetModelName &&
             (placement.TargetModelName == "c3531" ||
              IsLinkedDragonPartModel(placement.TargetModelName));
+        var validChestMimic = placement.ChestMimic &&
+            placement.SyntheticEnemy &&
+            placement.TargetModelName == "c2780" &&
+            placement.EntityId >= 0 &&
+            placement.SourceSlotId != null &&
+            slotsById.TryGetValue(placement.SourceSlotId, out var mimicSource) &&
+            mimicSource.ModelName == "c2780" &&
+            catalog.Chests.Any(chest => chest.Id == placement.SlotId &&
+                chest.Eligible && chest.ItemLotId == placement.AwardItemLotId);
         var hasTargetSlot = slotsById.TryGetValue(
             placement.SlotId,
             out var targetSlot);
-        if ((!hasTargetSlot && !validSyntheticDragonPart) ||
-            (placement.SyntheticEnemy && !validSyntheticDragonPart) ||
+        if ((!hasTargetSlot && !validSyntheticDragonPart && !validChestMimic) ||
+            (placement.SyntheticEnemy && !validSyntheticDragonPart && !validChestMimic) ||
             (hasTargetSlot && targetSlot!.TeamType != 0 &&
              !placement.LinkedEnemyGroup) ||
             (hasTargetSlot && targetSlot!.ModelName == "c0000") ||
@@ -1376,6 +1408,16 @@ static PatchReport PatchEnemies(
         }
 
         var msb = MSB1.Read(sourcePath);
+        foreach (var placement in mapGroup.Where(entry => entry.ChestMimic))
+        {
+            var chestName = placement.SlotId[(placement.SlotId.IndexOf(':') + 1)..];
+            var removed = msb.Parts.Objects.RemoveAll(part => part.Name == chestName);
+            var removedTreasures = msb.Events.Treasures.RemoveAll(
+                treasure => treasure.TreasurePartName == chestName);
+            if (removed != 1 || removedTreasures != 1)
+                throw new InvalidDataException(
+                    $"Could not safely replace chest {placement.SlotId}.");
+        }
         foreach (var placement in mapGroup.Where(entry => entry.SyntheticEnemy))
         {
             if (placement.SourceSlotId == null ||
@@ -2953,6 +2995,11 @@ static List<PatchedFile> PatchBossNames(
                 combatEvent.Instructions.Add(IfDeadInstruction(
                     0,
                     placement.EntityId));
+                if (placement.AwardItemLotId.HasValue)
+                    combatEvent.Instructions.Add(new EMEVD.Instruction(
+                        2003,
+                        36,
+                        new object[] { placement.AwardItemLotId.Value }));
                 RegisterCustomEvent(combatEvent);
             }
             foreach (var placement in staticBridgeMapPlacements
@@ -5622,6 +5669,7 @@ record GameCatalog(
     List<SourceFile> SourceFiles,
     List<MapRecord> Maps,
     List<EnemySlotRecord> EnemySlots,
+    List<ChestRecord> Chests,
     List<EnemyArchetypeRecord> EnemyArchetypes,
     List<EnemySlotRecord> BossSlots,
     List<BinderEntryRecord> GameParamEntries,
@@ -5651,6 +5699,15 @@ record LuaAiEntry(
     List<string> Globals);
 record MapRecord(string Id, string Name, int Enemies, int DummyEnemies);
 record VectorRecord(float X, float Y, float Z);
+record ChestRecord(
+    string Id,
+    string MapId,
+    string Name,
+    int EntityId,
+    VectorRecord Position,
+    VectorRecord Rotation,
+    int ItemLotId,
+    bool Eligible);
 
 record EnemySlotRecord(
     string Id,
@@ -5884,7 +5941,8 @@ record PatchPlacement(
     bool KillDisabledEntity,
     bool SyntheticEnemy,
     bool PortableHydraGroup,
-    int? AwardItemLotId)
+    int? AwardItemLotId,
+    bool ChestMimic)
 {
     public int EffectiveNpcParamId => ScaledNpcParamId ?? TargetNpcParamId;
 }

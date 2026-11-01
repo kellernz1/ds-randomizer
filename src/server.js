@@ -160,9 +160,9 @@ async function api(request, response, pathname) {
       generatedSeed: generateSeed(),
       catalog: catalog
           ? {
-            available: catalog.schemaVersion === 20,
+            available: catalog.schemaVersion === 21,
             schemaVersion: catalog.schemaVersion,
-            needsImport: catalog.schemaVersion !== 20,
+            needsImport: catalog.schemaVersion !== 21,
             maps: catalog.maps.length,
             enemySlots: catalog.enemySlots.length,
             errors: catalog.errors.length,
@@ -220,7 +220,7 @@ async function api(request, response, pathname) {
     const previousCatalog = await loadGameCatalog(catalogPath, { allowStale: true });
     if (previousCatalog) {
       if (
-        previousCatalog.schemaVersion !== 20 &&
+        previousCatalog.schemaVersion !== 21 &&
         (!Array.isArray(previousCatalog.sourceFiles) ||
           previousCatalog.sourceFiles.length === 0)
       ) {
