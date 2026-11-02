@@ -8,18 +8,18 @@ export async function loadGameCatalog(catalogPath, { allowStale = false } = {}) 
     if (
       !Number.isInteger(catalog.schemaVersion) ||
       catalog.schemaVersion < 1 ||
-      catalog.schemaVersion > 21 ||
+      catalog.schemaVersion > 22 ||
       !Array.isArray(catalog.enemySlots) ||
       !Array.isArray(catalog.enemyArchetypes)
     ) {
       throw new Error(
-        `Incompatible catalog schema: expected 21, found ${catalog.schemaVersion ?? "unknown"}. ` +
+        `Incompatible catalog schema: expected 22, found ${catalog.schemaVersion ?? "unknown"}. ` +
           "Import game data again using this version of the randomizer.",
       );
     }
-    if (!allowStale && catalog.schemaVersion !== 21) {
+    if (!allowStale && catalog.schemaVersion !== 22) {
       throw new Error(
-        `Catalog schema ${catalog.schemaVersion} is outdated; expected 21. ` +
+        `Catalog schema ${catalog.schemaVersion} is outdated; expected 22. ` +
           "Import game data again using this version of the randomizer.",
       );
     }

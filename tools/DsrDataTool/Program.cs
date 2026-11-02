@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using SoulsFormats;
 
-const int SchemaVersion = 21;
+const int SchemaVersion = 22;
 const int ProgressiveEffectIdBase = 9_600_000;
 const int ProgressiveMilestoneCount = 7;
 Console.OutputEncoding = new UTF8Encoding(false);
@@ -256,6 +256,13 @@ static GameCatalog ScanGame(string gameDirectory)
             {
                 if (!chestObjects.TryGetValue(treasure.TreasurePartName, out var chest))
                     continue;
+                // SoulsFormats represents the treasure lot slots as an array;
+                // unused slots may be zero or negative. Only a chest with one
+                // distinct positive lot is safe to transfer to a mimic.
+                var itemLotIds = treasure.ItemLots
+                    .Where(itemLotId => itemLotId > 0)
+                    .Distinct()
+                    .ToArray();
                 chests.Add(new ChestRecord(
                     $"{mapId}:{chest.Name}",
                     mapId,
@@ -263,8 +270,8 @@ static GameCatalog ScanGame(string gameDirectory)
                     chest.EntityID,
                     new VectorRecord(chest.Position.X, chest.Position.Y, chest.Position.Z),
                     new VectorRecord(chest.Rotation.X, chest.Rotation.Y, chest.Rotation.Z),
-                    treasure.ItemLots.Length == 1 ? treasure.ItemLots[0] : -1,
-                    treasure.ItemLots.Length == 1 && chest.EntityID >= 0 && !treasure.StartDisabled));
+                    itemLotIds.Length == 1 ? itemLotIds[0] : -1,
+                    itemLotIds.Length == 1 && chest.EntityID >= 0 && !treasure.StartDisabled));
             }
         }
         catch (Exception error)

@@ -2359,7 +2359,7 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
   if (errors.length > 0) {
     throw new Error(errors.join("\n"));
   }
-  if (gameCatalog && gameCatalog.schemaVersion !== 21) {
+  if (gameCatalog && gameCatalog.schemaVersion !== 22) {
     throw new Error(
       `Catalog schema ${gameCatalog.schemaVersion} is obsolete. ` +
         "Verify the clean game and import its data again.",
@@ -2381,6 +2381,9 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
   const itemLotPlan = extractedData
     ? randomizeExtractedItemLots(config, gameCatalog)
     : null;
+  const chestMimicPlan = extractedData
+    ? randomizeChestMimics(config, gameCatalog)
+    : [];
   const result = {
     schemaVersion: 1,
     randomizerVersion: config.version,
@@ -2413,7 +2416,7 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
         ? itemLotPlan.enemyDrops
         : [],
       shops: extractedData ? itemLotPlan.shops : [],
-      chestMimics: extractedData ? randomizeChestMimics(config, gameCatalog) : [],
+      chestMimics: chestMimicPlan,
     },
     validation: {
       valid: true,
@@ -2431,6 +2434,9 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
                 ? "Area scaling inherits destination combat stats and replaces hidden level multipliers from the selected enemy."
                 : "Vanilla scaling keeps each enemy's original combat stats.",
             "Bosses use a safe permutation and are grounded at their destination encounter; dragons only exchange complete linked dragon groups.",
+            config.mimicChance > 0
+              ? `${chestMimicPlan.length} normal chests converted to mimics at ${config.mimicChance}% chance; progression and unsupported chests were skipped.`
+              : "Normal chests stayed vanilla (mimic chance is 0%).",
             ...(config.randomizeBosses
               ? [
                   config.keepBedOfChaosFloorIntact

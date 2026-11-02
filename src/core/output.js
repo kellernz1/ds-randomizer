@@ -115,7 +115,11 @@ function spoilerText(result) {
     );
   }
   lines.push("", "=== MIMIC CHESTS ===");
-  for (const placement of result.placements.chestMimics || []) {
+  const chestMimics = result.placements.chestMimics || [];
+  if (chestMimics.length === 0) {
+    lines.push(`No chests converted at ${result.config.mimicChance}% chance.`);
+  }
+  for (const placement of chestMimics) {
     const chestName = placement.slot.slice(placement.slot.indexOf(":") + 1);
     lines.push(`[${placement.map}] ${chestName} -> Mimic (item lot ${placement.awardItemLotId})`);
   }
