@@ -1455,6 +1455,22 @@ static PatchReport PatchEnemies(
             clone.Name = separator >= 0
                 ? placement.SlotId[(separator + 1)..]
                 : placement.SlotId;
+            if (placement.ChestMimic && clone is MSB1.Part.EnemyBase mimicClone)
+            {
+                // A mimic is cloned from another map. Do not carry its patrol
+                // node or collision references into the chest's destination;
+                // those part names are only valid in the source MSB.
+                Array.Clear(mimicClone.MovePointNames);
+                var destinationCollision = msb.Parts.Collisions
+                    .OrderBy(collision => System.Numerics.Vector3.DistanceSquared(
+                        collision.Position,
+                        new System.Numerics.Vector3(
+                            placement.GroundX ?? 0,
+                            placement.GroundY ?? 0,
+                            placement.GroundZ ?? 0)))
+                    .FirstOrDefault();
+                mimicClone.CollisionName = destinationCollision?.Name;
+            }
             if (clone is MSB1.Part.Enemy enemyClone)
                 msb.Parts.Enemies.Add(enemyClone);
             else if (clone is MSB1.Part.DummyEnemy dummyClone)
