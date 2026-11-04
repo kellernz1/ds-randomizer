@@ -12,13 +12,17 @@ const knownBase = Object.freeze({
 
 const modIndicators = [
   "DarkSoulsItemRandomizer.exe",
-  "SeamlessCoop",
   "OnlineFix.ini",
   "OnlineFix64.dll",
   "winmm.dll",
   "dlllist.txt",
   "dinput8.dll",
   "modengine.ini",
+];
+const seamlessCoopIndicators = [
+  "SeamlessCoop",
+  "ds1sc_launcher.exe",
+  "ds1sc_settings.ini",
 ];
 
 async function exists(filePath) {
@@ -50,7 +54,12 @@ export async function detectGame(gameDirectory) {
   try {
     await access(executable);
     await access(gameParam);
-    const [executableHash, gameParamHash, indicatorStates] = await Promise.all([
+    const [
+      executableHash,
+      gameParamHash,
+      indicatorStates,
+      seamlessStates,
+    ] = await Promise.all([
       sha256(executable),
       sha256(gameParam),
       Promise.all(
@@ -59,29 +68,59 @@ export async function detectGame(gameDirectory) {
           found: await exists(path.join(gameDirectory, name)),
         })),
       ),
+      Promise.all(
+        seamlessCoopIndicators.map(async (name) => ({
+          name,
+          found: await exists(path.join(gameDirectory, name)),
+        })),
+      ),
     ]);
     const detectedMods = indicatorStates
       .filter((indicator) => indicator.found)
       .map((indicator) => indicator.name);
+    const detectedSeamlessFiles = seamlessStates
+      .filter((indicator) => indicator.found)
+      .map((indicator) => indicator.name);
+    const hasSeamlessFolder = detectedSeamlessFiles.includes("SeamlessCoop");
+    const hasSeamlessLauncher = detectedSeamlessFiles.includes(
+      "ds1sc_launcher.exe",
+    );
+    const hasSeamlessCoop = hasSeamlessFolder && hasSeamlessLauncher;
+    const hasPartialSeamlessCoop =
+      detectedSeamlessFiles.length > 0 && !hasSeamlessCoop;
     const knownVersion =
       executableHash === knownBase.executable &&
       gameParamHash === knownBase.gameParam;
-    const clean = detectedMods.length === 0;
-    const supported = knownVersion && clean;
+    const clean = detectedMods.length === 0 && detectedSeamlessFiles.length === 0;
+    const supported =
+      knownVersion &&
+      detectedMods.length === 0 &&
+      !hasPartialSeamlessCoop;
+    let reason;
+    if (supported) {
+      reason = hasSeamlessCoop
+        ? "Recognized installation with Seamless Co-op. Co-op compatibility is experimental; every player must use identical randomizer data."
+        : "Recognized clean and compatible installation.";
+    } else if (detectedMods.length > 0) {
+      reason = `Unsupported mods/loaders detected: ${detectedMods.join(", ")}.`;
+    } else if (hasPartialSeamlessCoop) {
+      reason =
+        "Incomplete Seamless Co-op installation. Install its folder and ds1sc_launcher.exe, or remove the partial files.";
+    } else {
+      reason = "Game files found, but their hashes are not recognized.";
+    }
     return {
       found: true,
       supported,
       clean,
       knownVersion,
+      seamlessCoop: hasSeamlessCoop,
       executable,
       executableHash,
       gameParamHash,
       detectedMods,
-      reason: supported
-        ? "Recognized clean and compatible installation."
-        : !clean
-          ? `Mods/loaders detectados: ${detectedMods.join(", ")}.`
-          : "Game files found, but their hashes are not recognized.",
+      detectedSeamlessFiles,
+      reason,
     };
   } catch {
     return {

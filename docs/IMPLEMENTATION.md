@@ -34,6 +34,9 @@ files; source hashes prevent applying it to a different installation state.
 - Invisible helper-only character resources are excluded from cross-map pools
 - World items, gifts, enemy drops, and shops preserve their source multisets
   through deterministic permutations
+- Mimic conversions remove the chest and its treasure part, then wait for the
+  mimic's death before awarding the chest's item lot exactly once; protected
+  progression lots remain unchanged when their chest becomes a mimic
 - Enemy, boss, and dragon placement accepts a separate enemy seed, allowing
   enemy-only rerolls while leaving item results unchanged
 - Configurable enemy model exclusions leave banned models in their original
@@ -56,6 +59,8 @@ files; source hashes prevent applying it to a different installation state.
 - Scaled replacements inherit every combat-scaling `SpEffect` from the
   destination, preventing hidden late-game HP and attack multipliers
 - Randomized boss AI is explicitly enabled when its health bar appears
+- The Taurus bridge boss replacement activates from the region centered on the
+  arena, rather than the neighboring Titanite Demon entrance region
 - Boss models use a strict non-vanilla assignment, while duplicate parts and
   alternate-map copies of one encounter share the same replacement and name
 - Only required cross-map Lua battle/logic scripts, matching goal records, and

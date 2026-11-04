@@ -130,6 +130,7 @@ static void InspectBossBars(string gameDirectory)
     }
 }
 
+
 static Dictionary<string, string> ParseOptions(string[] values)
 {
     var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -271,7 +272,7 @@ static GameCatalog ScanGame(string gameDirectory)
                     new VectorRecord(chest.Position.X, chest.Position.Y, chest.Position.Z),
                     new VectorRecord(chest.Rotation.X, chest.Rotation.Y, chest.Rotation.Z),
                     itemLotIds.Length == 1 ? itemLotIds[0] : -1,
-                    itemLotIds.Length == 1 && chest.EntityID >= 0 && !treasure.StartDisabled));
+                    itemLotIds.Length == 1 && chest.EntityID >= 0));
             }
         }
         catch (Exception error)
@@ -1265,7 +1266,12 @@ static PatchReport PatchEnemies(
             slotsById.TryGetValue(placement.SourceSlotId, out var mimicSource) &&
             mimicSource.ModelName == "c2780" &&
             catalog.Chests.Any(chest => chest.Id == placement.SlotId &&
-                chest.Eligible && chest.ItemLotId == placement.AwardItemLotId);
+                chest.EntityId >= 0 &&
+                chest.Position != null &&
+                chest.Rotation != null &&
+                chest.ItemLotId > 0 &&
+                chest.ItemLotId == placement.AwardItemLotId &&
+                chest.ItemLotId <= 1_900_000);
         var hasTargetSlot = slotsById.TryGetValue(
             placement.SlotId,
             out var targetSlot);
@@ -1425,6 +1431,14 @@ static PatchReport PatchEnemies(
                 throw new InvalidDataException(
                     $"Could not safely replace chest {placement.SlotId}.");
         }
+        var localEnemyCollisions = msb.Parts.Enemies
+            .Cast<MSB1.Part.EnemyBase>()
+            .Concat(msb.Parts.DummyEnemies)
+            .Where(enemy => !string.IsNullOrWhiteSpace(enemy.CollisionName))
+            .ToArray();
+        var mapCollisionNames = msb.Parts.Collisions
+            .Select(collision => collision.Name)
+            .ToHashSet(StringComparer.Ordinal);
         foreach (var placement in mapGroup.Where(entry => entry.SyntheticEnemy))
         {
             if (placement.SourceSlotId == null ||
@@ -1461,15 +1475,25 @@ static PatchReport PatchEnemies(
                 // node or collision references into the chest's destination;
                 // those part names are only valid in the source MSB.
                 Array.Clear(mimicClone.MovePointNames);
-                var destinationCollision = msb.Parts.Collisions
-                    .OrderBy(collision => System.Numerics.Vector3.DistanceSquared(
-                        collision.Position,
-                        new System.Numerics.Vector3(
-                            placement.GroundX ?? 0,
-                            placement.GroundY ?? 0,
-                            placement.GroundZ ?? 0)))
-                    .FirstOrDefault();
-                mimicClone.CollisionName = destinationCollision?.Name;
+                var destinationPosition = new System.Numerics.Vector3(
+                    placement.GroundX ?? 0,
+                    placement.GroundY ?? 0,
+                    placement.GroundZ ?? 0);
+                var nearbyEnemyCollision = localEnemyCollisions
+                    .OrderBy(enemy => System.Numerics.Vector3.DistanceSquared(
+                        enemy.Position,
+                        destinationPosition))
+                    .Select(enemy => enemy.CollisionName)
+                    .FirstOrDefault(collisionName =>
+                        collisionName != null &&
+                        mapCollisionNames.Contains(collisionName));
+                mimicClone.CollisionName = nearbyEnemyCollision ??
+                    msb.Parts.Collisions
+                        .OrderBy(collision =>
+                            System.Numerics.Vector3.DistanceSquared(
+                                collision.Position,
+                                destinationPosition))
+                        .FirstOrDefault()?.Name;
             }
             if (clone is MSB1.Part.Enemy enemyClone)
                 msb.Parts.Enemies.Add(enemyClone);
@@ -2352,7 +2376,9 @@ static bool IsOrnsteinSmoughPhaseProtectionInstruction(
     instruction.Bank == 2004 &&
     instruction.ID == 12 &&
     instruction.ArgData.Length >= 4 &&
-    BitConverter.ToInt32(instruction.ArgData, 0) is 1510800 or 1510810;
+    // The arena's phase-two Smough actor uses 1510650; its vanilla
+    // immortality action is part of the Ornstein/Smough transition lifecycle.
+    BitConverter.ToInt32(instruction.ArgData, 0) is 1510650 or 1510800 or 1510810;
 
 static bool IsStaticEnemyLifecycleInstruction(EMEVD.Instruction instruction)
 {
@@ -3130,11 +3156,20 @@ static List<PatchedFile> PatchBossNames(
             foreach (var placement in forceCombatMapPlacements
                          .OrderBy(placement => placement.EntityId))
             {
+                var chestMimicReward =
+                    placement.ChestMimic && placement.AwardItemLotId.HasValue;
                 var combatEvent = new EMEVD.Event(
                     nextCustomEventId++,
                     EMEVD.Event.RestBehaviorType.Restart);
                 if (placement.TargetModelName == "c2780")
                 {
+                    // Synthetic chest mimics may inherit an unopened/disabled
+                    // character state from their source actor. Enable the
+                    // character before issuing its wake-up animation.
+                    combatEvent.Instructions.Add(new EMEVD.Instruction(
+                        2004,
+                        5,
+                        new object[] { placement.EntityId, 1 }));
                     // Mimics retain their closed-chest special-effect state
                     // even with the awake ThinkParam. Animation 3001 is the
                     // vanilla attacked wake-up transition and releases the
@@ -3165,6 +3200,23 @@ static List<PatchedFile> PatchBossNames(
                 combatEvent.Instructions.Add(IfDeadInstruction(
                     0,
                     placement.EntityId));
+                if (chestMimicReward)
+                {
+                    // Keep checking until the mimic dies. This event must
+                    // restart while the mimic is alive; otherwise an End
+                    // event would perform its death check only once at load.
+                    combatEvent.Instructions.Add(new EMEVD.Instruction(
+                        2003,
+                        36,
+                        new object[] { placement.AwardItemLotId!.Value }));
+                    combatEvent.Instructions.Add(IfDeadInstruction(
+                        0,
+                        placement.EntityId));
+                    combatEvent.Instructions.Add(new EMEVD.Instruction(
+                        2006,
+                        2,
+                        Array.Empty<object>()));
+                }
                 RegisterCustomEvent(combatEvent);
             }
             if (protectQuelaagFireKeeper)
@@ -3803,15 +3855,34 @@ static List<PatchedFile> PatchBossNames(
                 var eventId = nextCustomEventId++;
                 var combatEvent = verification.Events.Single(entry =>
                     entry.ID == eventId);
-                var mimicOffset = placement.TargetModelName == "c2780" ? 1 : 0;
-                if (combatEvent.RestBehavior !=
-                        EMEVD.Event.RestBehaviorType.Restart ||
-                    combatEvent.Instructions.Count != 6 + mimicOffset ||
-                    (mimicOffset == 1 &&
-                     (combatEvent.Instructions[0].Bank != 2003 ||
-                      combatEvent.Instructions[0].ID != 18 ||
+                var mimicOffset = placement.TargetModelName == "c2780" ? 2 : 0;
+                var chestMimicReward =
+                    placement.ChestMimic && placement.AwardItemLotId.HasValue;
+                var expectedRestBehavior = EMEVD.Event.RestBehaviorType.Restart;
+                var expectedInstructionCount =
+                    6 + mimicOffset + (chestMimicReward ? 3 : 0);
+                var invalidChestMimicReward = chestMimicReward &&
+                    (combatEvent.Instructions.Count < 3 ||
+                     combatEvent.Instructions[^3].Bank != 2003 ||
+                     combatEvent.Instructions[^3].ID != 36 ||
+                     BitConverter.ToInt32(
+                         combatEvent.Instructions[^3].ArgData, 0) != placement.AwardItemLotId ||
+                     combatEvent.Instructions[^2].Bank != 4 ||
+                     combatEvent.Instructions[^2].ID != 0 ||
+                     combatEvent.Instructions[^1].Bank != 2006 ||
+                     combatEvent.Instructions[^1].ID != 2);
+                if (combatEvent.RestBehavior != expectedRestBehavior ||
+                    combatEvent.Instructions.Count != expectedInstructionCount ||
+                    invalidChestMimicReward ||
+                    (mimicOffset == 2 &&
+                     (combatEvent.Instructions[0].Bank != 2004 ||
+                      combatEvent.Instructions[0].ID != 5 ||
                       BitConverter.ToInt32(
-                          combatEvent.Instructions[0].ArgData, 4) != 3001)) ||
+                          combatEvent.Instructions[0].ArgData, 4) != 1 ||
+                      combatEvent.Instructions[1].Bank != 2003 ||
+                      combatEvent.Instructions[1].ID != 18 ||
+                      BitConverter.ToInt32(
+                          combatEvent.Instructions[1].ArgData, 4) != 3001)) ||
                     combatEvent.Instructions[mimicOffset].Bank != 2004 ||
                     combatEvent.Instructions[mimicOffset].ID != 9 ||
                     BitConverter.ToInt32(

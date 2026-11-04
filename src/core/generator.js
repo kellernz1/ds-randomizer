@@ -152,7 +152,10 @@ const deferredBossActivationRegions = new Map([
   // The regions used by the vanilla battle events are beyond the fog gate and
   // below the collapsing Asylum floor respectively. Waiting on the event ID
   // itself is too late and can also expose the character for one load frame.
-  ["m10_01_00_00:c2250_0000", { enter: 1012701 }],
+  // Taurus's original 1012701 region is the Titanite Demon entrance area off
+  // the bridge. Region 1012700 is centered on Taurus's spawn point and covers
+  // the actual boss arena, so replacements reliably activate after entry.
+  ["m10_01_00_00:c2250_0000", { enter: 1012700 }],
   // The Butterfly is staged outside its bridge and the vanilla encounter
   // event does not reliably wake grounded replacement bosses. Activate them
   // only after the player crosses into the arena.
@@ -1406,7 +1409,11 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
   return placements.concat(dragonPlan.bosses);
 }
 
-function randomizableWorldItemLots(config, catalog) {
+function randomizableWorldItemLots(
+  config,
+  catalog,
+  preservedWorldLotIds = new Set(),
+) {
   if (!catalog?.worldItemLots?.length) return [];
   const permanentlyFixedGoods = new Set([2010, 2015]);
   const permanentlyFixedNames = new Set([
@@ -1425,6 +1432,7 @@ function randomizableWorldItemLots(config, catalog) {
     permanentlyFixedNames.has(lot.name);
   return catalog.worldItemLots.filter(
     (lot) =>
+      !preservedWorldLotIds.has(lot.rowId) &&
       !isPermanentlyFixed(lot) &&
       (lot.protectedProgression
         ? config.randomizeProtectedItems
@@ -1445,21 +1453,37 @@ function randomizeChestMimics(config, catalog) {
     .sort((left, right) => left.id.localeCompare(right.id))[0];
   if (!mimicSource) return [];
   const knownWorldLotIds = new Set(catalog.worldItemLots.map((lot) => lot.rowId));
-  const protectedLotIds = new Set(
-    catalog.worldItemLots
-      .filter((lot) => lot.protectedProgression)
-      .map((lot) => lot.rowId),
-  );
   const rng = createStream(config.enemySeed || config.seed, "mimic-chests", config.version);
   const chests = catalog.chests
     .filter((chest) =>
-      chest.eligible &&
       Number.isInteger(chest.itemLotId) &&
       knownWorldLotIds.has(chest.itemLotId) &&
-      !protectedLotIds.has(chest.itemLotId) &&
       chest.entityId >= 0 &&
       chest.position && chest.rotation)
     .sort((left, right) => left.id.localeCompare(right.id));
+  const usedEntityIdsByMap = new Map();
+  const nextEntityIdByMap = new Map();
+  const mapEntities = [
+    ...(catalog.enemySlots || []),
+    ...(catalog.bossSlots || []),
+    ...catalog.chests,
+  ];
+  for (const slot of mapEntities) {
+    if (!Number.isInteger(slot.entityId) || slot.entityId < 0 || !slot.mapId) continue;
+    if (!usedEntityIdsByMap.has(slot.mapId)) {
+      usedEntityIdsByMap.set(slot.mapId, new Set());
+    }
+    usedEntityIdsByMap.get(slot.mapId).add(slot.entityId);
+  }
+  function allocateMimicEntityId(mapId) {
+    const used = usedEntityIdsByMap.get(mapId) || new Set();
+    let candidate = nextEntityIdByMap.get(mapId) ?? 9_000_000;
+    while (used.has(candidate)) candidate++;
+    used.add(candidate);
+    usedEntityIdsByMap.set(mapId, used);
+    nextEntityIdByMap.set(mapId, candidate + 1);
+    return candidate;
+  }
   return chests.flatMap((chest) => rng.next() * 100 < chance ? [{
     slot: chest.id,
     map: chest.mapId,
@@ -1469,7 +1493,9 @@ function randomizeChestMimics(config, catalog) {
     targetThinkParamId: 278000,
     targetBattleGoalId: mimicSource.battleGoalId,
     sourceNpcParamId: mimicSource.npcParamId,
-    entityId: chest.entityId,
+    // Chest entity IDs are referenced by vanilla chest events. Reusing one
+    // lets those events disable the replacement enemy after it is spawned.
+    entityId: allocateMimicEntityId(chest.mapId),
     groundX: chest.position.x,
     groundY: chest.position.y,
     groundZ: chest.position.z,
@@ -1590,12 +1616,16 @@ function shopPurchaseLimit(entry) {
   return 10;
 }
 
-function randomizeExtractedItemLots(config, catalog) {
+function randomizeExtractedItemLots(
+  config,
+  catalog,
+  preservedWorldLotIds = new Set(),
+) {
   const lordRewardsEnabled = config.randomizeLordvessel || config.randomizeLordSouls;
   const worldLots = randomizableWorldItemLots({
     ...config,
     randomizeProtectedItems: config.randomizeProtectedItems || lordRewardsEnabled,
-  }, catalog);
+  }, catalog, preservedWorldLotIds);
   if (config.randomizeLordvessel &&
       !(catalog?.gifts || []).some((gift) => gift.rowId === 1090)) {
     throw new Error("The catalog is missing the Lordvessel reward. Import game data again.");
@@ -2378,12 +2408,26 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
   const bossPlan = extractedData
     ? randomizeExtractedBosses(config, gameCatalog, dragonPlan)
     : null;
-  const itemLotPlan = extractedData
-    ? randomizeExtractedItemLots(config, gameCatalog)
-    : null;
   const chestMimicPlan = extractedData
     ? randomizeChestMimics(config, gameCatalog)
     : [];
+  const protectedWorldLotIds = new Set(
+    (gameCatalog?.worldItemLots || [])
+      .filter((lot) => lot.protectedProgression)
+      .map((lot) => lot.rowId),
+  );
+  const preservedMimicRewardLotIds = new Set(
+    chestMimicPlan
+      .filter((placement) => protectedWorldLotIds.has(placement.awardItemLotId))
+      .map((placement) => placement.awardItemLotId),
+  );
+  const itemLotPlan = extractedData
+    ? randomizeExtractedItemLots(
+        config,
+        gameCatalog,
+        preservedMimicRewardLotIds,
+      )
+    : null;
   const result = {
     schemaVersion: 1,
     randomizerVersion: config.version,
@@ -2435,7 +2479,7 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
                 : "Vanilla scaling keeps each enemy's original combat stats.",
             "Bosses use a safe permutation and are grounded at their destination encounter; dragons only exchange complete linked dragon groups.",
             config.mimicChance > 0
-              ? `${chestMimicPlan.length} normal chests converted to mimics at ${config.mimicChance}% chance; progression and unsupported chests were skipped.`
+              ? `${chestMimicPlan.length} chests converted to mimics at ${config.mimicChance}% chance; protected chest rewards stay unchanged and are granted after the mimic is defeated.`
               : "Normal chests stayed vanilla (mimic chance is 0%).",
             ...(config.randomizeBosses
               ? [

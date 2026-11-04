@@ -4,6 +4,8 @@ A standalone, deterministic randomizer for **Dark Souls Remastered** on
 Windows. Choose what to randomize before opening the game, generate a seed, and
 activate it directly from the desktop launcher.
 
+Current version: **0.6.18**.
+
 ## Download
 
 Download the latest release from
@@ -15,6 +17,9 @@ download an executable. That edition requires Node.js 20+ and the .NET 8 SDK.
 
 - Randomized regular enemies and bosses, with optional area scaling or +10%
   progressive HP and damage per Bell, Lordvessel, and Lord Soul milestone
+- Configurable chance for normal chests with valid loot and map data to become
+  mimics, including chests disabled at map start and protected progression
+  chests; the original chest loot is awarded after defeating the mimic
 - Randomized world items, enemy and NPC drops, gifts, and shops
 - Randomized starting-class stats, weapons, and armor
 - Optional progression protection and 100% enemy drop rate
@@ -22,35 +27,46 @@ download an executable. That edition requires Node.js 20+ and the .NET 8 SDK.
 - Optional intact Bed of Chaos arena floor; the default keeps its vanilla route
 - Optional Lordvessel and Lord Soul shuffling limited to progression and boss rewards
 - Reproducible seeds that can be exported and shared
-- Spoiler log and `cheat-locations.txt` reports
+- Spoiler log and `cheat-locations.txt` reports in the generated output folder
 - Safe package activation and vanilla restoration
 - Standalone launcher with no browser or local server required
 
 ## Requirements
 
 - Windows x64
-- Dark Souls Remastered on Steam
-- A clean game installation without other active data mods
+- Dark Souls Remastered on Steam with vanilla game data
+- Other active data mods are unsupported. Seamless Co-op is recognized as an
+  experimental combination; its own launcher and files must remain installed.
 
 ## How to use
 
 1. Download and extract the archive from Nexus Mods.
 2. Run `DSR-Randomizer.exe` outside the game directory.
 3. Select the `DARK SOULS REMASTERED` installation directory.
-4. Click **Verify**, then **Import Game Data** while the installation is clean.
-5. Select what you want to randomize and choose a seed.
+4. Click **Verify**, then **Import Game Data** while the game data is vanilla.
+   You can leave the Seamless Co-op loader installed; do not import data while
+   another mod has changed the game's map, event, or parameter files.
+5. Select what you want to randomize, set the mimic chance if desired, and
+   choose a seed. Eligible protected chests can also become mimics; their
+   original item lot is awarded after the mimic is defeated.
 6. In **Package**, leave **Use extracted game data** checked and uncheck
-   **Safe simulation**. Safe simulation is on by default and creates reports
-   only; it does not create a package that can be activated in the game.
+   **Safe simulation**. Safe simulation is enabled by default and produces
+   reports without a game package, so it must be off to activate a seed.
 7. Click **Generate Randomizer**. When generation completes, click **Activate
    in Game** and wait for the success message before launching the game.
 8. Use **Restore Vanilla** before changing seeds, importing game data again,
    verifying game files, or installing another data mod.
 
-Create a new character when randomizing starting classes or equipment.
+When randomizing starting classes or equipment, start a new character to use
+the randomized starting setup.
 
-> **Play offline.** Modified game data must never be used in multiplayer. Back
-> up your save files before playing.
+> **Seamless Co-op support is experimental.** To play together, every player
+> must use the same Seamless Co-op version and the same randomizer version,
+> export the seed from **Share Seed**, import that seed on each player's copy,
+> and activate the resulting package on every game installation. Launch through
+> `ds1sc_launcher.exe`; do not use the randomized files with vanilla online
+> multiplayer. The Seamless Co-op author has not tested compatibility with
+> other mods, so back up saves and expect possible event or boss conflicts.
 
 ## Building from source
 

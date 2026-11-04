@@ -1,4 +1,4 @@
-DSR RANDOMIZER 0.5.81 — SOURCE EDITION
+DSR RANDOMIZER 0.6.18 — SOURCE EDITION
 ======================================
 
 This archive contains the randomizer source code and no executable files.
@@ -20,7 +20,9 @@ BUILD AND RUN
 
 Keep the PowerShell window open while using the randomizer. The interface will
 open in your default browser. Import game data from a clean DARK SOULS:
-REMASTERED installation through the interface.
+REMASTERED installation with vanilla game data through the interface. The
+Seamless Co-op loader may remain installed; see the project README for its
+experimental compatibility requirements.
 
 No npm install is required. The browser UI uses Node.js built-in modules. The
 .NET SDK restores the SoulsFormats package from NuGet during the first build.
@@ -28,7 +30,8 @@ No npm install is required. The browser UI uses Node.js built-in modules. The
 SAFETY
 ------
 
-- Play offline whenever modified game data is active.
+- Use randomized data only offline or through the experimental Seamless Co-op
+  combination. Never use it with vanilla online multiplayer.
 - Back up your save files before playing.
 - Use Restore Vanilla before changing seeds or importing game data again.
 - No game files or extracted game data are included in this archive.
