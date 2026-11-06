@@ -1664,8 +1664,12 @@ function randomizeExtractedItemLots(
   const shopRows = config.randomizeShops
     ? (catalog?.shopEntries || []).filter(
         (entry) =>
-          !(entry.equipType === 4 && entry.equipId === 5200) &&
-          (entry.equipType !== 4 || Number(entry.magicGoodsId) > 0) &&
+          // ShopLineupParam also backs the bonfire attunement list. Moving a
+          // spell to another row leaves its ownership/event flag tied to the
+          // original row and can make one inventory spell attune as another.
+          // Keep spell shop rows fixed; spell item lots still randomize using
+          // their matching GoodsParam magic IDs.
+          entry.equipType !== 4 &&
           (!config.progressionLogic ||
             entry.equipType !== 3 ||
             entry.eventFlag < 0 ||
@@ -2523,8 +2527,8 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
               : "Enemy drop rates were preserved.",
             config.randomizeShops
               ? config.progressionLogic
-                ? "Shop inventory joined the enabled global item pool; arrows, bolts, and throwable stock stayed shop-only, selected event-bound goods were randomized, and the remaining progression stock stayed protected."
-                : "Shop inventory joined the enabled global item pool; arrows, bolts, and throwable stock stayed shop-only."
+                ? "Non-spell shop inventory joined the enabled global item pool; spell shop rows stayed vanilla to preserve attunement, while arrows, bolts, and throwable stock stayed shop-only and protected progression stock stayed protected."
+                : "Non-spell shop inventory joined the enabled global item pool; spell shop rows stayed vanilla to preserve attunement, while arrows, bolts, and throwable stock stayed shop-only."
               : "Shops were preserved.",
           ]
         : config.randomizeProtectedItems

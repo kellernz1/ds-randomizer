@@ -34,6 +34,8 @@ files; source hashes prevent applying it to a different installation state.
 - Invisible helper-only character resources are excluded from cross-map pools
 - World items, gifts, enemy drops, and shops preserve their source multisets
   through deterministic permutations
+- Spell entries in `ShopLineupParam` stay fixed so inventory spell identity and
+  bonfire attunement remain aligned; spell rewards from item lots still shuffle
 - Mimic conversions remove the chest and its treasure part, then wait for the
   mimic's death before awarding the chest's item lot exactly once; protected
   progression lots remain unchanged when their chest becomes a mimic

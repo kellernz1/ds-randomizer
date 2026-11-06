@@ -4,7 +4,7 @@ A standalone, deterministic randomizer for **Dark Souls Remastered** on
 Windows. Choose what to randomize before opening the game, generate a seed, and
 activate it directly from the desktop launcher.
 
-Current version: **0.6.18**.
+Current version: **0.6.19**.
 
 ## Download
 
@@ -20,7 +20,7 @@ download an executable. That edition requires Node.js 20+ and the .NET 8 SDK.
 - Configurable chance for normal chests with valid loot and map data to become
   mimics, including chests disabled at map start and protected progression
   chests; the original chest loot is awarded after defeating the mimic
-- Randomized world items, enemy and NPC drops, gifts, and shops
+- Randomized world items, enemy and NPC drops, gifts, and non-spell shop stock; spell shop entries stay fixed to preserve attunement identity
 - Randomized starting-class stats, weapons, and armor
 - Optional progression protection and 100% enemy drop rate
 - Independent enemy seed and enemy-model exclusion list
