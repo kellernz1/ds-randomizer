@@ -1181,6 +1181,9 @@ static PatchReport PatchEnemies(
                         "portableBossSanitization", out var portableBoss) &&
                     portableBoss.ValueKind == JsonValueKind.True,
                 element.TryGetProperty(
+                        "useReplacementDrops", out var replacementDrops) &&
+                    replacementDrops.ValueKind == JsonValueKind.True,
+                element.TryGetProperty(
                         "preserveBedOfChaosFloor", out var preserveBedFloor) &&
                     preserveBedFloor.ValueKind == JsonValueKind.True,
                 element.TryGetProperty("initialTeamType", out var initialTeamType) &&
@@ -4764,7 +4767,8 @@ static PatchedFile? PatchGameParam(
             scaled,
             "teamType",
             placement.InitialTeamType ?? GetCellInt(source, "teamType"));
-        AssertCells(RowCells(source), scaled, IsNpcItemLotField);
+        var expectedDropSource = placement.UseReplacementDrops ? target : source;
+        AssertCells(RowCells(expectedDropSource), scaled, IsNpcItemLotField);
         if (placement.PortableBossSanitization)
             AssertCells(RowCells(target), scaled, IsNpcSpEffectField);
         if (placement.MakeTangible)
@@ -4939,12 +4943,12 @@ static void AddScaledNpcRows(PARAM npcParam, List<PatchPlacement> placements)
                 "superArmorDurability",
                 GetEarlyBossPoise(placement, target, source));
         }
-        // Drops belong to the randomized location, not to the replacement
-        // model. The referenced ItemLot rows are shuffled independently, so a
-        // replacement at a Black Knight location receives that location's
-        // randomized lots rather than an untracked vanilla model drop.
-        CopyCells(RowCells(source), scaled, IsNpcItemLotField);
-        AssertCells(RowCells(source), scaled, IsNpcItemLotField);
+        // By default, drops belong to the randomized location. The optional
+        // replacement-drop setting instead keeps a regular enemy's native
+        // ItemLot references when global enemy-drop randomization is off.
+        var dropSource = placement.UseReplacementDrops ? target : source;
+        CopyCells(RowCells(dropSource), scaled, IsNpcItemLotField);
+        AssertCells(RowCells(dropSource), scaled, IsNpcItemLotField);
         if (placement.MakeTangible)
         {
             // Disable both collision phasing and the wandering-ghost model
@@ -6051,6 +6055,7 @@ record PatchPlacement(
     bool HoldAiUntilAttacked,
     bool ForceCombatActivation,
     bool PortableBossSanitization,
+    bool UseReplacementDrops,
     bool PreserveBedOfChaosFloor,
     int? InitialTeamType,
     bool LinkedEnemyGroup,

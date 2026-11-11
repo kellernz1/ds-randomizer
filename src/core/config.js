@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 
-export const RANDOMIZER_VERSION = "0.6.20";
+export const RANDOMIZER_VERSION = "0.6.21";
 
 export const defaultConfig = Object.freeze({
   version: RANDOMIZER_VERSION,
@@ -27,6 +27,7 @@ export const defaultConfig = Object.freeze({
   randomizeStartingEquipment: false,
   randomizeGifts: false,
   randomizeEnemyDrops: false,
+  useReplacementEnemyDrops: false,
   guaranteedEnemyDrops: false,
   randomizeShops: false,
   includeDlc: true,
@@ -51,6 +52,7 @@ const booleanKeys = [
   "randomizeStartingEquipment",
   "randomizeGifts",
   "randomizeEnemyDrops",
+  "useReplacementEnemyDrops",
   "guaranteedEnemyDrops",
   "randomizeShops",
   "includeDlc",

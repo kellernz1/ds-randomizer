@@ -2432,6 +2432,13 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
         preservedMimicRewardLotIds,
       )
     : null;
+  const enemyPlan = extractedData
+    ? randomizeExtractedEnemies(config, gameCatalog, dragonPlan, bossPlan)
+    : randomizePrototypeEnemies(config);
+  const useReplacementEnemyDrops =
+    extractedData &&
+    config.useReplacementEnemyDrops &&
+    !config.randomizeEnemyDrops;
   const result = {
     schemaVersion: 1,
     randomizerVersion: config.version,
@@ -2442,14 +2449,12 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
     seed: config.seed,
     config,
     placements: {
-      enemies: extractedData
-        ? randomizeExtractedEnemies(
-            config,
-            gameCatalog,
-            dragonPlan,
-            bossPlan,
-          )
-        : randomizePrototypeEnemies(config),
+      enemies: useReplacementEnemyDrops
+        ? enemyPlan.map((placement) => ({
+            ...placement,
+            useReplacementDrops: true,
+          }))
+        : enemyPlan,
       bosses: extractedData
         ? bossPlan
         : randomizeBosses(config),
@@ -2521,7 +2526,9 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
               : "Lord Soul rewards stayed at their original locations.",
             config.randomizeEnemyDrops
               ? "Enemy drops joined the enabled global item pool."
-              : "Enemy drops were preserved.",
+              : config.useReplacementEnemyDrops
+                ? "Regular randomized enemies use their replacement's native drops; boss rewards remain tied to their encounters."
+                : "Drops from each original enemy slot were preserved.",
             config.guaranteedEnemyDrops
               ? "Every catalogued enemy drop lot was normalized to a 100% total item chance."
               : "Enemy drop rates were preserved.",

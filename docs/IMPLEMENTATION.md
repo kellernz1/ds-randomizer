@@ -36,6 +36,9 @@ files; source hashes prevent applying it to a different installation state.
   through deterministic permutations
 - Spell entries in `ShopLineupParam` stay fixed so inventory spell identity and
   bonfire attunement remain aligned; spell rewards from item lots still shuffle
+- Optional replacement-native loot keeps regular enemy drops with their source
+  model when global enemy-drop randomization is off; boss rewards stay with
+  their encounter
 - Mimic conversions remove the chest and its treasure part, then wait for the
   mimic's death before awarding the chest's item lot exactly once; protected
   progression lots remain unchanged when their chest becomes a mimic
