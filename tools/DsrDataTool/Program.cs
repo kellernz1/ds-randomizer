@@ -1005,6 +1005,9 @@ static int GetEarlyBossPoise(
         GetCellInt(target, "superArmorDurability"),
         Math.Clamp(GetCellInt(source, "superArmorDurability") + 10, 25, 40));
 
+static bool IsNpcSpEffectField(string name) =>
+    name.StartsWith("spEffectID", StringComparison.Ordinal);
+
 static bool IsLordSoulGoods(int category, int itemId) =>
     category == 0x40000000 && itemId is (2500 or 2501 or 2502 or 2503);
 
@@ -4740,7 +4743,8 @@ static PatchedFile? PatchGameParam(
             AssertCell(scaled, "hp", GetCellInt(source, "hp"));
             foreach (var cell in scaled.Cells.Where(cell =>
                          cell.Def.InternalName.StartsWith(
-                             "spEffectID", StringComparison.Ordinal)))
+                             "spEffectID", StringComparison.Ordinal) &&
+                         !placement.PortableBossSanitization))
             {
                 AssertCell(
                     scaled,
@@ -4761,6 +4765,8 @@ static PatchedFile? PatchGameParam(
             "teamType",
             placement.InitialTeamType ?? GetCellInt(source, "teamType"));
         AssertCells(RowCells(source), scaled, IsNpcItemLotField);
+        if (placement.PortableBossSanitization)
+            AssertCells(RowCells(target), scaled, IsNpcSpEffectField);
         if (placement.MakeTangible)
         {
             AssertCell(scaled, "isGhost", 0);
@@ -4892,8 +4898,8 @@ static void AddScaledNpcRows(PARAM npcParam, List<PatchPlacement> placements)
                      "spEffectID", StringComparison.Ordinal)))
     {
         // NPC SpEffects can contain hidden HP, defense, and attack multipliers.
-        // Keeping them from a late-game replacement can overpower an early slot,
-        // so every scaling effect comes from the destination encounter.
+        // Regular replacements inherit these from their destination; portable
+        // bosses filter them below to avoid carrying arena-boss effects across.
         combatFields.Add(cell.Def.InternalName);
     }
 
@@ -4916,8 +4922,12 @@ static void AddScaledNpcRows(PARAM npcParam, List<PatchPlacement> placements)
         CopyCells(RowCells(target), scaled, _ => true);
         if (!placement.Scaling.Equals("vanilla", StringComparison.Ordinal))
         {
-            CopyCells(RowCells(source), scaled, name => combatFields.Contains(name));
-            AssertCells(RowCells(source), scaled, name => combatFields.Contains(name));
+            bool InheritCombatField(string name) =>
+                combatFields.Contains(name) &&
+                !(placement.PortableBossSanitization &&
+                  IsNpcSpEffectField(name));
+            CopyCells(RowCells(source), scaled, InheritCombatField);
+            AssertCells(RowCells(source), scaled, InheritCombatField);
         }
         if (HasEarlyBossPoiseOverride(placement))
         {
@@ -4955,13 +4965,23 @@ static void AddScaledNpcRows(PARAM npcParam, List<PatchPlacement> placements)
             RowCells(target),
             scaled,
             name =>
-                !combatFields.Contains(name) &&
+                !(combatFields.Contains(name) &&
+                  !(placement.PortableBossSanitization &&
+                    IsNpcSpEffectField(name))) &&
                 !(HasEarlyBossPoiseOverride(placement) &&
                   name == "superArmorDurability") &&
                 name != "teamType" &&
                 !IsNpcItemLotField(name) &&
                 !(placement.MakeTangible &&
                   name is "isGhost" or "isChangeWanderGhost" or "ghostModelId"));
+        if (placement.PortableBossSanitization)
+        {
+            // Preserve the replacement boss's own SpEffects. Copying these
+            // from the destination can import arena-specific hit reactions or
+            // extreme damage multipliers (for example, Stray Demon's level-14
+            // effects into Taurus Demon).
+            AssertCells(RowCells(target), scaled, IsNpcSpEffectField);
+        }
         if (HasEarlyBossPoiseOverride(placement))
         {
             AssertCell(

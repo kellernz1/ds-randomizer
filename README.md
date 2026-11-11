@@ -4,7 +4,7 @@ A standalone, deterministic randomizer for **Dark Souls Remastered** on
 Windows. Choose what to randomize before opening the game, generate a seed, and
 activate it directly from the desktop launcher.
 
-Current version: **0.6.19**.
+Current version: **0.6.20**.
 
 ## Download
 

@@ -58,8 +58,9 @@ files; source hashes prevent applying it to a different installation state.
   randomized encounter
 - A detached interactive Command Prompt launcher, so stopping the server does
   not show Windows' localized batch-file termination question
-- Scaled replacements inherit every combat-scaling `SpEffect` from the
-  destination, preventing hidden late-game HP and attack multipliers
+- Scaled regular enemies inherit destination combat-scaling `SpEffect`s;
+  portable bosses keep their own effects so arena-specific boss multipliers
+  and hit reactions do not transfer between encounters
 - Randomized boss AI is explicitly enabled when its health bar appears
 - The Taurus bridge boss replacement activates from the region centered on the
   arena, rather than the neighboring Titanite Demon entrance region
@@ -86,7 +87,8 @@ files; source hashes prevent applying it to a different installation state.
 - A 30-character-model total budget per map includes regular enemies, bosses,
   dragons, protected NPCs, and helpers; unused MSB model declarations are
   pruned so asynchronous resource loading stays within stable Remastered limits
-- Area scaling copies every combat-scaling `SpEffect` from the destination
+- Area scaling copies combat-scaling `SpEffect`s from the destination for
+  regular enemies, while portable bosses retain their source `SpEffect`s
 - Bosses use a strict boss-only permutation; ordinary Anor Londo gargoyles
   cannot enter boss encounters
 - Every boss destination receives a complete terrain-safe X/Y/Z position.
