@@ -91,7 +91,11 @@ files; source hashes prevent applying it to a different installation state.
   dragons, protected NPCs, and helpers; unused MSB model declarations are
   pruned so asynchronous resource loading stays within stable Remastered limits
 - Area scaling copies combat-scaling `SpEffect`s from the destination for
-  regular enemies, while portable bosses retain their source `SpEffect`s
+  regular enemies. Portable bosses retain model-specific effects but inherit
+  the destination's level multiplier, so late-game HP/defense scaling cannot
+  leak into early encounters
+- Moonlight Butterfly is excluded from the suspended upper Asylum Demon floor,
+  where its flying collision can fall into the lower Stray Demon arena
 - Bosses use a strict boss-only permutation; ordinary Anor Londo gargoyles
   cannot enter boss encounters
 - Every boss destination receives a complete terrain-safe X/Y/Z position.

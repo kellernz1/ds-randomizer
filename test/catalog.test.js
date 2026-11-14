@@ -778,6 +778,11 @@ test("real catalog produces real boss and world-item placements", async () => {
   assert.equal(asylum.combatRegionId, 1812996);
   assert.equal(asylum.combatPauseFlagId, 11810315);
   assert.equal(asylum.combatReentryFlagId, 11815390);
+  assert.notEqual(
+    asylum.targetModelName,
+    "c3230",
+    "Moonlight Butterfly must not fall through the upper Asylum floor",
+  );
   const stray = result.placements.bosses.find(
     (entry) => entry.slot === "m18_01_00_00:c2230_0000",
   );

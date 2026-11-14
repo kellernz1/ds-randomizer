@@ -1261,6 +1261,10 @@ function shuffledPortableBosses(rng, archetypeKeys, archetypes) {
       const targetModel = targetKey.split(":")[0];
       return (
         replacementKey !== targetKey &&
+        // The Butterfly has no reliable collision with the suspended upper
+        // Asylum Demon floor. Gravity makes it continue into the lower Stray
+        // Demon arena, so keep it out of this one destination.
+        !(targetKey === "c2232:223200" && replacementModel === "c3230") &&
         // Ceaseless Discharge's retreat/navigation logic walks into the
         // Taurus tower walls on the narrow Undead Burg bridge.
         !(targetModel === "c2250" && replacementModel === "c5250")
