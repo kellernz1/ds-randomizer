@@ -1277,6 +1277,34 @@ test("world items, gifts, enemy drops, and shops share one deterministic pool", 
   assert.ok(first.placements.gifts.every((entry) => entry.rowId !== entry.sourceRowId));
   assert.ok(first.placements.enemyDrops.every((entry) => !entry.preserved));
   assert.ok(first.placements.shops.every((entry) => entry.rowId !== entry.sourceRowId));
+  const originalItemByTarget = new Map(
+    [
+      ...gameCatalog.worldItemLots,
+      ...gameCatalog.gifts,
+      ...gameCatalog.enemyDropLots,
+    ].flatMap((lot) => lot.entries.map((entry) => [
+      `${lot.rowId}:${entry.slot}`,
+      entry.equipType === 4
+        ? `magic:${entry.magicId}`
+        : `${entry.category}:${entry.itemId}`,
+    ])),
+  );
+  assert.ok(
+    [
+      ...first.placements.items,
+      ...first.placements.gifts,
+      ...first.placements.enemyDrops,
+    ].every((entry) => {
+      // Loot placements store the associated GoodsParam ID for spells, while
+      // the catalog identity uses MagicParam. The generator's magic-only pool
+      // has separate coverage; this assertion targets ordinary enemy loot.
+      if (entry.equipType === 4) return true;
+      const assignedIdentity = `${entry.itemCategory}:${entry.itemId}`;
+      return originalItemByTarget.get(`${entry.rowId}:${entry.targetSlot}`) !==
+        assignedIdentity;
+    }),
+    "randomized item-lot slots should not retain an identical native item",
+  );
   const bulkGoods = new Set([
     "Throwing Knife",
     "Poison Throwing Knife",

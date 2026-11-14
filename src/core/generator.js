@@ -1838,7 +1838,7 @@ function randomizeExtractedItemLots(
     const rng = createStream(config.seed, stream, config.version);
     let sources = stream === "all-item-sources" || stream === "progression-item-sources"
       ? shuffledWithoutDlcRestrictedItems(rng, targets)
-      : shuffledWithoutFixedPoints(rng, targets);
+      : shuffledWithoutEquivalentItems(rng, targets);
     if (stream === "all-item-sources") {
       sources = keepConsumableSoulsInFiniteShops(targets, sources);
     }
@@ -1860,8 +1860,8 @@ function keepConsumableSoulsInFiniteShops(targets, initialSources) {
       target.kind === "shop" &&
       target.eventFlag >= 0 &&
       !isConsumableSoul(sources[index]) &&
-      sources[index] !== targets[soulIndex] &&
-      sources[soulIndex] !== target);
+      !hasSameItemIdentity(sources[index], targets[soulIndex]) &&
+      !hasSameItemIdentity(sources[soulIndex], target));
     if (donorIndex < 0) {
       throw new Error(
         "Could not assign consumable souls to finite shop stock.",
@@ -1883,6 +1883,17 @@ function isDlcRestrictedItem(entry) {
   );
 }
 
+function itemIdentity(entry) {
+  if (entry.equipType === 4 && Number(entry.magicId) > 0) {
+    return `magic:${entry.magicId}`;
+  }
+  return `${entry.category}:${entry.itemId}`;
+}
+
+function hasSameItemIdentity(left, right) {
+  return itemIdentity(left) === itemIdentity(right);
+}
+
 function shuffledWithoutNativeTitaniteDemon(rng, values) {
   if (values.length < 2) return [...values];
   for (let attempt = 0; attempt < 256; attempt += 1) {
@@ -1901,7 +1912,7 @@ function shuffledWithoutNativeTitaniteDemon(rng, values) {
 function shuffledWithoutDlcRestrictedItems(rng, values) {
   if (values.length < 2) return [...values];
   for (let attempt = 0; attempt < 32; attempt += 1) {
-    const shuffled = shuffledWithoutFixedPoints(rng, values);
+    const shuffled = shuffledWithoutEquivalentItems(rng, values);
     const badTargets = values
       .map((target, index) => ({ target, index }))
       .filter(
@@ -1916,8 +1927,8 @@ function shuffledWithoutDlcRestrictedItems(rng, values) {
         (target, index) =>
           target.mapId !== "m12_01_00_00" &&
           !isDlcRestrictedItem(shuffled[index]) &&
-          shuffled[index] !== values[dlcIndex] &&
-          restrictedSource !== target,
+          !hasSameItemIdentity(shuffled[index], values[dlcIndex]) &&
+          !hasSameItemIdentity(restrictedSource, target),
       );
       if (donorIndex < 0) {
         repaired = false;
@@ -1926,11 +1937,70 @@ function shuffledWithoutDlcRestrictedItems(rng, values) {
       [shuffled[dlcIndex], shuffled[donorIndex]] =
         [shuffled[donorIndex], shuffled[dlcIndex]];
     }
-    if (repaired) return shuffled;
+    if (
+      repaired &&
+      shuffled.every((source, index) =>
+        !hasSameItemIdentity(source, values[index]),
+      )
+    ) {
+      return shuffled;
+    }
   }
   throw new Error(
     "Could not keep DLC-restricted items out of DLC locations.",
   );
+}
+
+function shuffledWithoutEquivalentItems(rng, values) {
+  if (values.length < 2) return [...values];
+  let best = null;
+  let bestMatches = Number.POSITIVE_INFINITY;
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    const shuffled = rng.shuffle(values);
+    const matchingIndices = () => shuffled
+      .map((source, index) => ({ source, index }))
+      .filter(({ source, index }) =>
+        hasSameItemIdentity(source, values[index]),
+      )
+      .map(({ index }) => index);
+    for (const badIndex of matchingIndices()) {
+      const badSource = shuffled[badIndex];
+      const start = rng.int(values.length);
+      let donorIndex = -1;
+      for (let offset = 0; offset < values.length; offset += 1) {
+        const candidate = (start + offset) % values.length;
+        if (
+          candidate !== badIndex &&
+          !hasSameItemIdentity(shuffled[candidate], values[badIndex]) &&
+          !hasSameItemIdentity(badSource, values[candidate])
+        ) {
+          donorIndex = candidate;
+          break;
+        }
+      }
+      if (donorIndex >= 0) {
+        [shuffled[badIndex], shuffled[donorIndex]] =
+          [shuffled[donorIndex], shuffled[badIndex]];
+      }
+    }
+    const matches = shuffled.reduce(
+      (count, source, index) =>
+        count + Number(hasSameItemIdentity(source, values[index])),
+      0,
+    );
+    if (matches === 0) return shuffled;
+    if (matches < bestMatches) {
+      best = shuffled;
+      bestMatches = matches;
+    }
+  }
+  // Extremely small or duplicate-heavy pools may have no perfect
+  // identity-level derangement. Keep the closest deterministic permutation;
+  // the ordinary fixed-point fallback still guarantees that source locations
+  // move whenever that is mathematically possible.
+  return bestMatches < values.length
+    ? best
+    : shuffledWithoutFixedPoints(rng, values);
 }
 
 function shuffledWithoutFixedPoints(rng, values) {
