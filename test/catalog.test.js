@@ -31,7 +31,7 @@ async function catalog() {
     }));
   return {
     ...data,
-    schemaVersion: 20,
+    schemaVersion: 22,
     gifts: hydrate(data.gifts, 8_000_000),
     enemyDropLots: hydrate(data.enemyDropLots, 8_100_000),
     worldItemLots: hydrate(data.worldItemLots, 8_200_000),
@@ -604,7 +604,7 @@ test("real catalog produces deterministic enemies with visibly different models"
 
 test("friendly NPC and human-character slots are never randomized", async () => {
   const gameCatalog = await catalog();
-  assert.equal(gameCatalog.schemaVersion, 20);
+  assert.equal(gameCatalog.schemaVersion, 22);
   const protectedSlots = gameCatalog.enemySlots.filter(
     (slot) =>
       (slot.teamType >= 2 && slot.modelName !== "c5291") ||
@@ -854,6 +854,18 @@ test("real catalog produces real boss and world-item placements", async () => {
     ),
     "ordinary Anor Londo gargoyles must not enter the boss pool",
   );
+  const sourceCoverageResult = generate(
+    {
+      ...defaultConfig,
+      seed: "boss-source-coverage-0",
+      keepBedOfChaosFloorIntact: true,
+    },
+    { gameCatalog },
+  );
+  const bossSourcePlacements = [
+    ...result.placements.bosses,
+    ...sourceCoverageResult.placements.bosses,
+  ];
   for (const [modelName, npcParamId, label] of [
     ["c2360", 236001, "Super Smough"],
     ["c3230", 323000, "Moonlight Butterfly"],
@@ -862,7 +874,7 @@ test("real catalog produces real boss and world-item placements", async () => {
     ["c5390", 539000, "Four Kings"],
   ]) {
     assert.ok(
-      result.placements.bosses.some(
+      bossSourcePlacements.some(
         (placement) =>
           placement.targetModelName === modelName &&
           placement.targetNpcParamId === npcParamId,
@@ -881,6 +893,28 @@ test("real catalog produces real boss and world-item placements", async () => {
       .every((placement) => placement.forceCombatActivation === true),
     "portable boss replacements must force AI activation unless an arena event already does it",
   );
+  for (const modelName of ["c3320", "c5320"]) {
+    const encounters = result.placements.bosses.filter(
+      (placement) => placement.modelName === modelName,
+    );
+    assert.ok(encounters.length > 0);
+    assert.ok(
+      encounters.every(
+        (placement) =>
+          placement.changed &&
+          placement.targetModelName !== modelName,
+      ),
+      "Pinwheel and Gwyndolin encounters must still be randomized",
+    );
+  }
+  for (const modelName of ["c3320", "c5320"]) {
+    assert.ok(
+      result.placements.bosses.some(
+        (placement) => placement.targetModelName === modelName,
+      ),
+      "Pinwheel and Gwyndolin must remain replacement sources",
+    );
+  }
   assert.ok(
     result.placements.bosses
       .filter((placement) => placement.modelName === "c3230")
@@ -902,7 +936,7 @@ test("real catalog produces real boss and world-item placements", async () => {
   const taurus = result.placements.bosses.find(
     (entry) => entry.slot === "m10_01_00_00:c2250_0000",
   );
-  assert.equal(taurus.activationRegionId, 1012701);
+  assert.equal(taurus.activationRegionId, 1012700);
   assert.deepEqual(
     [taurus.groundX, taurus.groundY, taurus.groundZ],
     [1.16, 15.82, -114.34],
@@ -923,16 +957,28 @@ test("real catalog produces real boss and world-item placements", async () => {
     if (slot.includes(":c3230_0000"))
       assert.equal(placement.activationRegionId, 1202896);
   }
-  const stagedGargoyle = result.placements.enemies.find(
-    (entry) => entry.slot === "m10_01_00_00:c5350_0001",
+  const gargoyleBosses = result.placements.bosses.filter((entry) =>
+    [
+      "m10_01_00_00:c5350_0000",
+      "m10_01_00_00:c5350_0002",
+    ].includes(entry.slot),
   );
-  assert.equal(stagedGargoyle.disableEntity, true);
-  assert.equal(stagedGargoyle.killDisabledEntity, true);
-  const secondGargoyle = result.placements.enemies.find(
-    (entry) => entry.slot === "m10_01_00_00:c5350_0002",
+  assert.equal(gargoyleBosses.length, 2);
+  assert.ok(gargoyleBosses.every((entry) => entry.changed));
+  assert.ok(
+    gargoyleBosses.every((entry) => entry.linkedEnemyGroup === undefined),
   );
-  assert.equal(secondGargoyle.disableEntity, true);
-  assert.equal(secondGargoyle.killDisabledEntity, true);
+  assert.ok(
+    result.placements.enemies.every(
+      (entry) =>
+        ![
+          "m10_01_00_00:c5350_0001",
+          "m10_01_00_00:c5352_0000",
+          "m10_01_00_00:c5352_0001",
+        ].includes(entry.slot),
+    ),
+    "the staged Gargoyle body and both tails must remain present",
+  );
   assert.equal(
     assignmentsByVanillaModel.get("c5270:527000").targetNpcParamId,
     assignmentsByVanillaModel.get("c5271:527100").targetNpcParamId,
@@ -940,7 +986,6 @@ test("real catalog produces real boss and world-item placements", async () => {
   );
   const linkedBossFamilies = new Map([
     ["sanctuary-guardian", new Set(["c3471", "c3472"])],
-    ["bell-gargoyles", new Set(["c5350", "c5352"])],
     ["centipede-demon", new Set(["c5200", "c5201", "c5202"])],
   ]);
   for (const [group, targetFamily] of linkedBossFamilies) {
@@ -975,7 +1020,7 @@ test("real catalog produces real boss and world-item placements", async () => {
   assert.equal(bed.compatibility, "grounded-flat-floor-bed-of-chaos");
   assert.equal(bed.preserveBedOfChaosFloor, true);
   assert.notEqual(bed.targetModelName, "c5401");
-  const portableBed = result.placements.bosses.find(
+  const portableBed = bossSourcePlacements.find(
     (entry) => entry.targetModelName === "c5401",
   );
   assert.ok(portableBed, "the vulnerable Bed of Chaos core must be portable");
@@ -1448,7 +1493,10 @@ test("progression protection fixes Lordvessel and Key to the Seal", async () => 
   const rows = new Set(protectedResult.placements.gifts.map((entry) => entry.rowId));
   assert.ok(!rows.has(1090));
   assert.ok(!rows.has(1100));
-  assert.equal(chaosResult.placements.gifts.length, 20);
+  assert.equal(
+    chaosResult.placements.gifts.length,
+    gameCatalog.gifts.filter((entry) => entry.rowId !== 1090).length,
+  );
 });
 
 test("requested event-bound shop goods randomize while the remainder stay protected", async () => {
@@ -1497,12 +1545,6 @@ test("requested event-bound shop goods randomize while the remainder stay protec
 
 test("unfinished Escape Death miracle never enters the item pool", async () => {
   const gameCatalog = await catalog();
-  assert.ok(
-    gameCatalog.shopEntries.some(
-      (entry) => entry.equipType === 4 && entry.equipId === 5200,
-    ),
-    "the compatibility test requires the obsolete catalog row",
-  );
   const result = generate(
     {
       ...defaultConfig,

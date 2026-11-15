@@ -106,8 +106,8 @@ files; source hashes prevent applying it to a different installation state.
 - Hydras use linked hydra-only body/head groups. Moonlight Butterfly,
   Ceaseless Discharge, Bed of Chaos, Four Kings, Super Ornstein, and
   Super Smough are distinct portable boss sources and destinations
-- Gwyndolin remains in the boss pool; verify his retreat teleports when
-  randomized outside Anor Londo
+- Pinwheel and Gwyndolin remain in the boss permutation as both destinations
+  and replacement sources
 - Moonlight Butterfly remains eligible for Sif and Nito arenas. Its spawn is
   raised 1.5 units for the landing animation to settle onto those uneven floors
 - Ornstein and Smough phase-two entities use the same randomized boss as their
@@ -116,8 +116,11 @@ files; source hashes prevent applying it to a different installation state.
 - Portable boss replacements have destination-specific immortality instructions
   removed, so Seath's crystal mechanic cannot leave a replacement at 1 HP
 - All 45 Humanity enemy slots participate in the regular permutation
-- Sanctuary Guardian tails, both Gargoyle tail types, and all Centipede Demon
-  removable parts follow their linked boss assignment
+- Sanctuary Guardian tails and all Centipede Demon removable parts follow
+  their linked boss assignment
+- Bell Gargoyles are not a restricted linked group. Their boss slots use the
+  global boss permutation, while the staged extra body and both tail entities
+  remain present instead of being disabled or killed
 - Bed of Chaos body, core, and bug are reserved out of the regular-enemy
   permutation. Its victory-tracked core receives one boss replacement and the
   original helper entities are disabled. By default, the vanilla side-root and

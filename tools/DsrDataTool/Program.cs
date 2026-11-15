@@ -7,6 +7,8 @@ using System.Text.RegularExpressions;
 using SoulsFormats;
 
 const int SchemaVersion = 22;
+const int DataToolProtocolVersion = 1;
+const string RandomizerVersion = "0.6.24";
 const int ProgressiveEffectIdBase = 9_600_000;
 const int ProgressiveMilestoneCount = 7;
 Console.OutputEncoding = new UTF8Encoding(false);
@@ -30,7 +32,12 @@ try
         PropertyNameCaseInsensitive = true,
     };
 
-    if (command == "scan")
+    if (command == "version")
+    {
+        Console.WriteLine($"Protocol: {DataToolProtocolVersion}");
+        Console.WriteLine($"Randomizer: {RandomizerVersion}");
+    }
+    else if (command == "scan")
     {
         var gameDirectory = RequireDirectory(options, "game");
         var outputPath = RequireValue(options, "output");
@@ -101,6 +108,7 @@ static void PrintUsage()
 {
     Console.WriteLine("DsrDataTool");
     Console.WriteLine();
+    Console.WriteLine("  version");
     Console.WriteLine("  scan --game <DSR directory> --output <catalog.json>");
     Console.WriteLine(
         "  patch-enemies --game <DSR directory> --catalog <catalog.json> " +

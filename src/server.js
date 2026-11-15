@@ -9,6 +9,7 @@ import {
   defaultConfig,
   generateSeed,
   normalizeConfig,
+  RANDOMIZER_VERSION,
   validateConfig,
 } from "./core/config.js";
 import { generate } from "./core/generator.js";
@@ -38,6 +39,7 @@ const dotnetExecutable = existsSync(localDotnetPath)
   ? localDotnetPath
   : "dotnet";
 const execFileAsync = promisify(execFile);
+const dataToolProtocolVersion = 1;
 const contentTypes = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -125,7 +127,7 @@ export async function runDataTool(argumentsList) {
     );
   }
   try {
-    return await execFileAsync(dotnetExecutable, [dataToolPath, ...argumentsList], {
+    const commonOptions = {
       cwd: root,
       env: {
         ...process.env,
@@ -136,7 +138,31 @@ export async function runDataTool(argumentsList) {
         VSLANG: "1033",
       },
       windowsHide: true,
-    });
+    };
+    let versionResult;
+    try {
+      versionResult = await execFileAsync(
+        dotnetExecutable,
+        [dataToolPath, "version"],
+        commonOptions,
+      );
+    } catch {
+      throw new Error(
+        "The data tool does not match this randomizer version. Rebuild or reinstall the randomizer before generating a package.",
+      );
+    }
+    const expectedVersion =
+      `Protocol: ${dataToolProtocolVersion}\nRandomizer: ${RANDOMIZER_VERSION}`;
+    if (versionResult.stdout.trim().replaceAll("\r", "") !== expectedVersion) {
+      throw new Error(
+        "The data tool does not match this randomizer version. Rebuild or reinstall the randomizer before generating a package.",
+      );
+    }
+    return await execFileAsync(
+      dotnetExecutable,
+      [dataToolPath, ...argumentsList],
+      commonOptions,
+    );
   } catch (error) {
     if (error.code === "ENOENT") {
       throw new Error(

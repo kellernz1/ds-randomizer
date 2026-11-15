@@ -870,11 +870,6 @@ function buildDragonPlan(config, catalog) {
         byModel("c3472", "m12_01_00_00"),
       ),
       unit(
-        "bell-gargoyles",
-        byModel("c5350", "m10_01_00_00"),
-        byModel("c5352", "m10_01_00_00"),
-      ),
-      unit(
         "centipede-demon",
         byModel("c5200", "m14_01_00_00"),
         [
@@ -889,27 +884,10 @@ function buildDragonPlan(config, catalog) {
     );
     linkedBosses.forEach((target, unitIndex) => {
       const source = linkedBossSources[unitIndex];
-      const singleBellReplacement =
-        target.id === "bell-gargoyles" && source.id !== "bell-gargoyles";
       [...target.bodies, ...target.parts].forEach((slot) =>
         result.reservedSlotIds.add(slot.id),
       );
       target.bodies.forEach((targetBody, index) => {
-        if (singleBellReplacement && index > 0) {
-          result.enemies.push(enemyPlacement(
-            config,
-            targetBody,
-            targetBody,
-            null,
-            {
-              compatibility: "disabled-extra-bell-gargoyle-body",
-              linkedEnemyGroup: target.id,
-              disableEntity: true,
-              killDisabledEntity: true,
-            },
-          ));
-          return;
-        }
         const sourceBody = source.bodies[index % source.bodies.length];
         const isBossSlot = bossSlotIds.has(targetBody.id);
         const placement = enemyPlacement(
@@ -944,20 +922,6 @@ function buildDragonPlan(config, catalog) {
         (isBossSlot ? result.bosses : result.enemies).push(placement);
       });
       target.parts.forEach((targetPart, index) => {
-        if (singleBellReplacement && index > 0) {
-          result.enemies.push(enemyPlacement(
-            config,
-            targetPart,
-            targetPart,
-            null,
-            {
-              compatibility: "disabled-extra-bell-gargoyle-part",
-              linkedEnemyGroup: target.id,
-              disableEntity: true,
-            },
-          ));
-          return;
-        }
         const sourcePart = source.parts[index % source.parts.length];
         result.enemies.push(enemyPlacement(
           config,
@@ -1247,12 +1211,8 @@ const canonicalBossModel = new Map([
   ["c5351", "c5350"],
 ]);
 function shuffledPortableBosses(rng, archetypeKeys, archetypes) {
-  const candidates = [...archetypes];
-  while (candidates.length < archetypes.length) {
-    candidates.push(archetypes[rng.int(archetypes.length)]);
-  }
   for (let attempt = 0; attempt < 128; attempt += 1) {
-    const shuffled = rng.shuffle(candidates);
+    const shuffled = rng.shuffle(archetypes);
     if (shuffled.every((replacement, index) => {
       const replacementModel =
         canonicalBossModel.get(replacement.modelName) || replacement.modelName;
@@ -1284,7 +1244,7 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
   );
   const bossNames = catalog.bossNames || {};
   const effectiveSlots = effectiveBossSlots(catalog);
-  const sources = effectiveSlots.filter(
+  const targets = effectiveSlots.filter(
     (slot) =>
       !dragonPlan.reservedSlotIds.has(slot.id) &&
       slot.id !== "m14_01_00_00:c5230_0000" &&
@@ -1293,10 +1253,10 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
       !isEnemyBanned(config, slot.modelName),
   );
   const archetypeKeys = [
-    ...new Set(sources.map((slot) => bossArchetypeKey(slot))),
+    ...new Set(targets.map((slot) => bossArchetypeKey(slot))),
   ];
   const archetypes = archetypeKeys.map((archetypeKey) =>
-    sources.find((slot) => bossArchetypeKey(slot) === archetypeKey),
+    targets.find((slot) => bossArchetypeKey(slot) === archetypeKey),
   );
   const shuffled = shuffledPortableBosses(rng, archetypeKeys, archetypes);
   const replacementsByModel = new Map();
@@ -1316,7 +1276,7 @@ function randomizeExtractedBosses(config, catalog, dragonPlan) {
       replacementsByModel.set(phaseTwoKey, phaseOneReplacement);
     }
   }
-  const placements = sources.map((slot, index) => {
+  const placements = targets.map((slot, index) => {
     const sourceArchetypeKey = bossArchetypeKey(slot);
     const sourceArchetypeIndex = archetypeKeys.indexOf(sourceArchetypeKey);
     const sourceModelName = sourceArchetypeKey.split(":")[0];
