@@ -8,7 +8,7 @@ using SoulsFormats;
 
 const int SchemaVersion = 22;
 const int DataToolProtocolVersion = 1;
-const string RandomizerVersion = "0.6.24";
+const string RandomizerVersion = "0.6.25";
 const int ProgressiveEffectIdBase = 9_600_000;
 const int ProgressiveMilestoneCount = 7;
 Console.OutputEncoding = new UTF8Encoding(false);

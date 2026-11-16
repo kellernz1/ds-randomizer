@@ -558,7 +558,9 @@ function buildDragonPlan(config, catalog) {
           initialTeamType: 2,
           baseThinkParamId: sourceBody.thinkParamId,
           destinationThinkParamId: targetBody.thinkParamId,
-          targetThinkParamId: 9_700_000 + enemyIndex,
+          // Keep passive dragon AI clones out of the 9,700,000 range used by
+          // deferred boss arenas (Taurus, Butterfly, and Stray Demon).
+          targetThinkParamId: 9_750_000 + enemyIndex,
           preserveDestinationPerception: true,
         });
         delete placementExtra.forceCombatActivation;

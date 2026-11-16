@@ -70,6 +70,32 @@ function vanillaStartingIds(gameCatalog) {
   return { weapons, armor };
 }
 
+function assertNoCustomThinkParamConflicts(result) {
+  const definitions = new Map();
+  for (const placement of [
+    ...result.placements.enemies,
+    ...result.placements.bosses,
+  ]) {
+    if (placement.baseThinkParamId === undefined) continue;
+    const definition = JSON.stringify({
+      baseThinkParamId: placement.baseThinkParamId,
+      destinationThinkParamId: placement.destinationThinkParamId,
+      preserveDestinationPerception:
+        placement.preserveDestinationPerception === true,
+    });
+    const previous = definitions.get(placement.targetThinkParamId);
+    if (previous !== undefined) {
+      assert.equal(
+        definition,
+        previous,
+        `custom NpcThinkParam ${placement.targetThinkParamId} has conflicting definitions`,
+      );
+    } else {
+      definitions.set(placement.targetThinkParamId, definition);
+    }
+  }
+}
+
 test("real catalog produces deterministic enemies with visibly different models", async () => {
   const gameCatalog = await catalog();
   const config = { ...defaultConfig, seed: "real-catalog-01" };
@@ -77,6 +103,7 @@ test("real catalog produces deterministic enemies with visibly different models"
   const second = generate(config, { gameCatalog });
   assert.equal(first.dataStatus, "extracted");
   assert.equal(first.placementHash, second.placementHash);
+  assertNoCustomThinkParamConflicts(first);
   assert.ok(first.placements.enemies.some((placement) => placement.changed));
   assert.ok(first.placements.enemies.length > 1_500);
   assert.ok(
