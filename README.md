@@ -4,7 +4,10 @@ A standalone, deterministic randomizer for **Dark Souls Remastered** on
 Windows. Choose what to randomize before opening the game, generate a seed, and
 activate it directly from the desktop launcher.
 
-Current version: **0.6.27**.
+Current version: **0.6.28**.
+
+Fashion Souls can randomize the helmet, chest armor, gauntlets, and leg armor
+equipped by human NPCs while preserving their weapons, AI, teams, and body parts.
 
 ## Download
 

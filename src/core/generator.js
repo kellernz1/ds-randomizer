@@ -11,8 +11,11 @@ import {
 } from "../data/prototype-data.js";
 
 const byId = (values) => new Map(values.map((value) => [value.id, value]));
+// Keep existing categories stable when a release adds an independent option.
+// Fashion Souls has its own versioned stream below.
+const EXISTING_STREAM_VERSION = "0.6.27";
 const enemyStream = (config, name) =>
-  createStream(config.enemySeed || config.seed, name, config.version);
+  createStream(config.enemySeed || config.seed, name, EXISTING_STREAM_VERSION);
 const isEnemyBanned = (config, modelName) =>
   config.bannedEnemyModels.includes(String(modelName).toLowerCase());
 const lordSoulGoodsIds = new Set([2500, 2501, 2502, 2503]);
@@ -863,7 +866,7 @@ function buildDragonPlan(config, catalog) {
     const linkedBossRng = createStream(
       config.seed,
       "linked-bosses",
-      config.version,
+      EXISTING_STREAM_VERSION,
     );
     const linkedBosses = [
       unit(
@@ -1420,7 +1423,11 @@ function randomizeChestMimics(config, catalog) {
     .sort((left, right) => left.id.localeCompare(right.id))[0];
   if (!mimicSource) return [];
   const knownWorldLotIds = new Set(catalog.worldItemLots.map((lot) => lot.rowId));
-  const rng = createStream(config.enemySeed || config.seed, "mimic-chests", config.version);
+  const rng = createStream(
+    config.enemySeed || config.seed,
+    "mimic-chests",
+    EXISTING_STREAM_VERSION,
+  );
   const chests = catalog.chests
     .filter((chest) =>
       Number.isInteger(chest.itemLotId) &&
@@ -1802,7 +1809,7 @@ function randomizeExtractedItemLots(
     ["shop-consumables", shopOnlyTargets],
   ]) {
     if (targets.length === 0) continue;
-    const rng = createStream(config.seed, stream, config.version);
+    const rng = createStream(config.seed, stream, EXISTING_STREAM_VERSION);
     let sources = stream === "all-item-sources" || stream === "progression-item-sources"
       ? shuffledWithoutDlcRestrictedItems(rng, targets)
       : shuffledWithoutEquivalentItems(rng, targets);
@@ -2398,11 +2405,15 @@ function randomizeStartingClasses(config, catalog) {
     return [];
   }
   const classes = catalog.startingClasses;
-  const statsRng = createStream(config.seed, "starting-classes", config.version);
+  const statsRng = createStream(
+    config.seed,
+    "starting-classes",
+    EXISTING_STREAM_VERSION,
+  );
   const equipmentRng = createStream(
     config.seed,
     "starting-equipment",
-    config.version,
+    EXISTING_STREAM_VERSION,
   );
   const statsSources = config.randomizeStartingClass
     ? shuffledWithoutFixedPoints(statsRng, classes)
@@ -2594,6 +2605,45 @@ function randomizeStartingClasses(config, catalog) {
   });
 }
 
+function randomizeNpcFashion(config, catalog) {
+  if (!config.fashionSouls || !catalog?.enemySlots?.length) return [];
+  const pools = catalog.startingEquipmentPools;
+  const slotPools = {
+    helm: pools?.helms || [],
+    armor: pools?.armors || [],
+    gauntlets: pools?.gauntlets || [],
+    legs: pools?.legs || [],
+  };
+  if (Object.values(slotPools).some((pool) => pool.length === 0)) {
+    throw new Error("Fashion Souls requires complete armor pools from imported game data.");
+  }
+
+  const appearances = new Map();
+  for (const slot of catalog.enemySlots) {
+    if (slot.modelName !== "c0000" || slot.charaInitId < 0) continue;
+    const current = appearances.get(slot.charaInitId) || [];
+    current.push(slot.id);
+    appearances.set(slot.charaInitId, current);
+  }
+  const targets = [...appearances].sort(([left], [right]) => left - right);
+  const rng = createStream(config.seed, "fashion-souls", config.version);
+  const shuffledPools = Object.fromEntries(
+    Object.entries(slotPools).map(([name, pool]) => [name, rng.shuffle(pool)]),
+  );
+  const pick = (name, index) => {
+    const pool = shuffledPools[name];
+    return pool[index % pool.length];
+  };
+  return targets.map(([charaInitId, sourceSlots], index) => ({
+    charaInitId,
+    sourceSlots: [...sourceSlots].sort(),
+    helm: pick("helm", index),
+    armor: pick("armor", index),
+    gauntlets: pick("gauntlets", index),
+    legs: pick("legs", index),
+  }));
+}
+
 function randomizeBosses(config) {
   if (!config.randomizeBosses) return [];
   const rng = enemyStream(config, "bosses");
@@ -2629,7 +2679,7 @@ function randomizeItems(config) {
   const keyDestinationIds = new Set();
 
   if (config.randomizeProtectedItems) {
-    const rng = createStream(config.seed, "progression", config.version);
+    const rng = createStream(config.seed, "progression", EXISTING_STREAM_VERSION);
     const safeLocations = itemLocations
       .filter((location) => location.acceptsProgression)
       .sort((left, right) => left.sphere - right.sphere);
@@ -2647,7 +2697,7 @@ function randomizeItems(config) {
   }
 
   if (config.randomizeItems) {
-    const rng = createStream(config.seed, "items", config.version);
+    const rng = createStream(config.seed, "items", EXISTING_STREAM_VERSION);
     const targetLocations = itemLocations.filter(
       (location) => !keyDestinationIds.has(location.id),
     );
@@ -2789,6 +2839,9 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
       startingClasses: extractedData
         ? randomizeStartingClasses(config, gameCatalog)
         : [],
+      npcFashion: extractedData
+        ? randomizeNpcFashion(config, gameCatalog)
+        : [],
       gifts: extractedData ? itemLotPlan.gifts : [],
       enemyDrops: extractedData
         ? itemLotPlan.enemyDrops
@@ -2838,6 +2891,9 @@ export function generate(inputConfig, { gameCatalog = null } = {}) {
             config.randomizeStartingEquipment
               ? "Asylum pickups were selected for each class's final stats."
               : "Starting loadouts were preserved.",
+            config.fashionSouls
+              ? "Fashion Souls randomized only the equipped armor of human NPC profiles; weapons, AI, body parts, and teams were preserved."
+              : "NPC outfits were preserved.",
             config.randomizeGifts
               ? "Items granted by NPCs joined the enabled global item pool."
               : config.randomizeLordvessel

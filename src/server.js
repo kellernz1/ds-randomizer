@@ -334,6 +334,7 @@ async function api(request, response, pathname) {
         bosses: result.placements.bosses.length,
         items: result.placements.items.length,
         startingClasses: result.placements.startingClasses?.length || 0,
+        npcFashion: result.placements.npcFashion?.length || 0,
         gifts: result.placements.gifts?.length || 0,
         enemyDrops: result.placements.enemyDrops?.length || 0,
         shops: result.placements.shops?.length || 0,

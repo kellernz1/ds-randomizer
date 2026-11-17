@@ -1272,6 +1272,47 @@ test("classes use deterministic stats and general-catalog equipment", async () =
   assert.deepEqual(classes, repeated.placements.startingClasses);
 });
 
+test("Fashion Souls deterministically randomizes only human NPC armor profiles", async () => {
+  const gameCatalog = await catalog();
+  const config = {
+    ...defaultConfig,
+    seed: "fashion-souls-01",
+    randomizeEnemies: false,
+    randomizeBosses: false,
+    randomizeItems: false,
+    fashionSouls: true,
+  };
+  const first = generate(config, { gameCatalog });
+  const repeated = generate(config, { gameCatalog });
+  const placements = first.placements.npcFashion;
+  const expectedRows = new Set(
+    gameCatalog.enemySlots
+      .filter((slot) => slot.modelName === "c0000" && slot.charaInitId >= 0)
+      .map((slot) => slot.charaInitId),
+  );
+  assert.equal(placements.length, expectedRows.size);
+  assert.deepEqual(placements, repeated.placements.npcFashion);
+  assert.equal(
+    new Set(placements.map((entry) => entry.charaInitId)).size,
+    placements.length,
+  );
+  const pools = {
+    helm: new Set(gameCatalog.startingEquipmentPools.helms.map((item) => item.id)),
+    armor: new Set(gameCatalog.startingEquipmentPools.armors.map((item) => item.id)),
+    gauntlets: new Set(gameCatalog.startingEquipmentPools.gauntlets.map((item) => item.id)),
+    legs: new Set(gameCatalog.startingEquipmentPools.legs.map((item) => item.id)),
+  };
+  for (const placement of placements) {
+    assert.ok(expectedRows.has(placement.charaInitId));
+    assert.ok(placement.sourceSlots.length > 0);
+    for (const field of Object.keys(pools)) {
+      assert.ok(pools[field].has(placement[field].id));
+    }
+  }
+  const disabled = generate({ ...config, fashionSouls: false, randomizeItems: true }, { gameCatalog });
+  assert.deepEqual(disabled.placements.npcFashion, []);
+});
+
 test("every class receives a primary weapon as its first pickup", async () => {
   const gameCatalog = await catalog();
   const vanilla = vanillaStartingIds(gameCatalog);

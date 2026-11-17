@@ -150,6 +150,14 @@ function spoilerText(result) {
       lines.push(`${placement.name}: stats from ${placement.statsFrom}; equipment preserved`);
     }
   }
+  lines.push("", "=== FASHION SOULS ===");
+  for (const placement of result.placements.npcFashion || []) {
+    const item = (entry) => `${entry.name} [${entry.id}]`;
+    lines.push(
+      `CharaInit ${placement.charaInitId}: ${item(placement.helm)}, ` +
+      `${item(placement.armor)}, ${item(placement.gauntlets)}, ${item(placement.legs)}`,
+    );
+  }
   lines.push("", "=== NPC GIFTS ===");
   for (const placement of result.placements.gifts || []) {
     lines.push(`[${placement.rowId}] ${placement.from} -> ${placement.to}`);

@@ -285,6 +285,7 @@ form.addEventListener("submit", async (event) => {
       `Done. Seed ${result.seed}\n` +
       `${result.counts.enemies} enemies, ${result.counts.bosses} bosses, and ${result.counts.items} world items.\n` +
       `${result.counts.startingClasses} starting classes processed.\n` +
+      `${result.counts.npcFashion} NPC outfits randomized.\n` +
       `${result.counts.gifts} gifts, ${result.counts.enemyDrops} drops, and ` +
       `${result.counts.shops} shop entries processed.\n` +
       `Output: ${result.outputDirectory}` +

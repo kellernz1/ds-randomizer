@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 
-export const RANDOMIZER_VERSION = "0.6.27";
+export const RANDOMIZER_VERSION = "0.6.28";
 
 export const defaultConfig = Object.freeze({
   version: RANDOMIZER_VERSION,
@@ -25,6 +25,7 @@ export const defaultConfig = Object.freeze({
   balancedEarlyLoot: true,
   randomizeStartingClass: false,
   randomizeStartingEquipment: false,
+  fashionSouls: false,
   randomizeGifts: false,
   randomizeEnemyDrops: false,
   useReplacementEnemyDrops: false,
@@ -50,6 +51,7 @@ const booleanKeys = [
   "balancedEarlyLoot",
   "randomizeStartingClass",
   "randomizeStartingEquipment",
+  "fashionSouls",
   "randomizeGifts",
   "randomizeEnemyDrops",
   "useReplacementEnemyDrops",
@@ -116,6 +118,7 @@ export function validateConfig(config, { requireGame = false } = {}) {
     !config.randomizeLordSouls &&
     !config.randomizeStartingClass &&
     !config.randomizeStartingEquipment &&
+    !config.fashionSouls &&
     !config.randomizeGifts &&
     !config.randomizeEnemyDrops &&
     !config.guaranteedEnemyDrops &&

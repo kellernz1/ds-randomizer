@@ -8,7 +8,7 @@ using SoulsFormats;
 
 const int SchemaVersion = 22;
 const int DataToolProtocolVersion = 1;
-const string RandomizerVersion = "0.6.27";
+const string RandomizerVersion = "0.6.28";
 const int ProgressiveEffectIdBase = 9_600_000;
 const int ProgressiveMilestoneCount = 7;
 Console.OutputEncoding = new UTF8Encoding(false);
@@ -1380,6 +1380,17 @@ static PatchReport PatchEnemies(
             })
             .ToList();
     }
+    var fashionPlacements = placementsRoot.TryGetProperty(
+            "npcFashion", out var fashionElement)
+        ? fashionElement.EnumerateArray()
+            .Select(element => new FashionPlacement(
+                element.GetProperty("charaInitId").GetInt32(),
+                element.GetProperty("helm").GetProperty("id").GetInt32(),
+                element.GetProperty("armor").GetProperty("id").GetInt32(),
+                element.GetProperty("gauntlets").GetProperty("id").GetInt32(),
+                element.GetProperty("legs").GetProperty("id").GetInt32()))
+            .ToList()
+        : new List<FashionPlacement>();
     List<RowPlacement> ReadRowPlacements(string propertyName)
     {
         if (!placementsRoot.TryGetProperty(propertyName, out var element))
@@ -1768,6 +1779,7 @@ static PatchReport PatchEnemies(
         allEnemyPlacements.Any(placement => placement.ScaledNpcParamId.HasValue) ||
         allEnemyPlacements.Any(placement => placement.BaseThinkParamId.HasValue) ||
         startingPlacements.Count > 0 ||
+        fashionPlacements.Count > 0 ||
         giftPlacements.Count > 0 ||
         enemyDropPlacements.Count > 0 ||
         worldItemPlacements.Count > 0 ||
@@ -1781,6 +1793,7 @@ static PatchReport PatchEnemies(
             catalog,
             allEnemyPlacements,
             startingPlacements,
+            fashionPlacements,
             giftPlacements,
             enemyDropPlacements,
             worldItemPlacements,
@@ -4349,6 +4362,7 @@ static PatchedFile? PatchGameParam(
     GameCatalog catalog,
     List<PatchPlacement> enemyPlacements,
     List<StartingPlacement> placements,
+    List<FashionPlacement> fashionPlacements,
     List<RowPlacement> giftPlacements,
     List<RowPlacement> enemyDropPlacements,
     List<RowPlacement> worldItemPlacements,
@@ -4361,6 +4375,7 @@ static PatchedFile? PatchGameParam(
         !enemyPlacements.Any(placement => placement.BaseThinkParamId.HasValue) &&
         !placements.Any(placement =>
             placement.RandomizeStats || placement.RandomizeEquipment) &&
+        fashionPlacements.Count == 0 &&
         giftPlacements.Count == 0 &&
         enemyDropPlacements.Count == 0 &&
         worldItemPlacements.Count == 0 &&
@@ -4535,6 +4550,62 @@ static PatchedFile? PatchGameParam(
             }
         }
     }
+
+    if (fashionPlacements.Select(entry => entry.CharaInitId).Distinct().Count() !=
+        fashionPlacements.Count)
+        throw new InvalidDataException("Fashion Souls contains duplicate CharaInit rows.");
+    var allowedFashionRows = catalog.EnemySlots
+        .Where(slot => slot.ModelName == "c0000" && slot.CharaInitId >= 0)
+        .Select(slot => slot.CharaInitId)
+        .ToHashSet();
+    var fashionPools = new Dictionary<string, HashSet<int>>(StringComparer.Ordinal)
+    {
+        ["equip_Helm"] = catalog.StartingEquipmentPools.Helms.Select(item => item.Id).ToHashSet(),
+        ["equip_Armer"] = catalog.StartingEquipmentPools.Armors.Select(item => item.Id).ToHashSet(),
+        ["equip_Gaunt"] = catalog.StartingEquipmentPools.Gauntlets.Select(item => item.Id).ToHashSet(),
+        ["equip_Leg"] = catalog.StartingEquipmentPools.Legs.Select(item => item.Id).ToHashSet(),
+    };
+    var fashionRows = new Dictionary<int, PARAM.Row>();
+    var fashionSnapshots = new Dictionary<int, Dictionary<string, object>>();
+    foreach (var placement in fashionPlacements)
+    {
+        if (!allowedFashionRows.Contains(placement.CharaInitId))
+            throw new InvalidDataException(
+                $"Fashion Souls cannot target CharaInit {placement.CharaInitId}.");
+        var row = charaParam.Rows.SingleOrDefault(entry => entry.ID == placement.CharaInitId)
+            ?? throw new InvalidDataException(
+                $"CharaInit {placement.CharaInitId} does not exist.");
+        var values = new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["equip_Helm"] = placement.Helm,
+            ["equip_Armer"] = placement.Armor,
+            ["equip_Gaunt"] = placement.Gauntlets,
+            ["equip_Leg"] = placement.Legs,
+        };
+        foreach (var pair in values)
+        {
+            if (!fashionPools[pair.Key].Contains(pair.Value))
+                throw new InvalidDataException(
+                    $"Fashion Souls item {pair.Value} is not valid for {pair.Key}.");
+        }
+        fashionRows.Add(placement.CharaInitId, row);
+        fashionSnapshots.Add(placement.CharaInitId, RowCells(row));
+        foreach (var pair in values)
+            SetCell(row, pair.Key, pair.Value);
+    }
+    foreach (var placement in fashionPlacements)
+    {
+        var row = fashionRows[placement.CharaInitId];
+        AssertCell(row, "equip_Helm", placement.Helm);
+        AssertCell(row, "equip_Armer", placement.Armor);
+        AssertCell(row, "equip_Gaunt", placement.Gauntlets);
+        AssertCell(row, "equip_Leg", placement.Legs);
+        AssertCells(
+            fashionSnapshots[placement.CharaInitId],
+            row,
+            name => !IsArmorField(name) &&
+                !name.StartsWith("pad", StringComparison.OrdinalIgnoreCase));
+    }
     foreach (var placement in placements)
     {
         var target = classRows[placement.Slot];
@@ -4689,7 +4760,7 @@ static PatchedFile? PatchGameParam(
     Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
     binder.Write(outputPath);
 
-    // Verify the binder and all three PARAMs that may have changed.
+    // Verify the binder and every PARAM that may have changed.
     var verification = BND3.Read(outputPath);
     var verifiedCharaFile = verification.Files.Single(file =>
         file.Name.EndsWith("CharaInitParam.param", StringComparison.OrdinalIgnoreCase));
@@ -4709,6 +4780,7 @@ static PatchedFile? PatchGameParam(
     var verifiedNpcs = PARAM.Read(verifiedNpcFile.Bytes);
     var verifiedThinks = PARAM.Read(verifiedThinkFile.Bytes);
     var verifiedSpEffects = PARAM.Read(verifiedSpEffectFile.Bytes);
+    ApplyCompatibleParamdef(verifiedChara, paramdefs);
     ApplyCompatibleParamdef(verifiedLots, paramdefs);
     ApplyCompatibleParamdef(verifiedShops, paramdefs);
     ApplyCompatibleParamdef(verifiedNpcs, paramdefs);
@@ -4728,6 +4800,19 @@ static PatchedFile? PatchGameParam(
         (progressiveScaling &&
          !verifiedSpEffectFile.Bytes.SequenceEqual(spEffectFile.Bytes)))
         throw new InvalidDataException("Invalid GameParam round-trip.");
+    foreach (var placement in fashionPlacements)
+    {
+        var row = verifiedChara.Rows.Single(entry => entry.ID == placement.CharaInitId);
+        AssertCell(row, "equip_Helm", placement.Helm);
+        AssertCell(row, "equip_Armer", placement.Armor);
+        AssertCell(row, "equip_Gaunt", placement.Gauntlets);
+        AssertCell(row, "equip_Leg", placement.Legs);
+        AssertCells(
+            fashionSnapshots[placement.CharaInitId],
+            row,
+            name => !IsArmorField(name) &&
+                !name.StartsWith("pad", StringComparison.OrdinalIgnoreCase));
+    }
     foreach (var assignment in itemAssignments)
     {
         if (assignment.TargetKind == "lot")
@@ -6102,6 +6187,12 @@ record StartingPlacement(
     bool RandomizeStats,
     bool RandomizeEquipment,
     RandomStartingEquipment? Equipment);
+record FashionPlacement(
+    int CharaInitId,
+    int Helm,
+    int Armor,
+    int Gauntlets,
+    int Legs);
 record RandomStartingEquipment(
     int PickupWeapon,
     int PickupOffhand,
