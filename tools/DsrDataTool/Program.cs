@@ -8,7 +8,7 @@ using SoulsFormats;
 
 const int SchemaVersion = 22;
 const int DataToolProtocolVersion = 1;
-const string RandomizerVersion = "0.6.25";
+const string RandomizerVersion = "0.6.26";
 const int ProgressiveEffectIdBase = 9_600_000;
 const int ProgressiveMilestoneCount = 7;
 Console.OutputEncoding = new UTF8Encoding(false);
@@ -4864,20 +4864,11 @@ static void AddProgressiveSpEffectRows(PARAM spEffectParam)
         throw new InvalidDataException(
             "The reserved progressive SpEffectParam ID range is already in use.");
     }
-    var neutral = spEffectParam.Rows.SingleOrDefault(row => row.ID == 0)
-        ?? throw new InvalidDataException(
-            "SpEffectParam row 0 is required to create progressive scaling effects.");
     var rates = new[]
     {
         "maxHpRate", "physicsAttackRate", "magicAttackRate",
         "fireAttackRate", "thunderAttackRate",
     };
-    foreach (var field in rates)
-    {
-        if (Math.Abs(GetCellFloat(neutral, field) - 1f) > 0.0001)
-            throw new InvalidDataException(
-                $"SpEffectParam row 0 is not neutral for {field}; cannot safely create scaling effects.");
-    }
 
     for (var milestone = 0; milestone < ProgressiveMilestoneCount; milestone++)
     {
@@ -4886,7 +4877,9 @@ static void AddProgressiveSpEffectRows(PARAM spEffectParam)
             newId,
             $"DSR Randomizer Progressive Scaling {milestone + 1}",
             spEffectParam.AppliedParamdef);
-        CopyCells(RowCells(neutral), row, _ => true);
+        // Row 0 is a special all-zero sentinel in vanilla DSR, not a neutral
+        // effect template. A newly constructed row uses the PARAMDEF defaults,
+        // including neutral 1.0 HP and attack multipliers.
         var targetRate = 1.0 + 0.1 * (milestone + 1);
         var previousRate = 1.0 + 0.1 * milestone;
         var stepRate = (float)(targetRate / previousRate);

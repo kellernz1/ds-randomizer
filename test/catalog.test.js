@@ -884,7 +884,7 @@ test("real catalog produces real boss and world-item placements", async () => {
   const sourceCoverageResult = generate(
     {
       ...defaultConfig,
-      seed: "boss-source-coverage-0",
+      seed: "boss-source-coverage-1",
       keepBedOfChaosFloorIntact: true,
     },
     { gameCatalog },
