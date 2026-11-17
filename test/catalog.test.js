@@ -214,6 +214,32 @@ test("real catalog produces deterministic enemies with visibly different models"
     new Set(ordinaryPlacements.map((placement) => placement.sourceSlot)).size,
     ordinaryPlacements.length,
   );
+  const crowDemonsByMap = new Map();
+  for (const placement of ordinaryPlacements.filter(
+    (entry) => entry.targetModelName === "c2310",
+  )) {
+    if (!crowDemonsByMap.has(placement.map)) {
+      crowDemonsByMap.set(placement.map, []);
+    }
+    crowDemonsByMap.get(placement.map).push(slots.get(placement.slot).position);
+  }
+  assert.ok(
+    [...crowDemonsByMap.values()].some((positions) => positions.length > 1),
+  );
+  for (const positions of crowDemonsByMap.values()) {
+    for (let left = 0; left < positions.length; left += 1) {
+      for (let right = left + 1; right < positions.length; right += 1) {
+        assert.ok(
+          Math.hypot(
+            positions[left].x - positions[right].x,
+            positions[left].y - positions[right].y,
+            positions[left].z - positions[right].z,
+          ) >= 40,
+          "repeated Crow Demons must be dispersed within each map",
+        );
+      }
+    }
+  }
   const newLondoSolidGhostSlotReplacements = ordinaryPlacements.filter(
     (placement) => {
       const target = slots.get(placement.slot);

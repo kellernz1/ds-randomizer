@@ -90,6 +90,9 @@ files; source hashes prevent applying it to a different installation state.
 - A 30-character-model total budget per map includes regular enemies, bosses,
   dragons, protected NPCs, and helpers; unused MSB model declarations are
   pruned so asynchronous resource loading stays within stable Remastered limits
+- Count-preserving swaps prefer maps with fewer copies of the incoming model,
+  then spread repeated models across distant spawn points inside each map so
+  random enemies do not form avoidable same-model clusters
 - Area scaling copies combat-scaling `SpEffect`s from the destination for
   regular enemies. Portable bosses retain model-specific effects but inherit
   the destination's level multiplier, so late-game HP/defense scaling cannot

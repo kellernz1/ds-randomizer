@@ -1142,10 +1142,11 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan, bossPlan) {
     const groundedGhostSpawn = replacesWallPhasingGhost
       ? groundedNewLondoGhostSpawn(slot, index)
       : null;
-    const cloneThinkParam = changed || passiveUntilAttacked;
     const darkrootButterflyPath =
       (slot.mapId === "m12_00_00_00" || slot.mapId === "m12_00_00_01") &&
       slot.modelName === "c2330";
+    const cloneThinkParam =
+      changed || passiveUntilAttacked || darkrootButterflyPath;
     const requiresCombatEvent =
       forceCombatActivationModels.has(replacement.modelName) ||
       darkrootButterflyPath;
@@ -2014,7 +2015,14 @@ function limitUniqueEnemyModelsByMap(
       .sort((left, right) =>
         right[1].size - left[1].size ||
         left[0].localeCompare(right[0]));
-    if (overBudget.length === 0) return sources;
+    if (overBudget.length === 0) {
+      return spreadRepeatedEnemyModelsAcrossMaps(
+        targets,
+        sources,
+        maximumUnique,
+        fixedModelsByMap,
+      );
+    }
 
     let madeProgress = false;
     for (const [mapId, initialCounts] of overBudget) {
@@ -2059,6 +2067,8 @@ function limitUniqueEnemyModelsByMap(
             if (partnerUniqueAfter > maximumUnique) continue;
             candidates.push({
               index: partnerIndex,
+              incomingModelCount: partnerCounts.get(modelName) || 0,
+              outgoingModelCount: partnerCounts.get(partnerModel),
               introducesModel: partnerCounts.has(modelName) ? 0 : 1,
               uniqueAfter: partnerUniqueAfter,
               currentUnique: partnerCounts.size,
@@ -2066,9 +2076,11 @@ function limitUniqueEnemyModelsByMap(
           }
 
           candidates.sort((left, right) =>
-            left.introducesModel - right.introducesModel ||
+            left.incomingModelCount - right.incomingModelCount ||
+            left.outgoingModelCount - right.outgoingModelCount ||
             left.uniqueAfter - right.uniqueAfter ||
             left.currentUnique - right.currentUnique ||
+            left.introducesModel - right.introducesModel ||
             left.index - right.index);
           if (candidates.length === 0) {
             completed = false;
@@ -2099,6 +2111,283 @@ function limitUniqueEnemyModelsByMap(
     }
   }
   throw new Error("Enemy model-budget balancing did not converge.");
+}
+
+function spreadRepeatedEnemyModelsAcrossMaps(
+  targets,
+  initialSources,
+  maximumUnique,
+  fixedModelsByMap = new Map(),
+) {
+  const sources = [...initialSources];
+  const indicesByMap = new Map();
+  targets.forEach((target, index) => {
+    if (!indicesByMap.has(target.mapId)) indicesByMap.set(target.mapId, []);
+    indicesByMap.get(target.mapId).push(index);
+  });
+
+  const modelCounts = () => {
+    const result = new Map();
+    for (const [mapId, indices] of indicesByMap) {
+      const counts = new Map();
+      for (const modelName of fixedModelsByMap.get(mapId) ?? []) {
+        counts.set(modelName, 1);
+      }
+      for (const index of indices) {
+        const modelName = sources[index].modelName;
+        counts.set(modelName, (counts.get(modelName) || 0) + 1);
+      }
+      result.set(mapId, counts);
+    }
+    return result;
+  };
+
+  const sourceTotals = new Map();
+  for (const source of sources) {
+    sourceTotals.set(
+      source.modelName,
+      (sourceTotals.get(source.modelName) || 0) + 1,
+    );
+  }
+
+  const uniqueAfter = (counts, adjustments) => {
+    let size = counts.size;
+    for (const [modelName, delta] of adjustments) {
+      const before = counts.get(modelName) || 0;
+      const after = before + delta;
+      if (before === 0 && after > 0) size += 1;
+      if (before > 0 && after === 0) size -= 1;
+    }
+    return size;
+  };
+
+  const safePairs = (donorIndices, receiverIndices) => {
+    const count = receiverIndices.length;
+    if (count > donorIndices.length) return null;
+    for (let donorOffset = 0; donorOffset < donorIndices.length; donorOffset += 1) {
+      const selectedDonors = Array.from(
+        { length: count },
+        (_, index) => donorIndices[(donorOffset + index) % donorIndices.length],
+      );
+      if (new Set(selectedDonors).size !== count) continue;
+      for (let receiverOffset = 0; receiverOffset < count; receiverOffset += 1) {
+        const pairs = selectedDonors.map((donorIndex, index) => ({
+          donorIndex,
+          receiverIndex:
+            receiverIndices[(receiverOffset + index) % receiverIndices.length],
+        }));
+        if (pairs.every(({ donorIndex, receiverIndex }) =>
+          sources[receiverIndex].id !== targets[donorIndex].id &&
+          sources[donorIndex].id !== targets[receiverIndex].id)) {
+          return pairs;
+        }
+      }
+    }
+    return null;
+  };
+
+  // Once every map is under the resource budget, exchange complete model
+  // groups between maps. Moving a whole outgoing group allows a repeated
+  // model to enter a map already at the 30-model cap without increasing that
+  // cap, while preserving every source instance and avoiding vanilla slots.
+  for (let pass = 0; pass < 1; pass += 1) {
+    let moved = false;
+    const countsAtStart = modelCounts();
+    const models = [...sourceTotals.keys()]
+      .filter((modelName) =>
+        sourceTotals.get(modelName) > 1 && sourceTotals.get(modelName) <= 12)
+      .sort((left, right) => {
+      const leftPeak = Math.max(
+        ...[...countsAtStart.values()].map((counts) => counts.get(left) || 0),
+      );
+      const rightPeak = Math.max(
+        ...[...countsAtStart.values()].map((counts) => counts.get(right) || 0),
+      );
+      const leftRatio = leftPeak / sourceTotals.get(left);
+      const rightRatio = rightPeak / sourceTotals.get(right);
+      return rightRatio - leftRatio ||
+        sourceTotals.get(left) - sourceTotals.get(right) ||
+        left.localeCompare(right);
+      });
+
+    for (const modelName of models) {
+      const maximumMoves = Math.min(sourceTotals.get(modelName), 4);
+      for (let move = 0; move < maximumMoves; move += 1) {
+        const countsByMap = modelCounts();
+        let best = null;
+        for (const [donorMap, donorIndices] of indicesByMap) {
+          const donorCounts = countsByMap.get(donorMap);
+          const donorModelCount = donorCounts.get(modelName) || 0;
+          const movableDonors = donorIndices.filter(
+            (index) => sources[index].modelName === modelName,
+          );
+          if (donorModelCount <= 1 || movableDonors.length <= 1) continue;
+
+          for (const [receiverMap, receiverIndices] of indicesByMap) {
+            if (receiverMap === donorMap) continue;
+            const receiverCounts = countsByMap.get(receiverMap);
+            const receiverModelCount = receiverCounts.get(modelName) || 0;
+            if (receiverModelCount >= donorModelCount - 1) continue;
+
+            const receiverGroups = new Map();
+            for (const receiverIndex of receiverIndices) {
+              const receiverModel = sources[receiverIndex].modelName;
+              if (!receiverGroups.has(receiverModel)) {
+                receiverGroups.set(receiverModel, []);
+              }
+              receiverGroups.get(receiverModel).push(receiverIndex);
+            }
+            for (const [outgoingModel, outgoingIndices] of receiverGroups) {
+              if (outgoingModel === modelName) continue;
+              const exchangeCount = outgoingIndices.length;
+              if (exchangeCount >= movableDonors.length) continue;
+              const pairs = safePairs(movableDonors, outgoingIndices);
+              if (!pairs) continue;
+
+              const donorOutgoingCount = donorCounts.get(outgoingModel) || 0;
+              const receiverOutgoingCount =
+                receiverCounts.get(outgoingModel) || 0;
+              if (
+                uniqueAfter(donorCounts, new Map([
+                  [modelName, -exchangeCount],
+                  [outgoingModel, exchangeCount],
+                ])) > maximumUnique ||
+                uniqueAfter(receiverCounts, new Map([
+                  [modelName, exchangeCount],
+                  [outgoingModel, -exchangeCount],
+                ])) > maximumUnique
+              ) {
+                continue;
+              }
+
+              const concentrationDelta =
+                (donorModelCount - exchangeCount) ** 2 +
+                (receiverModelCount + exchangeCount) ** 2 -
+                donorModelCount ** 2 - receiverModelCount ** 2 +
+                (donorOutgoingCount + exchangeCount) ** 2 +
+                (receiverOutgoingCount - exchangeCount) ** 2 -
+                donorOutgoingCount ** 2 - receiverOutgoingCount ** 2;
+              if (concentrationDelta >= 0) continue;
+              const candidate = {
+                pairs,
+                concentrationDelta,
+                receiverModelCount,
+                exchangeCount,
+                donorMap,
+                receiverMap,
+                outgoingModel,
+              };
+              if (
+                !best ||
+                candidate.concentrationDelta < best.concentrationDelta ||
+                (candidate.concentrationDelta === best.concentrationDelta &&
+                  (candidate.receiverModelCount < best.receiverModelCount ||
+                    (candidate.receiverModelCount === best.receiverModelCount &&
+                      (candidate.exchangeCount < best.exchangeCount ||
+                        (candidate.exchangeCount === best.exchangeCount &&
+                          `${candidate.donorMap}:${candidate.receiverMap}:${candidate.outgoingModel}`
+                            .localeCompare(`${best.donorMap}:${best.receiverMap}:${best.outgoingModel}`) < 0)))))
+              ) {
+                best = candidate;
+              }
+            }
+          }
+        }
+        if (!best) break;
+        for (const { donorIndex, receiverIndex } of best.pairs) {
+          [sources[donorIndex], sources[receiverIndex]] =
+            [sources[receiverIndex], sources[donorIndex]];
+        }
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+  return spreadRepeatedEnemyModelsWithinMaps(targets, sources);
+}
+
+function spreadRepeatedEnemyModelsWithinMaps(targets, initialSources) {
+  const sources = [...initialSources];
+  const indicesByMap = new Map();
+  targets.forEach((target, index) => {
+    if (!indicesByMap.has(target.mapId)) indicesByMap.set(target.mapId, []);
+    indicesByMap.get(target.mapId).push(index);
+  });
+
+  const distanceSquared = (leftIndex, rightIndex) => {
+    const left = targets[leftIndex].position;
+    const right = targets[rightIndex].position;
+    if (!left || !right) return Math.abs(leftIndex - rightIndex) ** 2;
+    return (
+      (left.x - right.x) ** 2 +
+      (left.y - right.y) ** 2 +
+      (left.z - right.z) ** 2
+    );
+  };
+
+  for (const indices of indicesByMap.values()) {
+    const groups = new Map();
+    for (const index of indices) {
+      const source = sources[index];
+      if (!groups.has(source.modelName)) groups.set(source.modelName, []);
+      groups.get(source.modelName).push({ source, originalIndex: index });
+    }
+    const orderedGroups = [...groups]
+      .sort((left, right) =>
+        (left[1].length === 1) - (right[1].length === 1) ||
+        left[1].length - right[1].length ||
+        left[0].localeCompare(right[0]));
+    const availableTargets = new Set(indices);
+    const assignedByTarget = new Map();
+
+    for (const [, group] of orderedGroups) {
+      const modelTargets = [];
+      for (const { source, originalIndex } of group) {
+        const candidates = [...availableTargets]
+          .filter((targetIndex) => source.id !== targets[targetIndex].id)
+          .map((targetIndex) => ({
+            targetIndex,
+            separation: modelTargets.length === 0
+              ? Number.POSITIVE_INFINITY
+              : Math.min(...modelTargets.map((placedIndex) =>
+                  distanceSquared(targetIndex, placedIndex))),
+            keepsInitialRandomPosition: targetIndex === originalIndex ? 0 : 1,
+          }))
+          .sort((left, right) =>
+            right.separation - left.separation ||
+            left.keepsInitialRandomPosition - right.keepsInitialRandomPosition ||
+            left.targetIndex - right.targetIndex);
+        if (candidates.length > 0) {
+          const targetIndex = candidates[0].targetIndex;
+          assignedByTarget.set(targetIndex, source);
+          availableTargets.delete(targetIndex);
+          modelTargets.push(targetIndex);
+          continue;
+        }
+
+        // A final source can occasionally be left with only its vanilla slot.
+        // Exchange it with an earlier assignment when both resulting slots
+        // remain non-vanilla.
+        const blockedTarget = [...availableTargets][0];
+        const repair = [...assignedByTarget]
+          .find(([assignedTarget, assignedSource]) =>
+            source.id !== targets[assignedTarget].id &&
+            assignedSource.id !== targets[blockedTarget].id);
+        if (!repair) {
+          throw new Error("Could not spread repeated enemy models safely.");
+        }
+        const [assignedTarget, assignedSource] = repair;
+        assignedByTarget.set(assignedTarget, source);
+        assignedByTarget.set(blockedTarget, assignedSource);
+        availableTargets.delete(blockedTarget);
+        modelTargets.push(assignedTarget);
+      }
+    }
+    for (const [targetIndex, source] of assignedByTarget) {
+      sources[targetIndex] = source;
+    }
+  }
+  return sources;
 }
 
 function randomizeStartingClasses(config, catalog) {
