@@ -811,6 +811,14 @@ function buildDragonPlan(config, catalog) {
             ...bossGrounding(targetBody, catalog),
             linkedDragonGroup: target.id,
             forceCombatActivation: targetBody.entityId >= 0,
+            // Dragon-family bosses use the separate linked body/tail planner,
+            // but their destination arena can still apply model-specific
+            // protection. Seath's crystal event, for example, makes entity
+            // 1700800 immortal and leaves its replacement at 1 HP unless the
+            // destination lifecycle is sanitized like every other boss.
+            portableBossSanitization:
+              targetBody.modelName !== sourceBody.modelName ||
+              targetBody.npcParamId !== sourceBody.npcParamId,
           }
         : target.id === "hellkite-bridge"
         ? {

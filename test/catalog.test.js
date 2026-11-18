@@ -880,6 +880,18 @@ test("real catalog produces real boss and world-item placements", async () => {
   );
   assert.ok(
     result.placements.bosses
+      .filter((placement) => placement.linkedDragonGroup && placement.changed)
+      .every((placement) => placement.portableBossSanitization === true),
+    "linked dragon bosses must remove destination immortality and invincibility actions",
+  );
+  const seathDestination = result.placements.bosses.find(
+    (placement) => placement.slot === "m17_00_00_00:c5290_0001",
+  );
+  assert.ok(seathDestination?.changed);
+  assert.equal(seathDestination.entityId, 1_700_800);
+  assert.equal(seathDestination.portableBossSanitization, true);
+  assert.ok(
+    result.placements.bosses
       .filter(
         (placement) =>
           placement.targetModelName === "c2730" &&
