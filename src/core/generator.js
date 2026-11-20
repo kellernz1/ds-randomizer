@@ -129,7 +129,9 @@ const tangibleGhostModels = new Set(["c2670", "c2680"]);
 const asylumPassiveSlots = new Set([
   "m18_01_00_00:c2500_0000",
   "m18_01_00_00:c2500_0001",
-  "m18_01_00_00:c2500_0002",
+  // The second accessible Hollow in the opening cell corridor. The similarly
+  // numbered c2500_0002 is the hostile Hollow above the rolling-boulder stairs.
+  "m18_01_00_00:c2500_0005",
 ]);
 const newLondoPassiveSlots = new Set(
   Array.from(

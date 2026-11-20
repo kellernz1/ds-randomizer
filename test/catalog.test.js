@@ -369,7 +369,7 @@ test("real catalog produces deterministic enemies with visibly different models"
   for (const slotId of [
     "m18_01_00_00:c2500_0000",
     "m18_01_00_00:c2500_0001",
-    "m18_01_00_00:c2500_0002",
+    "m18_01_00_00:c2500_0005",
   ]) {
     const placement = placementsBySlot.get(slotId);
     const source = slots.get(placement.sourceSlot);
@@ -386,6 +386,16 @@ test("real catalog produces deterministic enemies with visibly different models"
       "passive-asylum-source-ai-permutation",
     );
   }
+  const asylumBoulderStairs = placementsBySlot.get(
+    "m18_01_00_00:c2500_0002",
+  );
+  assert.ok(asylumBoulderStairs);
+  assert.equal(asylumBoulderStairs.entityId, 1_810_103);
+  assert.equal(asylumBoulderStairs.passiveUntilAttacked, undefined);
+  assert.notEqual(
+    asylumBoulderStairs.compatibility,
+    "passive-asylum-source-ai-permutation",
+  );
   const newLondoPassive = ordinaryPlacements.filter((placement) =>
     placement.slot.startsWith("m16_00_00_00:c2500_"),
   );
