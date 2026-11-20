@@ -2425,9 +2425,49 @@ function randomizeStartingClasses(config, catalog) {
     "starting-equipment",
     EXISTING_STREAM_VERSION,
   );
-  const statsSources = config.randomizeStartingClass
-    ? shuffledWithoutFixedPoints(statsRng, classes)
-    : classes;
+  const startingAttributeFields = [
+    "baseVit", "baseWil", "baseEnd", "baseStr",
+    "baseDex", "baseMag", "baseFai", "baseLuc",
+  ];
+  const vanillaAttributeVectors = new Set(classes.map((entry) =>
+    startingAttributeFields.map((field) => Number(entry.start[field])).join(","),
+  ));
+  const generatedAttributeVectors = new Set();
+  const randomizeAttributes = (target) => {
+    const total = startingAttributeFields.reduce(
+      (sum, field) => sum + Number(target.start[field]),
+      0,
+    );
+    for (let attempt = 0; attempt < 256; attempt += 1) {
+      const values = Array(startingAttributeFields.length).fill(8);
+      let remaining = total - values.reduce((sum, value) => sum + value, 0);
+      while (remaining > 0) {
+        const available = values
+          .map((value, index) => (value < 15 ? index : -1))
+          .filter((index) => index >= 0);
+        if (available.length === 0) {
+          throw new Error(`Could not distribute starting stats for ${target.name}.`);
+        }
+        values[available[statsRng.int(available.length)]] += 1;
+        remaining -= 1;
+      }
+      const key = values.join(",");
+      if (!vanillaAttributeVectors.has(key) && !generatedAttributeVectors.has(key)) {
+        generatedAttributeVectors.add(key);
+        return Object.fromEntries(
+          startingAttributeFields.map((field, index) => [field, values[index]]),
+        );
+      }
+    }
+    throw new Error(`Could not create unique randomized stats for ${target.name}.`);
+  };
+  const finalStats = classes.map((target) =>
+    config.randomizeStartingClass
+      ? randomizeAttributes(target)
+      : Object.fromEntries(startingAttributeFields.map(
+          (field) => [field, Number(target.start[field])],
+        )),
+  );
   const equipmentPools = catalog.startingEquipmentPools;
   const hasGeneralEquipmentPools = Boolean(
     equipmentPools?.weapons?.length &&
@@ -2486,7 +2526,7 @@ function randomizeStartingClasses(config, catalog) {
   if (config.randomizeStartingEquipment && hasGeneralEquipmentPools) {
     const requests = [];
     classes.forEach((target, index) => {
-      const stats = statsSources[index].start;
+      const stats = finalStats[index];
       const baseStrength = Number(stats.baseStr);
       const otherwiseUsableWeapons = equipmentPools.weapons.filter(
         (weapon) =>
@@ -2568,7 +2608,7 @@ function randomizeStartingClasses(config, catalog) {
   }
 
   return classes.map((target, index) => {
-    const statsSource = statsSources[index];
+    const stats = finalStats[index];
     let equipment = null;
     if (config.randomizeStartingEquipment && hasGeneralEquipmentPools) {
       const preserveVanillaArmor = target.id === "deprived";
@@ -2601,11 +2641,11 @@ function randomizeStartingClasses(config, catalog) {
       slot: target.id,
       name: target.name,
       from: target.name,
-      to:
-        statsSource.id === target.id
-          ? target.name
-          : `${target.name} with ${statsSource.name} stats`,
-      statsFrom: statsSource.id,
+      to: config.randomizeStartingClass
+        ? `${target.name} with randomized stats`
+        : target.name,
+      statsFrom: target.id,
+      stats: config.randomizeStartingClass ? stats : null,
       equipmentFrom: target.id,
       equipment,
       randomizeStats: config.randomizeStartingClass,

@@ -8,7 +8,7 @@ using SoulsFormats;
 
 const int SchemaVersion = 22;
 const int DataToolProtocolVersion = 1;
-const string RandomizerVersion = "0.6.30";
+const string RandomizerVersion = "0.6.31";
 const int ProgressiveEffectIdBase = 9_600_000;
 const int ProgressiveMilestoneCount = 7;
 Console.OutputEncoding = new UTF8Encoding(false);
@@ -1344,6 +1344,20 @@ static PatchReport PatchEnemies(
             .EnumerateArray()
             .Select(element =>
             {
+                RandomStartingStats? stats = null;
+                if (element.TryGetProperty("stats", out var statsElement) &&
+                    statsElement.ValueKind == JsonValueKind.Object)
+                {
+                    stats = new RandomStartingStats(
+                        statsElement.GetProperty("baseVit").GetInt32(),
+                        statsElement.GetProperty("baseWil").GetInt32(),
+                        statsElement.GetProperty("baseEnd").GetInt32(),
+                        statsElement.GetProperty("baseStr").GetInt32(),
+                        statsElement.GetProperty("baseDex").GetInt32(),
+                        statsElement.GetProperty("baseMag").GetInt32(),
+                        statsElement.GetProperty("baseFai").GetInt32(),
+                        statsElement.GetProperty("baseLuc").GetInt32());
+                }
                 RandomStartingEquipment? equipment = null;
                 if (element.TryGetProperty("equipment", out var equipmentElement) &&
                     equipmentElement.ValueKind == JsonValueKind.Object)
@@ -1376,6 +1390,7 @@ static PatchReport PatchEnemies(
                         ?? throw new InvalidDataException("Class placement has no equipmentFrom."),
                     element.GetProperty("randomizeStats").GetBoolean(),
                     element.GetProperty("randomizeEquipment").GetBoolean(),
+                    stats,
                     equipment);
             })
             .ToList();
@@ -4496,15 +4511,54 @@ static PatchedFile? PatchGameParam(
         "baseVit", "baseWil", "baseEnd", "baseStr", "baseDex",
         "baseMag", "baseFai", "baseLuc", "baseHeroPoint", "baseDurability",
     };
+    var randomizedAttributeFields = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "baseVit", "baseWil", "baseEnd", "baseStr",
+        "baseDex", "baseMag", "baseFai", "baseLuc",
+    };
+    static Dictionary<string, int> StartingStatValues(RandomStartingStats stats) =>
+        new(StringComparer.Ordinal)
+        {
+            ["baseVit"] = stats.BaseVit,
+            ["baseWil"] = stats.BaseWil,
+            ["baseEnd"] = stats.BaseEnd,
+            ["baseStr"] = stats.BaseStr,
+            ["baseDex"] = stats.BaseDex,
+            ["baseMag"] = stats.BaseMag,
+            ["baseFai"] = stats.BaseFai,
+            ["baseLuc"] = stats.BaseLuc,
+        };
 
     foreach (var placement in placements)
     {
         var target = classRows[placement.Slot];
         if (placement.RandomizeStats)
         {
-            var source = classSnapshots[placement.StatsFrom];
-            CopyCells(source.Display, target.Display, name => statFields.Contains(name));
-            CopyCells(source.Start, target.Start, name => statFields.Contains(name));
+            if (placement.Stats != null)
+            {
+                var values = StartingStatValues(placement.Stats);
+                if (values.Values.Any(value => value is < 8 or > 15))
+                    throw new InvalidDataException(
+                        $"Randomized stats for {placement.Slot} must stay between 8 and 15.");
+                var originalTotal = randomizedAttributeFields.Sum(field =>
+                    Convert.ToInt32(classSnapshots[placement.Slot].Start[field]));
+                if (values.Values.Sum() != originalTotal)
+                    throw new InvalidDataException(
+                        $"Randomized stats for {placement.Slot} changed its point total.");
+                foreach (var row in new[] { target.Display, target.Start })
+                {
+                    foreach (var pair in values)
+                        SetCell(row, pair.Key, pair.Value);
+                }
+            }
+            else
+            {
+                // Support placement files from releases that swapped complete
+                // class rows instead of generating bounded attribute values.
+                var source = classSnapshots[placement.StatsFrom];
+                CopyCells(source.Display, target.Display, name => statFields.Contains(name));
+                CopyCells(source.Start, target.Start, name => statFields.Contains(name));
+            }
         }
         if (placement.RandomizeEquipment)
         {
@@ -4611,9 +4665,32 @@ static PatchedFile? PatchGameParam(
         var target = classRows[placement.Slot];
         if (placement.RandomizeStats)
         {
-            var source = classSnapshots[placement.StatsFrom];
-            AssertCells(source.Display, target.Display, name => statFields.Contains(name));
-            AssertCells(source.Start, target.Start, name => statFields.Contains(name));
+            if (placement.Stats != null)
+            {
+                var values = StartingStatValues(placement.Stats);
+                foreach (var row in new[] { target.Display, target.Start })
+                {
+                    foreach (var pair in values)
+                        AssertCell(row, pair.Key, pair.Value);
+                }
+                var original = classSnapshots[placement.Slot];
+                AssertCells(
+                    original.Display,
+                    target.Display,
+                    name => statFields.Contains(name) &&
+                        !randomizedAttributeFields.Contains(name));
+                AssertCells(
+                    original.Start,
+                    target.Start,
+                    name => statFields.Contains(name) &&
+                        !randomizedAttributeFields.Contains(name));
+            }
+            else
+            {
+                var source = classSnapshots[placement.StatsFrom];
+                AssertCells(source.Display, target.Display, name => statFields.Contains(name));
+                AssertCells(source.Start, target.Start, name => statFields.Contains(name));
+            }
         }
         if (placement.RandomizeEquipment)
         {
@@ -6186,7 +6263,17 @@ record StartingPlacement(
     string EquipmentFrom,
     bool RandomizeStats,
     bool RandomizeEquipment,
+    RandomStartingStats? Stats,
     RandomStartingEquipment? Equipment);
+record RandomStartingStats(
+    int BaseVit,
+    int BaseWil,
+    int BaseEnd,
+    int BaseStr,
+    int BaseDex,
+    int BaseMag,
+    int BaseFai,
+    int BaseLuc);
 record FashionPlacement(
     int CharaInitId,
     int Helm,

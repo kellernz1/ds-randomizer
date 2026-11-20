@@ -133,10 +133,16 @@ function spoilerText(result) {
   }
   lines.push("", "=== STARTING CLASSES ===");
   for (const placement of result.placements.startingClasses || []) {
+    const statSummary = placement.stats
+      ? `VIT ${placement.stats.baseVit}, ATT ${placement.stats.baseWil}, ` +
+        `END ${placement.stats.baseEnd}, STR ${placement.stats.baseStr}, ` +
+        `DEX ${placement.stats.baseDex}, INT ${placement.stats.baseMag}, ` +
+        `FTH ${placement.stats.baseFai}, RES ${placement.stats.baseLuc}`
+      : "stats preserved";
     if (placement.equipment) {
       const item = (entry) => `${entry.name} [${entry.id}]`;
       lines.push(
-        `${placement.name}: stats from ${placement.statsFrom}; ` +
+        `${placement.name}: ${statSummary}; ` +
         `compatible Asylum pickups: ${item(placement.equipment.pickupWeapon)} / ` +
         `${item(placement.equipment.pickupOffhand)}` +
         (placement.equipment.pickupSpecial
@@ -147,7 +153,7 @@ function spoilerText(result) {
         `${item(placement.equipment.legs)}`,
       );
     } else {
-      lines.push(`${placement.name}: stats from ${placement.statsFrom}; equipment preserved`);
+      lines.push(`${placement.name}: ${statSummary}; equipment preserved`);
     }
   }
   lines.push("", "=== FASHION SOULS ===");

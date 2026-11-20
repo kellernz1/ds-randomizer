@@ -1226,7 +1226,8 @@ test("classes use deterministic stats and general-catalog equipment", async () =
   const result = generate(config, { gameCatalog });
   const classes = result.placements.startingClasses;
   assert.equal(classes.length, 10);
-  assert.ok(classes.every((entry) => entry.statsFrom !== entry.slot));
+  assert.ok(classes.every((entry) => entry.statsFrom === entry.slot));
+  assert.ok(classes.every((entry) => entry.stats));
   assert.ok(classes.every((entry) => entry.equipment));
 
   const poolWeaponIds = new Set(
@@ -1246,6 +1247,32 @@ test("classes use deterministic stats and general-catalog equipment", async () =
   const classById = new Map(
     gameCatalog.startingClasses.map((entry) => [entry.id, entry]),
   );
+  const statFields = [
+    "baseVit", "baseWil", "baseEnd", "baseStr",
+    "baseDex", "baseMag", "baseFai", "baseLuc",
+  ];
+  const vanillaVectors = new Set(gameCatalog.startingClasses.map((entry) =>
+    statFields.map((field) => entry.start[field]).join(","),
+  ));
+  const randomizedVectors = classes.map((entry) =>
+    statFields.map((field) => entry.stats[field]).join(","),
+  );
+  assert.equal(new Set(randomizedVectors).size, classes.length);
+  assert.ok(randomizedVectors.every((vector) => !vanillaVectors.has(vector)));
+  assert.ok(classes.every((entry) => {
+    const original = classById.get(entry.slot).start;
+    const originalTotal = statFields.reduce(
+      (sum, field) => sum + original[field],
+      0,
+    );
+    const randomizedTotal = statFields.reduce(
+      (sum, field) => sum + entry.stats[field],
+      0,
+    );
+    return randomizedTotal === originalTotal &&
+      statFields.every((field) =>
+        entry.stats[field] >= 8 && entry.stats[field] <= 15);
+  }));
   const canUse = (stats, weapon, twoHanded = false) =>
     weapon.strength <= Math.floor(stats.baseStr * (twoHanded ? 1.5 : 1)) &&
     weapon.dexterity <= stats.baseDex &&
@@ -1253,7 +1280,7 @@ test("classes use deterministic stats and general-catalog equipment", async () =
     weapon.faith <= stats.baseFai;
   assert.ok(
     classes.every((entry) => {
-      const stats = classById.get(entry.statsFrom).start;
+      const stats = entry.stats;
       return (
         canUse(stats, entry.equipment.pickupWeapon, true) &&
         entry.equipment.pickupWeapon.isPrimaryWeapon === true &&
@@ -1287,8 +1314,8 @@ test("classes use deterministic stats and general-catalog equipment", async () =
     { gameCatalog },
   );
   assert.deepEqual(
-    classes.map((entry) => entry.statsFrom),
-    statsOnly.placements.startingClasses.map((entry) => entry.statsFrom),
+    classes.map((entry) => entry.stats),
+    statsOnly.placements.startingClasses.map((entry) => entry.stats),
   );
   const repeated = generate(config, { gameCatalog });
   assert.deepEqual(classes, repeated.placements.startingClasses);
@@ -1407,7 +1434,7 @@ test("every class receives a primary weapon as its first pickup", async () => {
     assert.equal(new Set(allArmor).size, allArmor.length);
     foundTwoHandOnlyPrimary ||= result.placements.startingClasses.some(
       (entry) => {
-        const stats = classById.get(entry.statsFrom).start;
+        const stats = entry.stats;
         const weapon = entry.equipment.pickupWeapon;
         return (
           weapon.strength > stats.baseStr &&
