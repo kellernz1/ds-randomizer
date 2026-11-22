@@ -772,6 +772,11 @@ test("real catalog produces real boss and world-item placements", async () => {
     result.placements.items.map((entry) => entry.sourceRowId).sort((a, b) => a - b),
     result.placements.items.map((entry) => entry.rowId).sort((a, b) => a - b),
   );
+  assert.ok(
+    result.placements.items.every(
+      (entry) => entry.sourceTargetKind === "lot",
+    ),
+  );
   const blueTearstoneLot = gameCatalog.worldItemLots.find(
     (lot) => lot.rowId === 1_010_160,
   );
@@ -1470,6 +1475,18 @@ test("world items, gifts, enemy drops, and shops share one deterministic pool", 
   assert.ok(first.placements.gifts.every((entry) => entry.rowId !== entry.sourceRowId));
   assert.ok(first.placements.enemyDrops.every((entry) => !entry.preserved));
   assert.ok(first.placements.shops.every((entry) => entry.rowId !== entry.sourceRowId));
+  assert.ok(
+    [
+      ...first.placements.items,
+      ...first.placements.gifts,
+      ...first.placements.enemyDrops,
+      ...first.placements.shops,
+    ].every(
+      (entry) => entry.sourceTargetKind ===
+        (entry.sourcePool === "shop" ? "shop" : "lot"),
+    ),
+    "placements must identify whether acquisition flags come from a lot or shop",
+  );
   const originalItemByTarget = new Map(
     [
       ...gameCatalog.worldItemLots,

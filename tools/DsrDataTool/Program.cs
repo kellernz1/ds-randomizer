@@ -8,7 +8,7 @@ using SoulsFormats;
 
 const int SchemaVersion = 22;
 const int DataToolProtocolVersion = 1;
-const string RandomizerVersion = "0.6.31";
+const string RandomizerVersion = "0.6.32";
 const int ProgressiveEffectIdBase = 9_600_000;
 const int ProgressiveMilestoneCount = 7;
 Console.OutputEncoding = new UTF8Encoding(false);
@@ -1433,6 +1433,19 @@ static PatchReport PatchEnemies(
                 slot.ValueKind == JsonValueKind.Number
                     ? slot.GetInt32()
                     : null,
+            row.GetProperty("sourceRowId").GetInt32(),
+            row.TryGetProperty("sourceSlot", out var sourceSlot) &&
+                sourceSlot.ValueKind == JsonValueKind.Number
+                    ? sourceSlot.GetInt32()
+                    : null,
+            row.TryGetProperty("sourceTargetKind", out var sourceTargetKind) &&
+                sourceTargetKind.ValueKind == JsonValueKind.String
+                    ? sourceTargetKind.GetString()
+                        ?? throw new InvalidDataException(
+                            "Item assignment has an invalid source target kind.")
+                    : row.GetProperty("targetKind").GetString()
+                        ?? throw new InvalidDataException(
+                            "Item assignment has no source target kind."),
             row.GetProperty("itemId").GetInt32(),
             row.GetProperty("itemCategory").GetInt32(),
             row.GetProperty("equipType").GetInt32(),
@@ -5783,6 +5796,14 @@ static void ApplyItemAssignments(
     if (duplicateTarget != null)
         throw new InvalidDataException(
             $"Duplicate randomized item target: {duplicateTarget.Key}.");
+    var originalItemLotFlags = itemLotParam.Rows.ToDictionary(
+        row => row.ID,
+        row => GetCellInt(row, "getItemFlagId", -1));
+    var originalItemLotSlotFlags = itemLotParam.Rows.ToDictionary(
+        row => row.ID,
+        row => Enumerable.Range(1, 8).ToDictionary(
+            slot => slot,
+            slot => GetCellInt(row, $"getItemFlagId{slot:00}", 0)));
     var stockFlags = shopParam.Rows
         .Select(row => GetCellInt(row, "eventFlag", -1))
         .Where(flag => flag >= 0)
@@ -5839,6 +5860,49 @@ static void ApplyItemAssignments(
         {
             throw new InvalidDataException(
                 $"Unknown randomized item target kind: {assignment.TargetKind}.");
+        }
+    }
+    foreach (var targetGroup in assignments
+                 .Where(assignment => assignment.TargetKind == "lot")
+                 .GroupBy(assignment => assignment.RowId))
+    {
+        var targetRow = itemLotParam.Rows.Single(row => row.ID == targetGroup.Key);
+        var assignmentsBySlot = targetGroup.ToDictionary(
+            assignment => assignment.TargetSlot!.Value);
+        SetCell(targetRow, "getItemFlagId", -1);
+        AssertCell(targetRow, "getItemFlagId", -1);
+        foreach (var slot in Enumerable.Range(1, 8))
+        {
+            var sourceFlag = -1;
+            if (assignmentsBySlot.TryGetValue(slot, out var assignment) &&
+                assignment.SourceTargetKind == "lot" &&
+                assignment.SourceSlot.HasValue &&
+                originalItemLotFlags.TryGetValue(
+                    assignment.SourceRowId, out var commonSourceFlag) &&
+                originalItemLotSlotFlags.TryGetValue(
+                    assignment.SourceRowId, out var sourceSlotFlags))
+            {
+                var slotSourceFlag = sourceSlotFlags.GetValueOrDefault(
+                    assignment.SourceSlot.Value, 0);
+                sourceFlag = slotSourceFlag != 0
+                    ? slotSourceFlag
+                    : commonSourceFlag;
+            }
+            else if (!assignmentsBySlot.ContainsKey(slot) &&
+                     GetCellInt(targetRow, $"lotItemId{slot:00}") > 0)
+            {
+                var originalSlotFlag =
+                    originalItemLotSlotFlags[targetGroup.Key][slot];
+                sourceFlag = originalSlotFlag != 0
+                    ? originalSlotFlag
+                    : originalItemLotFlags[targetGroup.Key];
+            }
+            var targetFlagField = $"getItemFlagId{slot:00}";
+            SetCell(targetRow, targetFlagField, sourceFlag >= 0 ? sourceFlag : 0);
+            AssertCell(
+                targetRow,
+                targetFlagField,
+                sourceFlag >= 0 ? sourceFlag : 0);
         }
     }
 }
@@ -6294,6 +6358,9 @@ record ItemAssignment(
     string TargetKind,
     int RowId,
     int? TargetSlot,
+    int SourceRowId,
+    int? SourceSlot,
+    string SourceTargetKind,
     int ItemId,
     int ItemCategory,
     int EquipType,

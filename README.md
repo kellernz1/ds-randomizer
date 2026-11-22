@@ -4,7 +4,7 @@ A standalone, deterministic randomizer for **Dark Souls Remastered** on
 Windows. Choose what to randomize before opening the game, generate a seed, and
 activate it directly from the desktop launcher.
 
-Current version: **0.6.31**.
+Current version: **0.6.32**.
 
 Fashion Souls can randomize the helmet, chest armor, gauntlets, and leg armor
 equipped by human NPCs while preserving their weapons, AI, teams, and body parts.
@@ -24,7 +24,9 @@ download an executable. That edition requires Node.js 20+ and the .NET 8 SDK.
   mimics, including chests disabled at map start and protected progression
   chests; the original chest loot is awarded after defeating the mimic
 - Randomized world items, enemy and NPC drops, gifts, and non-spell shop stock;
-  spell shop entries stay fixed to preserve attunement identity
+  acquisition flags follow shuffled items so Firelink's recovery chest does not
+  duplicate missing keys, while spell shop entries stay fixed to preserve
+  attunement identity
 - Optional native drops for regular randomized enemies when enemy-drop
   randomization is disabled
 - Truly randomized starting-class attributes within the vanilla 8–15 range,

@@ -1755,6 +1755,7 @@ function randomizeExtractedItemLots(
       rowId: target.rowId,
       sourceRowId: source.rowId,
       sourceSlot: source.slot,
+      sourceTargetKind: source.kind,
       targetKind: target.kind,
       targetSlot: target.slot,
       itemId:
