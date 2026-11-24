@@ -435,6 +435,17 @@ test("real catalog produces deterministic enemies with visibly different models"
     "passive-parish-bonfire-permutation",
   );
   assert.equal(parishPassive.forceCombatActivation, undefined);
+  const inaccessibleStartingCells = new Set([
+    "m18_01_00_00:c2500_0016",
+    "m18_01_00_00:c2500_0017",
+  ]);
+  assert.ok(
+    first.placements.enemies.every(
+      (placement) => !inaccessibleStartingCells.has(placement.slot) &&
+        !inaccessibleStartingCells.has(placement.sourceSlot),
+    ),
+    "sealed starting-cell actors must remain vanilla and outside the enemy pool",
+  );
   const activeMimics = ordinaryPlacements.filter(
     (placement) =>
       placement.targetModelName === "c2780" &&

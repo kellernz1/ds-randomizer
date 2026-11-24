@@ -133,6 +133,14 @@ const asylumPassiveSlots = new Set([
   // numbered c2500_0002 is the hostile Hollow above the rolling-boulder stairs.
   "m18_01_00_00:c2500_0005",
 ]);
+const asylumInaccessibleCellSlots = new Set([
+  // These are real enemies, but sit in sealed cells on either side of the
+  // player's opening cell. Their native parameters are coupled to the
+  // Asylum's internal tutorial/revisit sequence. Replacing them can place a
+  // wall-phasing Ghost inside the starting cell and make it hostile.
+  "m18_01_00_00:c2500_0016",
+  "m18_01_00_00:c2500_0017",
+]);
 const newLondoPassiveSlots = new Set(
   Array.from(
     { length: 15 },
@@ -1041,6 +1049,7 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan, bossPlan) {
       !bossSlotIds.has(slot.id) &&
       !dragonPlan.reservedSlotIds.has(slot.id) &&
       !massOfSoulsPlan.reservedSlotIds.has(slot.id) &&
+      !asylumInaccessibleCellSlots.has(slot.id) &&
       slot.teamType === 0 &&
       slot.modelName !== "c0000" &&
       slot.modelName.startsWith("c") &&
