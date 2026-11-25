@@ -4,7 +4,7 @@ A standalone, deterministic randomizer for **Dark Souls Remastered** on
 Windows. Choose what to randomize before opening the game, generate a seed, and
 activate it directly from the desktop launcher.
 
-Current version: **0.6.33**.
+Current version: **0.6.34**.
 
 Fashion Souls can randomize the helmet, chest armor, gauntlets, and leg armor
 equipped by human NPCs while preserving their weapons, AI, teams, and body parts.
@@ -20,8 +20,8 @@ download an executable. That edition requires Node.js 20+ and the .NET 8 SDK.
 
 - Randomized regular enemies and bosses, with optional area scaling or +10%
   progressive HP and damage per Bell, Lordvessel, and Lord Soul milestone
-- Protected inaccessible tutorial-cell actors in the Northern Undead Asylum,
-  preventing hostile enemies from spawning through the starting-cell walls
+- Protected tutorial/revisit actors in the Northern Undead Asylum, preventing
+  hostile enemies through the starting-cell walls and post-boss corridor crashes
 - Configurable chance for normal chests with valid loot and map data to become
   mimics, including chests disabled at map start and protected progression
   chests; the original chest loot is awarded after defeating the mimic

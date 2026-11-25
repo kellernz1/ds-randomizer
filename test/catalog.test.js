@@ -128,7 +128,7 @@ test("real catalog produces deterministic enemies with visibly different models"
       (placement) =>
         placement.map === "m18_01_00_00" &&
         placement.targetModelName !== placement.modelName,
-    ).length > 15,
+    ).length >= 15,
   );
   const scaled = first.placements.enemies
     .map((placement) => placement.scaledNpcParamId)
@@ -435,16 +435,28 @@ test("real catalog produces deterministic enemies with visibly different models"
     "passive-parish-bonfire-permutation",
   );
   assert.equal(parishPassive.forceCombatActivation, undefined);
-  const inaccessibleStartingCells = new Set([
+  const stateManagedAsylumActors = new Set([
+    "m18_01_00_00:c2792_0000",
+    "m18_01_00_00:c2500_0012",
+    "m18_01_00_00:c2500_0013",
+    "m18_01_00_00:c2500_0014",
+    "m18_01_00_00:c2500_0015",
     "m18_01_00_00:c2500_0016",
     "m18_01_00_00:c2500_0017",
+    "m18_01_00_00:c2500_0018",
+    "m18_01_00_00:c2500_0019",
+    "m18_01_00_00:c2500_0020",
+    "m18_01_00_00:c2500_0021",
+    "m18_01_00_00:c2550_0001",
+    "m18_01_00_00:c2550_0002",
+    "m18_01_00_00:c2792_0001",
   ]);
   assert.ok(
     first.placements.enemies.every(
-      (placement) => !inaccessibleStartingCells.has(placement.slot) &&
-        !inaccessibleStartingCells.has(placement.sourceSlot),
+      (placement) => !stateManagedAsylumActors.has(placement.slot) &&
+        !stateManagedAsylumActors.has(placement.sourceSlot),
     ),
-    "sealed starting-cell actors must remain vanilla and outside the enemy pool",
+    "Asylum actors controlled by the tutorial/revisit event must stay vanilla",
   );
   const activeMimics = ordinaryPlacements.filter(
     (placement) =>

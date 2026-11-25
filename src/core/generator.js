@@ -133,13 +133,27 @@ const asylumPassiveSlots = new Set([
   // numbered c2500_0002 is the hostile Hollow above the rolling-boulder stairs.
   "m18_01_00_00:c2500_0005",
 ]);
-const asylumInaccessibleCellSlots = new Set([
-  // These are real enemies, but sit in sealed cells on either side of the
-  // player's opening cell. Their native parameters are coupled to the
-  // Asylum's internal tutorial/revisit sequence. Replacing them can place a
-  // wall-phasing Ghost inside the starting cell and make it hostile.
+const asylumStateManagedSlots = new Set([
+  // The first four actors wait in the shield/weapon corridor after the
+  // opening boss; the next two sit in sealed cells on either side of the
+  // player's opening cell. All fourteen IDs are explicitly enabled and
+  // disabled by vanilla event 11810350 as the tutorial/revisit state changes.
+  // Replacing one can spawn a wall-phasing Ghost in the starting cell or crash
+  // when the post-boss corridor streams its event-controlled actor.
+  "m18_01_00_00:c2792_0000",
+  "m18_01_00_00:c2500_0012",
+  "m18_01_00_00:c2500_0013",
+  "m18_01_00_00:c2500_0014",
+  "m18_01_00_00:c2500_0015",
   "m18_01_00_00:c2500_0016",
   "m18_01_00_00:c2500_0017",
+  "m18_01_00_00:c2500_0018",
+  "m18_01_00_00:c2500_0019",
+  "m18_01_00_00:c2500_0020",
+  "m18_01_00_00:c2500_0021",
+  "m18_01_00_00:c2550_0001",
+  "m18_01_00_00:c2550_0002",
+  "m18_01_00_00:c2792_0001",
 ]);
 const newLondoPassiveSlots = new Set(
   Array.from(
@@ -1049,7 +1063,7 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan, bossPlan) {
       !bossSlotIds.has(slot.id) &&
       !dragonPlan.reservedSlotIds.has(slot.id) &&
       !massOfSoulsPlan.reservedSlotIds.has(slot.id) &&
-      !asylumInaccessibleCellSlots.has(slot.id) &&
+      !asylumStateManagedSlots.has(slot.id) &&
       slot.teamType === 0 &&
       slot.modelName !== "c0000" &&
       slot.modelName.startsWith("c") &&
