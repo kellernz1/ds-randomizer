@@ -1125,36 +1125,51 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan, bossPlan) {
       slot.position &&
       slot.collisionName)
     .sort((left, right) => left.id.localeCompare(right.id));
-
-  function groundedNewLondoGhostSpawn(slot, index) {
-    if (newLondoGroundAnchors.length === 0) return null;
-    const anchor = newLondoGroundAnchors.reduce((best, candidate) => {
-      const distance = Math.hypot(
-        candidate.position.x - slot.position.x,
-        candidate.position.y - slot.position.y,
-        candidate.position.z - slot.position.z,
-      );
-      return !best || distance < best.distance
-        ? { slot: candidate, distance }
-        : best;
-    }, null).slot;
-    let directionX = slot.position.x - anchor.position.x;
-    let directionZ = slot.position.z - anchor.position.z;
-    const length = Math.hypot(directionX, directionZ);
-    if (length < 0.01) {
-      const angle = index * 2.399963229728653;
-      directionX = Math.cos(angle);
-      directionZ = Math.sin(angle);
-    } else {
-      directionX /= length;
-      directionZ /= length;
-    }
-    return {
-      x: anchor.position.x + directionX * 1.25,
-      y: anchor.position.y + 0.25,
-      z: anchor.position.z + directionZ * 1.25,
-      collisionName: anchor.collisionName,
-    };
+  // Ghost slots routinely begin inside walls, water, and void volume. An
+  // ordinary replacement needs a known walkable position, rather than an
+  // offset near one: even a small lateral offset can pass a narrow New Londo
+  // ledge and award souls when the replacement falls into the kill plane.
+  // Spread the targets among their three nearest vanilla ground-enemy spawns;
+  // those exact positions and collision names are proven safe by retail data.
+  const newLondoGhostGroundSpawns = new Map();
+  if (newLondoGroundAnchors.length > 0) {
+    const anchorUseCount = new Map(
+      newLondoGroundAnchors.map((anchor) => [anchor.id, 0]),
+    );
+    slots
+      .filter((slot) =>
+        slot.mapId === "m16_00_00_00" &&
+        tangibleGhostModels.has(slot.modelName) &&
+        slot.position,
+      )
+      .sort((left, right) => left.id.localeCompare(right.id))
+      .forEach((slot) => {
+        const candidates = newLondoGroundAnchors
+          .map((anchor) => ({
+            anchor,
+            distance: Math.hypot(
+              anchor.position.x - slot.position.x,
+              anchor.position.y - slot.position.y,
+              anchor.position.z - slot.position.z,
+            ),
+          }))
+          .sort((left, right) => left.distance - right.distance)
+          .slice(0, 3)
+          .sort((left, right) =>
+            anchorUseCount.get(left.anchor.id) -
+              anchorUseCount.get(right.anchor.id) ||
+            left.distance - right.distance ||
+            left.anchor.id.localeCompare(right.anchor.id),
+          );
+        const anchor = candidates[0].anchor;
+        anchorUseCount.set(anchor.id, anchorUseCount.get(anchor.id) + 1);
+        newLondoGhostGroundSpawns.set(slot.id, {
+          x: anchor.position.x,
+          y: anchor.position.y + 0.25,
+          z: anchor.position.z,
+          collisionName: anchor.collisionName,
+        });
+      });
   }
 
   const randomized = slots.map((slot, index) => {
@@ -1176,7 +1191,7 @@ function randomizeExtractedEnemies(config, catalog, dragonPlan, bossPlan) {
       tangibleGhostModels.has(slot.modelName) &&
       !tangibleGhostModels.has(replacement.modelName);
     const groundedGhostSpawn = replacesWallPhasingGhost
-      ? groundedNewLondoGhostSpawn(slot, index)
+      ? newLondoGhostGroundSpawns.get(slot.id) ?? null
       : null;
     const darkrootButterflyPath =
       (slot.mapId === "m12_00_00_00" || slot.mapId === "m12_00_00_01") &&

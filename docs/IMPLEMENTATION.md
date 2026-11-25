@@ -170,6 +170,9 @@ files; source hashes prevent applying it to a different installation state.
   Other invisible `c3501` helper variants are excluded from ordinary slots.
   Arbitrary full-sized enemies can no longer occupy the low item tunnel, and
   Wisps can no longer turn into twelve stacked unrelated enemies.
+- When a New Londo Ghost receives an ordinary enemy replacement, it is moved
+  to an exact vanilla ground-enemy spawn and collision rather than offset from
+  its wall/water position, preventing kill-plane deaths and free souls.
 - Internal boss forms such as Super Ornstein and Super Smough are excluded from
   regular-enemy sources and enter the boss-only archetype permutation instead.
   The Hellkite bridge uses any non-boss member of the regular dragon pool at the

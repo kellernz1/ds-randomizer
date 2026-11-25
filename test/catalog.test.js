@@ -255,6 +255,25 @@ test("real catalog produces deterministic enemies with visibly different models"
     Number.isFinite(placement.groundY) &&
     Number.isFinite(placement.groundZ) &&
     typeof placement.targetCollisionName === "string"));
+  const newLondoGroundAnchors = gameCatalog.enemySlots.filter(
+    (slot) =>
+      slot.mapId === "m16_00_00_00" &&
+      slot.modelName === "c2390" &&
+      !slot.dummy &&
+      slot.position &&
+      slot.collisionName,
+  );
+  assert.ok(
+    newLondoSolidGhostSlotReplacements.every((placement) =>
+      newLondoGroundAnchors.some((anchor) =>
+        placement.groundX === anchor.position.x &&
+        placement.groundY === anchor.position.y + 0.25 &&
+        placement.groundZ === anchor.position.z &&
+        placement.targetCollisionName === anchor.collisionName,
+      ),
+    ),
+    "ordinary replacements for wall-phasing Ghosts must use an exact vanilla ground spawn",
+  );
   assert.ok(
     ordinaryPlacements.every(
       (placement) =>
