@@ -200,6 +200,8 @@ files; source hashes prevent applying it to a different installation state.
 - 527 world item lots, including 13 recognized progression lots
 - Independent world-item, enemy, boss, class, gift, drop, and shop streams
 - Progression-lot and acquisition-flag preservation
+- Ground-item location flags remain persistent through death/reload; Firelink's
+  recovery event follows the randomized location of each recoverable item
 - Ten real starting classes from `CharaInitParam`
 - Unique, requirement-compatible weapon matching without replacement
 - Full named base-weapon and armor pools, per-slot armor randomization, and

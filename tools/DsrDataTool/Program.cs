@@ -8,7 +8,7 @@ using SoulsFormats;
 
 const int SchemaVersion = 22;
 const int DataToolProtocolVersion = 1;
-const string RandomizerVersion = "0.6.35";
+const string RandomizerVersion = "0.6.36";
 const int ProgressiveEffectIdBase = 9_600_000;
 const int ProgressiveMilestoneCount = 7;
 Console.OutputEncoding = new UTF8Encoding(false);
@@ -1776,34 +1776,7 @@ static PatchReport PatchEnemies(
     var patchedLuaBundles = PatchLuaAiBundles(
         gameDirectory, outputDirectory, catalog, allEnemyPlacements);
 
-    var patchedEvents = PatchBossNames(
-        gameDirectory,
-        outputDirectory,
-        catalog,
-        allEnemyPlacements);
-    if (progressiveScaling)
-    {
-        var progressiveEvents = PatchProgressiveScalingEvents(
-            gameDirectory,
-            outputDirectory,
-            catalog);
-        patchedEvents = patchedEvents
-            .Where(existing => !progressiveEvents.Any(progressive =>
-                progressive.Output.Equals(
-                    existing.Output, StringComparison.OrdinalIgnoreCase)))
-            .Concat(progressiveEvents)
-            .ToList();
-    }
-
-    // Enemy effects are normally spread across map-local SFX bundles. An enemy
-    // moved to another map can otherwise attack correctly while its projectile
-    // or elemental effect is invisible (for example, the Demonic Statue fire).
-    // Make the transferable enemy effects globally available to this package.
-    var patchedFfxBundle = allEnemyPlacements.Count > 0
-        ? PatchEnemyEffects(gameDirectory, outputDirectory)
-        : null;
-
-    var patchedGameParam =
+    var patchedGameParamResult =
         allEnemyPlacements.Any(placement => placement.ScaledNpcParamId.HasValue) ||
         allEnemyPlacements.Any(placement => placement.BaseThinkParamId.HasValue) ||
         startingPlacements.Count > 0 ||
@@ -1829,6 +1802,35 @@ static PatchReport PatchEnemies(
             itemAssignments,
             guaranteedEnemyDrops,
             progressiveScaling)
+        : null;
+    var patchedGameParam = patchedGameParamResult?.File;
+
+    var patchedEvents = PatchBossNames(
+        gameDirectory,
+        outputDirectory,
+        catalog,
+        allEnemyPlacements,
+        patchedGameParamResult?.RecoveryFlagRemaps ?? new Dictionary<int, int>());
+    if (progressiveScaling)
+    {
+        var progressiveEvents = PatchProgressiveScalingEvents(
+            gameDirectory,
+            outputDirectory,
+            catalog);
+        patchedEvents = patchedEvents
+            .Where(existing => !progressiveEvents.Any(progressive =>
+                progressive.Output.Equals(
+                    existing.Output, StringComparison.OrdinalIgnoreCase)))
+            .Concat(progressiveEvents)
+            .ToList();
+    }
+
+    // Enemy effects are normally spread across map-local SFX bundles. An enemy
+    // moved to another map can otherwise attack correctly while its projectile
+    // or elemental effect is invisible (for example, the Demonic Statue fire).
+    // Make the transferable enemy effects globally available to this package.
+    var patchedFfxBundle = allEnemyPlacements.Count > 0
+        ? PatchEnemyEffects(gameDirectory, outputDirectory)
         : null;
 
     var report = new PatchReport(
@@ -2454,7 +2456,8 @@ static List<PatchedFile> PatchBossNames(
     string gameDirectory,
     string outputDirectory,
     GameCatalog catalog,
-    List<PatchPlacement> allEnemyPlacements)
+    List<PatchPlacement> allEnemyPlacements,
+    IReadOnlyDictionary<int, int> recoveryFlagRemaps)
 {
     var results = new List<PatchedFile>();
     // Secondary bodies such as the second Bell Gargoyle live in the regular
@@ -2533,6 +2536,9 @@ static List<PatchedFile> PatchBossNames(
         .Concat(forceCombatPlacements.Select(placement => placement.MapId))
         .Concat(modelSpecificPlacements.Select(placement => placement.MapId))
         .Concat(portableBossPlacements.Select(placement => placement.MapId))
+        .Concat(recoveryFlagRemaps.Count > 0
+            ? new[] { "m10_02_00_00" }
+            : Array.Empty<string>())
         .Concat(preserveBedFloor ? new[] { "m14_01_00_00" } : Array.Empty<string>())
         .Distinct(StringComparer.Ordinal)
         .Order(StringComparer.Ordinal);
@@ -2605,6 +2611,27 @@ static List<PatchedFile> PatchBossNames(
 
         var emevd = EMEVD.Read(sourcePath);
         var changed = 0;
+        if (mapId == "m10_02_00_00" && recoveryFlagRemaps.Count > 0)
+        {
+            var recoveryEvent = emevd.Events.SingleOrDefault(entry => entry.ID == 50)
+                ?? throw new InvalidDataException(
+                    "Firelink recovery event 50 is missing.");
+            foreach (var instruction in recoveryEvent.Instructions)
+            {
+                if (instruction.Bank != 2000 || instruction.ID != 0 ||
+                    instruction.ArgData.Length < 28 ||
+                    BitConverter.ToInt32(instruction.ArgData, 4) != 11020800)
+                    continue;
+                var sourceFlag = BitConverter.ToInt32(instruction.ArgData, 8);
+                if (!recoveryFlagRemaps.TryGetValue(sourceFlag, out var targetFlag))
+                    continue;
+                BitConverter.GetBytes(targetFlag).CopyTo(instruction.ArgData, 8);
+                changed++;
+            }
+            if (changed != recoveryFlagRemaps.Count)
+                throw new InvalidDataException(
+                    "Could not redirect every randomized Firelink recovery flag.");
+        }
         // Quelaag's Sister (the Daughter of Chaos) is a friendly Fire Keeper,
         // not an enemy placement. Rebuilding Quelaag's portable boss lifecycle
         // can leave her c5340 actor disabled while alive, which also removes
@@ -3445,6 +3472,23 @@ static List<PatchedFile> PatchBossNames(
             {
                 throw new InvalidDataException(
                     "Randomized Asylum boss intro did not persist safely.");
+            }
+        }
+        if (mapId == "m10_02_00_00" && recoveryFlagRemaps.Count > 0)
+        {
+            var recoveryEvent = verification.Events.Single(entry => entry.ID == 50);
+            foreach (var (sourceFlag, targetFlag) in recoveryFlagRemaps)
+            {
+                if (!recoveryEvent.Instructions.Any(instruction =>
+                        instruction.Bank == 2000 && instruction.ID == 0 &&
+                        instruction.ArgData.Length >= 28 &&
+                        BitConverter.ToInt32(instruction.ArgData, 4) == 11020800 &&
+                        BitConverter.ToInt32(instruction.ArgData, 8) == targetFlag))
+                {
+                    throw new InvalidDataException(
+                        $"Firelink recovery flag {sourceFlag} did not redirect " +
+                        $"to randomized location flag {targetFlag}.");
+                }
             }
         }
         if (mapId == "m18_01_00_00")
@@ -4384,7 +4428,7 @@ static List<PatchedFile> PatchProgressiveScalingEvents(
     }
 }
 
-static PatchedFile? PatchGameParam(
+static GameParamPatchResult? PatchGameParam(
     string gameDirectory,
     string outputDirectory,
     GameCatalog catalog,
@@ -4831,7 +4875,8 @@ static PatchedFile? PatchGameParam(
         shopPlacements,
         name => name.Equals("equipId", StringComparison.Ordinal),
         "shop");
-    ApplyItemAssignments(itemLotParam, shopParam, itemAssignments);
+    var recoveryFlagRemaps = ApplyItemAssignments(
+        itemLotParam, shopParam, itemAssignments);
     var guaranteedEnemyDropRowIds = guaranteedEnemyDrops
         ? catalog.EnemyDropLots.Select(lot => lot.RowId).Distinct().ToList()
         : new List<int>();
@@ -5023,11 +5068,13 @@ static PatchedFile? PatchGameParam(
     }
     AssertHash(sourcePath, sourceRecord.Sha256, "Source GameParam changed");
 
-    return new PatchedFile(
-        relativeSource,
-        outputRelative,
-        sourceRecord.Sha256,
-        HashFile(outputPath));
+    return new GameParamPatchResult(
+        new PatchedFile(
+            relativeSource,
+            outputRelative,
+            sourceRecord.Sha256,
+            HashFile(outputPath)),
+        recoveryFlagRemaps);
 }
 
 static void AddProgressiveSpEffectRows(PARAM spEffectParam)
@@ -5783,13 +5830,13 @@ static HashSet<int> ReadEventModelLockedEntities(string eventPath)
     return result;
 }
 
-static void ApplyItemAssignments(
+static Dictionary<int, int> ApplyItemAssignments(
     PARAM itemLotParam,
     PARAM shopParam,
     List<ItemAssignment> assignments)
 {
     if (assignments.Count == 0)
-        return;
+        return new Dictionary<int, int>();
     var duplicateTarget = assignments
         .GroupBy(entry => (entry.TargetKind, entry.RowId, entry.TargetSlot))
         .FirstOrDefault(group => group.Count() > 1);
@@ -5799,11 +5846,13 @@ static void ApplyItemAssignments(
     var originalItemLotFlags = itemLotParam.Rows.ToDictionary(
         row => row.ID,
         row => GetCellInt(row, "getItemFlagId", -1));
-    var originalItemLotSlotFlags = itemLotParam.Rows.ToDictionary(
-        row => row.ID,
-        row => Enumerable.Range(1, 8).ToDictionary(
-            slot => slot,
-            slot => GetCellInt(row, $"getItemFlagId{slot:00}", 0)));
+    var recoveryItemIdentities = itemLotParam.Rows
+        .Where(row => row.ID is >= 4000 and <= 4070)
+        .SelectMany(row => Enumerable.Range(1, 8).Select(slot =>
+            (Category: GetCellInt(row, $"lotItemCategory{slot:00}"),
+             ItemId: GetCellInt(row, $"lotItemId{slot:00}"))))
+        .Where(item => item.ItemId > 0)
+        .ToHashSet();
     var stockFlags = shopParam.Rows
         .Select(row => GetCellInt(row, "eventFlag", -1))
         .Where(flag => flag >= 0)
@@ -5862,49 +5911,36 @@ static void ApplyItemAssignments(
                 $"Unknown randomized item target kind: {assignment.TargetKind}.");
         }
     }
-    foreach (var targetGroup in assignments
-                 .Where(assignment => assignment.TargetKind == "lot")
-                 .GroupBy(assignment => assignment.RowId))
+    // Keep every lot's original acquisition flag. For ground loot this is the
+    // persistent "already picked up" state; clearing or moving it lets the
+    // pickup return after a death-triggered map reload. The Firelink recovery
+    // event is redirected when a recoverable item itself moves.
+    var recoveryFlagRemaps = new Dictionary<int, int>();
+    foreach (var assignment in assignments.Where(assignment =>
+                 assignment.SourceTargetKind == "lot" &&
+                 recoveryItemIdentities.Contains(
+                     (assignment.ItemCategory, assignment.ItemId))))
     {
-        var targetRow = itemLotParam.Rows.Single(row => row.ID == targetGroup.Key);
-        var assignmentsBySlot = targetGroup.ToDictionary(
-            assignment => assignment.TargetSlot!.Value);
-        SetCell(targetRow, "getItemFlagId", -1);
-        AssertCell(targetRow, "getItemFlagId", -1);
-        foreach (var slot in Enumerable.Range(1, 8))
+        var sourceFlag = originalItemLotFlags.GetValueOrDefault(
+            assignment.SourceRowId, -1);
+        if (sourceFlag < 0)
+            continue;
+        var targetFlag = assignment.TargetKind == "lot"
+            ? originalItemLotFlags.GetValueOrDefault(assignment.RowId, -1)
+            : GetCellInt(
+                shopParam.Rows.Single(row => row.ID == assignment.RowId),
+                "eventFlag", -1);
+        if (targetFlag < 0 || targetFlag == sourceFlag)
+            continue;
+        if (recoveryFlagRemaps.TryGetValue(sourceFlag, out var existing) &&
+            existing != targetFlag)
         {
-            var sourceFlag = -1;
-            if (assignmentsBySlot.TryGetValue(slot, out var assignment) &&
-                assignment.SourceTargetKind == "lot" &&
-                assignment.SourceSlot.HasValue &&
-                originalItemLotFlags.TryGetValue(
-                    assignment.SourceRowId, out var commonSourceFlag) &&
-                originalItemLotSlotFlags.TryGetValue(
-                    assignment.SourceRowId, out var sourceSlotFlags))
-            {
-                var slotSourceFlag = sourceSlotFlags.GetValueOrDefault(
-                    assignment.SourceSlot.Value, 0);
-                sourceFlag = slotSourceFlag != 0
-                    ? slotSourceFlag
-                    : commonSourceFlag;
-            }
-            else if (!assignmentsBySlot.ContainsKey(slot) &&
-                     GetCellInt(targetRow, $"lotItemId{slot:00}") > 0)
-            {
-                var originalSlotFlag =
-                    originalItemLotSlotFlags[targetGroup.Key][slot];
-                sourceFlag = originalSlotFlag != 0
-                    ? originalSlotFlag
-                    : originalItemLotFlags[targetGroup.Key];
-            }
-            var targetFlagField = $"getItemFlagId{slot:00}";
-            SetCell(targetRow, targetFlagField, sourceFlag >= 0 ? sourceFlag : 0);
-            AssertCell(
-                targetRow,
-                targetFlagField,
-                sourceFlag >= 0 ? sourceFlag : 0);
+            throw new InvalidDataException(
+                $"Recovery flag {sourceFlag} was assigned to multiple locations.");
         }
+        recoveryFlagRemaps[sourceFlag] = targetFlag;
     }
+    return recoveryFlagRemaps;
 }
 
 static HashSet<int> ReadEventAwardItemLots(string eventPath)
@@ -6378,6 +6414,9 @@ record PatchedFile(
     string Output,
     string SourceSha256,
     string OutputSha256);
+record GameParamPatchResult(
+    PatchedFile File,
+    Dictionary<int, int> RecoveryFlagRemaps);
 record PatchReport(
     int SchemaVersion,
     DateTimeOffset GeneratedAt,
